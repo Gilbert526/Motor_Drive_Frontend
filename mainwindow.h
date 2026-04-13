@@ -19,14 +19,22 @@ public:
     ~MainWindow();
 
 private slots:
-    void on_pushButtonStart_clicked();
+    void on_pushButtonStartToggle_clicked();
+    void on_pushButtonRefresh_clicked();
     void on_pushButtonSend_clicked();
-    void readSerialData();          // 接收串口数据
+    void on_pushButtonStart_clicked();
+    void on_pushButtonStop_clicked();
+    void on_pushButtonAudible_clicked();
+    void on_pushButtonReset_clicked();
+    void readSerialData();
+    void handleSerialError(QSerialPort::SerialPortError error);
 
 private:
     Ui::MainWindow *ui;
-    QSerialPort *serial;            // 串口对象
-    void refreshSerialPorts();      // 刷新串口列表
+    QSerialPort *serial;
+    void refreshSerialPorts();
+    void updateToggleButtonState(bool isOpen);
+    void sendCommand(const QString &cmd);
 };
 
 #endif // MAINWINDOW_H
