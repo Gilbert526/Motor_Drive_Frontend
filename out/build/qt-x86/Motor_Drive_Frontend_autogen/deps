@@ -1,21 +1,83 @@
 Motor_Drive_Frontend_autogen/timestamp: \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeCXXCompiler.cmake.in \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeCXXInformation.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeCheckCompilerFlagCommonPatterns.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeCommonLanguageInclude.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeCompilerIdDetection.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeDetermineCXXCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeDetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeDetermineCompilerABI.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeDetermineCompilerId.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeDetermineCompilerSupport.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeDetermineRCCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeDetermineSystem.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeFindBinUtils.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeFindDependencyMacro.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeGenericSystem.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeInitializeConfigs.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeLanguageInformation.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeMinGWFindMake.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeParseImplicitIncludeInfo.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeParseImplicitLinkInfo.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeParseLibraryArchitecture.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeRCCompiler.cmake.in \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeRCInformation.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeSystem.cmake.in \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeSystemSpecificInformation.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeSystemSpecificInitialize.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeTestCXXCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeTestCompilerCommon.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CMakeTestRCCompiler.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CheckCXXCompilerFlag.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CheckCXXSourceCompiles.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CheckIncludeFileCXX.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/CheckLibraryExists.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/ADSP-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/ARMCC-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/ARMClang-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/AppleClang-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/Borland-DetermineCompiler.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/CMakeCommonCompilerMacros.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/Clang-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/Clang-DetermineCompilerInternal.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/Compaq-CXX-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/Cray-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/CrayClang-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/Diab-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/Embarcadero-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/Fujitsu-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/FujitsuClang-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/GHS-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/GNU-CXX-DetermineCompiler.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/GNU-CXX.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/GNU-FindBinUtils.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/GNU.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/HP-CXX-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/IAR-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/IBMCPP-CXX-DetermineVersionInternal.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/IBMClang-CXX-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/Intel-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/IntelLLVM-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/LCC-CXX-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/MSVC-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/NVHPC-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/NVIDIA-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/OpenWatcom-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/OrangeC-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/PGI-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/PathScale-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/Renesas-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/SCO-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/SunPro-CXX-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/TI-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/TIClang-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/Tasking-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/VisualAge-CXX-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/Watcom-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/XL-CXX-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/XLClang-CXX-DetermineCompiler.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Compiler/zOS-CXX-DetermineCompiler.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/FindPackageHandleStandardArgs.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/FindPackageMessage.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/FindThreads.cmake \
@@ -23,13 +85,17 @@ Motor_Drive_Frontend_autogen/timestamp: \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/GNUInstallDirs.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Internal/CMakeCXXLinkerInformation.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Internal/CMakeCommonLinkerInformation.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Internal/CMakeDetermineLinkerId.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Internal/CMakeInspectCXXLinker.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Internal/CheckCompilerFlag.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Internal/CheckFlagCommonConfig.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Internal/CheckSourceCompiles.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Internal/FeatureTesting.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Platform/Linker/GNU.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Platform/Linker/Windows-CXX.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Platform/Linker/Windows-GNU-CXX.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Platform/Linker/Windows-GNU.cmake \
+	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Platform/Windows-Determine-CXX.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Platform/Windows-GNU-CXX-ABI.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Platform/Windows-GNU-CXX.cmake \
 	C:/Program\ Files/CMake/share/cmake-4.2/Modules/Platform/Windows-GNU.cmake \
@@ -45,6 +111,11 @@ Motor_Drive_Frontend_autogen/timestamp: \
 	C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/out/build/qt-x86/CMakeFiles/4.2.3/CMakeRCCompiler.cmake \
 	C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/out/build/qt-x86/CMakeFiles/4.2.3/CMakeSystem.cmake \
 	C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/out/build/qt-x86/Motor_Drive_Frontend_autogen/moc_predefs.h \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/QList \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/QObject \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/QRect \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/QSize \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/QSizeF \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/q17memory.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/q20bit.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/q20functional.h \
@@ -54,6 +125,7 @@ Motor_Drive_Frontend_autogen/timestamp: \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/q20utility.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/q23type_traits.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/q23utility.h \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/qabstracteventdispatcher.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qalgorithms.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qalloc.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qanystringview.h \
@@ -64,6 +136,7 @@ Motor_Drive_Frontend_autogen/timestamp: \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qatomic.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qatomic_cxx11.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qbasicatomic.h \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/qbasictimer.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qbindingstorage.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qbytearray.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qbytearrayalgorithms.h \
@@ -81,10 +154,15 @@ Motor_Drive_Frontend_autogen/timestamp: \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qcontainerinfo.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qcontainertools_impl.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qcontiguouscache.h \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/qcoreapplication.h \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/qcoreapplication_platform.h \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/qcoreevent.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qdarwinhelpers.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qdatastream.h \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/qdeadlinetimer.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qdebug.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qendian.h \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/qeventloop.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qexceptionhandling.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qflags.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qfloat16.h \
@@ -96,12 +174,14 @@ Motor_Drive_Frontend_autogen/timestamp: \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qglobalstatic.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qhash.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qhashfunctions.h \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/qiodevice.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qiodevicebase.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qiterable.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qiterator.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qlatin1stringview.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qline.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qlist.h \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/qlocale.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qlogging.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qmalloc.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qmap.h \
@@ -111,6 +191,7 @@ Motor_Drive_Frontend_autogen/timestamp: \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qmetatype.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qminmax.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qnamespace.h \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/qnativeinterface.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qnumeric.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qobject.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qobject_impl.h \
@@ -120,6 +201,8 @@ Motor_Drive_Frontend_autogen/timestamp: \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qpair.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qpoint.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qprocessordetection.h \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/qproperty.h \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/qpropertyprivate.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qrect.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qrefcount.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qscopedpointer.h \
@@ -167,42 +250,76 @@ Motor_Drive_Frontend_autogen/timestamp: \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qtversionchecks.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qtypeinfo.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qtypes.h \
+	D:/Qt/6.11.0/mingw_64/include/QtCore/qurl.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qutf8stringview.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qvariant.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qvarlengtharray.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qversiontagging.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qxptype_traits.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/qyieldcpu.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/QTransform \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qabstracttextdocumentlayout.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qaction.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qbitmap.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qbrush.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qcolor.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qcursor.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qevent.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qeventpoint.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qfont.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qfontdatabase.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qfontinfo.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qfontmetrics.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qfontvariableaxis.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qglyphrun.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qguiapplication.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qguiapplication_platform.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qicon.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qimage.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qinputdevice.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qinputmethod.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qkeysequence.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qpaintdevice.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qpalette.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qpen.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qpixelformat.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qpixmap.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qpointingdevice.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qpolygon.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qrawfont.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qregion.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qrgb.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qrgba64.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qscreen.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qscreen_platform.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qtextcursor.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qtextdocument.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qtextformat.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qtextlayout.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qtextoption.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qtgui-config.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qtguiexports.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qtguiglobal.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qtransform.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qvector2d.h \
+	D:/Qt/6.11.0/mingw_64/include/QtGui/qvectornd.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qwindowdefs.h \
 	D:/Qt/6.11.0/mingw_64/include/QtGui/qwindowdefs_win.h \
+	D:/Qt/6.11.0/mingw_64/include/QtSerialPort/QSerialPort \
+	D:/Qt/6.11.0/mingw_64/include/QtSerialPort/QSerialPortInfo \
+	D:/Qt/6.11.0/mingw_64/include/QtSerialPort/qserialport.h \
+	D:/Qt/6.11.0/mingw_64/include/QtSerialPort/qserialportglobal.h \
+	D:/Qt/6.11.0/mingw_64/include/QtSerialPort/qserialportinfo.h \
+	D:/Qt/6.11.0/mingw_64/include/QtSerialPort/qtserialportexports.h \
 	D:/Qt/6.11.0/mingw_64/include/QtWidgets/QMainWindow \
+	D:/Qt/6.11.0/mingw_64/include/QtWidgets/QPlainTextEdit \
+	D:/Qt/6.11.0/mingw_64/include/QtWidgets/qabstractscrollarea.h \
+	D:/Qt/6.11.0/mingw_64/include/QtWidgets/qframe.h \
 	D:/Qt/6.11.0/mingw_64/include/QtWidgets/qmainwindow.h \
+	D:/Qt/6.11.0/mingw_64/include/QtWidgets/qplaintextedit.h \
 	D:/Qt/6.11.0/mingw_64/include/QtWidgets/qsizepolicy.h \
 	D:/Qt/6.11.0/mingw_64/include/QtWidgets/qtabwidget.h \
+	D:/Qt/6.11.0/mingw_64/include/QtWidgets/qtextedit.h \
 	D:/Qt/6.11.0/mingw_64/include/QtWidgets/qtwidgets-config.h \
 	D:/Qt/6.11.0/mingw_64/include/QtWidgets/qtwidgetsexports.h \
 	D:/Qt/6.11.0/mingw_64/include/QtWidgets/qtwidgetsglobal.h \
@@ -253,6 +370,15 @@ Motor_Drive_Frontend_autogen/timestamp: \
 	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6/QtPublicToolHelpers.cmake \
 	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6/QtPublicWalkLibsHelpers.cmake \
 	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6/QtPublicWindowsHelpers.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6Charts/Qt6ChartsAdditionalTargetInfo.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6Charts/Qt6ChartsConfig.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6Charts/Qt6ChartsConfigVersion.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6Charts/Qt6ChartsConfigVersionImpl.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6Charts/Qt6ChartsDependencies.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6Charts/Qt6ChartsTargets-relwithdebinfo.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6Charts/Qt6ChartsTargets.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6Charts/Qt6ChartsTargetsPrecheck.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6Charts/Qt6ChartsVersionlessAliasTargets.cmake \
 	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6Core/Qt6CoreAdditionalTargetInfo.cmake \
 	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6Core/Qt6CoreConfig.cmake \
 	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6Core/Qt6CoreConfigExtras.cmake \
@@ -351,6 +477,43 @@ Motor_Drive_Frontend_autogen/timestamp: \
 	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6GuiTools/Qt6GuiToolsTargets.cmake \
 	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6GuiTools/Qt6GuiToolsTargetsPrecheck.cmake \
 	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6GuiTools/Qt6GuiToolsVersionlessTargets.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGL/Qt6OpenGLAdditionalTargetInfo.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGL/Qt6OpenGLConfig.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGL/Qt6OpenGLConfigVersion.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGL/Qt6OpenGLConfigVersionImpl.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGL/Qt6OpenGLDependencies.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGL/Qt6OpenGLTargets-relwithdebinfo.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGL/Qt6OpenGLTargets.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGL/Qt6OpenGLTargetsPrecheck.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGL/Qt6OpenGLVersionlessAliasTargets.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGLWidgets/Qt6OpenGLWidgetsAdditionalTargetInfo.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGLWidgets/Qt6OpenGLWidgetsConfig.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGLWidgets/Qt6OpenGLWidgetsConfigVersion.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGLWidgets/Qt6OpenGLWidgetsConfigVersionImpl.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGLWidgets/Qt6OpenGLWidgetsDependencies.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGLWidgets/Qt6OpenGLWidgetsTargets-relwithdebinfo.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGLWidgets/Qt6OpenGLWidgetsTargets.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGLWidgets/Qt6OpenGLWidgetsTargetsPrecheck.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6OpenGLWidgets/Qt6OpenGLWidgetsVersionlessAliasTargets.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6PrintSupport/Qt6PrintSupportAdditionalTargetInfo.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6PrintSupport/Qt6PrintSupportConfig.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6PrintSupport/Qt6PrintSupportConfigVersion.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6PrintSupport/Qt6PrintSupportConfigVersionImpl.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6PrintSupport/Qt6PrintSupportDependencies.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6PrintSupport/Qt6PrintSupportPlugins.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6PrintSupport/Qt6PrintSupportTargets-relwithdebinfo.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6PrintSupport/Qt6PrintSupportTargets.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6PrintSupport/Qt6PrintSupportTargetsPrecheck.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6PrintSupport/Qt6PrintSupportVersionlessAliasTargets.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6SerialPort/Qt6SerialPortAdditionalTargetInfo.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6SerialPort/Qt6SerialPortConfig.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6SerialPort/Qt6SerialPortConfigVersion.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6SerialPort/Qt6SerialPortConfigVersionImpl.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6SerialPort/Qt6SerialPortDependencies.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6SerialPort/Qt6SerialPortTargets-relwithdebinfo.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6SerialPort/Qt6SerialPortTargets.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6SerialPort/Qt6SerialPortTargetsPrecheck.cmake \
+	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6SerialPort/Qt6SerialPortVersionlessAliasTargets.cmake \
 	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6Widgets/Qt6QModernWindowsStylePluginAdditionalTargetInfo.cmake \
 	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6Widgets/Qt6QModernWindowsStylePluginConfig.cmake \
 	D:/Qt/6.11.0/mingw_64/lib/cmake/Qt6Widgets/Qt6QModernWindowsStylePluginTargets-relwithdebinfo.cmake \
@@ -487,6 +650,7 @@ Motor_Drive_Frontend_autogen/timestamp: \
 	D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/debug/assertions.h \
 	D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/debug/debug.h \
 	D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/exception \
+	D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/experimental/source_location \
 	D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/ext/aligned_buffer.h \
 	D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/ext/alloc_traits.h \
 	D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/ext/atomicity.h \
