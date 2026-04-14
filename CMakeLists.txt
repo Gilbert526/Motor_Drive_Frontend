@@ -8,6 +8,7 @@ set(CMAKE_AUTOMOC ON)
 set(QT_VERSION_MAJOR 6)
 
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS
+    Core
     Widgets
     SerialPort
     PrintSupport
