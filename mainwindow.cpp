@@ -62,6 +62,7 @@ void MainWindow::sendCommand(const QString &cmd) {
         QMessageBox::warning(this, "Warning", "Please open the serial port first");
         return;
     }
+
     QByteArray data = cmd.toUtf8();
     serial->write(data);
     ui->plainTextEditReceive->appendPlainText(">> " + cmd);
@@ -69,26 +70,35 @@ void MainWindow::sendCommand(const QString &cmd) {
 
 void MainWindow::on_pushButtonStartToggle_clicked() {
     if (serial->isOpen()) {
-        QMessageBox::warning(this, "Warning", "Serial port is already open");
-        return;
+        serial->close();
+        updateToggleButtonState(false);
+        statusBar()->showMessage("Serial port closed", 3000);
     }
+    else {
+        QString portName = ui->comboPort->currentText();
+        qint32 baudRate = ui->comboBaud->currentText().toInt();
+        
+        if (portName == "No available ports") {
+            QMessageBox::warning(this, "Warning", "No available ports, please refresh the list");
+            return;
+        }
+        
+        serial->setPortName(portName);
+        serial->setBaudRate(baudRate);
+        serial->setDataBits(QSerialPort::Data8);
+        serial->setParity(QSerialPort::NoParity);
+        serial->setStopBits(QSerialPort::OneStop);
+        serial->setFlowControl(QSerialPort::NoFlowControl);
+    
+        if (!serial->open(QIODevice::ReadWrite)) {
+            QMessageBox::critical(this, "Error", "Failed to open serial port: " + serial->errorString());
+            updateToggleButtonState(false);
+            return;
+        }
 
-    QString portName = ui->comboPort->currentText();
-    qint32 baudRate = ui->comboBaud->currentText().toInt();
-
-    serial->setPortName(portName);
-    serial->setBaudRate(baudRate);
-    serial->setDataBits(QSerialPort::Data8);
-    serial->setParity(QSerialPort::NoParity);
-    serial->setStopBits(QSerialPort::OneStop);
-    serial->setFlowControl(QSerialPort::NoFlowControl);
-
-    if (!serial->open(QIODevice::ReadWrite)) {
-        QMessageBox::critical(this, "Error", "Failed to open serial port: " + serial->errorString());
-        return;
+        updateToggleButtonState(true);
+        statusBar()->showMessage(QString("Opened on %1, Baud Rate %2").arg(portName).arg(baudRate), 3000);
     }
-
-    ui->pushButtonStartToggle->setEnabled(true);
 }
 
 void MainWindow::on_pushButtonRefresh_clicked() {
@@ -150,13 +160,13 @@ void MainWindow::on_pushButtonSend_clicked() {
     }
 }
 
-void MainWindow::on_pushButtonStart_clicked() { sendCommand("Start\r\n"); }
+void MainWindow::on_pushButtonStart_clicked() { sendCommand("start\r\n"); }
 
-void MainWindow::on_pushButtonStop_clicked() { sendCommand("Stop\r\n"); }
+void MainWindow::on_pushButtonStop_clicked() { sendCommand("stop\r\n"); }
 
-void MainWindow::on_pushButtonAudible_clicked() { sendCommand("Audible\r\n"); }
+void MainWindow::on_pushButtonAudible_clicked() { sendCommand("audible\r\n"); }
 
-void MainWindow::on_pushButtonReset_clicked() { sendCommand("Reset\r\n"); }
+void MainWindow::on_pushButtonReset_clicked() { sendCommand("reset\r\n"); }
 
 void MainWindow::readSerialData() {
     if (!serial->isOpen())
