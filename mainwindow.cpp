@@ -1,13 +1,50 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "SerialManager.h"
+#include "DataParser.h"
 #include <QMessageBox>
 #include <QDebug>
+#include <QSerialPortInfo>
 
 MainWindow::MainWindow(QWidget *parent):
     QMainWindow(parent),
     ui(new Ui::MainWindow),
-    serial(new QSerialPort(this)) {
+    m_serialManager(nullptr),
+    m_dataParser(nullptr),
+    m_serialThread(nullptr),
+    m_maxWavePoints(2000) {
         ui->setupUi(this);
+
+        // Initialize SerialManager and move it to a separate thread
+        m_serialManager = new SerialManager();
+        m_serialThread = new QThread(this);
+        m_serialManager->moveToThread(m_serialThread);
+        connect(m_serialThread, &QThread::finished, m_serialManager, &QObject::deleteLater);
+
+        // Create DataParser in the main thread
+        m_dataParser = new DataParser(this);
+
+        // Connect signals and slots
+        // SerialManager signals
+        connect(m_serialManager, &SerialManager::portOpened, this, &MainWindow::handleSerialPortOpened);
+        connect(m_serialManager, &SerialManager::portClosed, this, &MainWindow::handleSerialPortClosed);
+
+        // Connect raw data signal to DataParser's parseData slot
+        connect(m_serialManager, &SerialManager::rawDataReceived, m_dataParser, &DataParser::parseData);
+
+        // Connect DataParser's parsedData signal to MainWindow's handleNewData slot
+        connect(m_dataParser, &DataParser::parsedData, this, &MainWindow::handleNewData);
+
+        // Start the serial thread
+        m_serialThread->start();
+
+        // Setup the plot
+        setupPlot();
+
+        // Start the plot update timer (50ms interval)
+        m_plotTimer = new QTimer(this);
+        connect(m_plotTimer, &QTimer::timeout, this, &MainWindow::updatePlot);
+        m_plotTimer->start(50);
 
         refreshSerialPorts();
 
@@ -21,18 +58,100 @@ MainWindow::MainWindow(QWidget *parent):
         ui->pushButtonAudible->setText("Audible");
         ui->pushButtonReset->setText("Reset");
 
-        connect(serial, &QSerialPort::readyRead, this, &MainWindow::readSerialData);
-        connect(serial, &QSerialPort::errorOccurred, this, &MainWindow::handleSerialError);
+        m_plotFields = {"RPM", "IA", "IB", "IC"};
+        refreshPlotFields();
 
-        updateToggleButtonState(false);
+        updateUiForSerialState(false);
 }
 
 MainWindow::~MainWindow() {
-    if (serial->isOpen())
-        serial->close();
+    if (m_serialThread->isRunning()) {
+        m_serialThread->quit();
+        m_serialThread->wait();
+    }
     delete ui;
 }
 
+/*---------Plotting---------*/
+void MainWindow::setupPlot() {
+    // 获取 UI 中的 QCustomPlot 控件（已在 Designer 中提升）
+    m_customPlot = ui->customPlot;
+    m_customPlot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
+    m_customPlot->xAxis->setLabel("Sample");
+    m_customPlot->yAxis->setLabel("Value");
+    m_customPlot->legend->setVisible(true);
+}
+
+void MainWindow::addGraphForField(const QString &fieldName, const QColor &color) {
+    QCPGraph *graph = m_customPlot->addGraph();
+    graph->setName(fieldName);
+    graph->setPen(QPen(color, 1.5));
+    m_graphs[fieldName] = graph;
+}
+
+void MainWindow::refreshPlotFields() {
+    // 简单起见，根据 m_plotFields 列表添加曲线
+    // 实际应用中可以提供复选框让用户选择
+    m_customPlot->clearGraphs();
+    m_graphs.clear();
+
+    QList<QColor> colors = {Qt::red, Qt::green, Qt::blue, Qt::magenta, Qt::cyan, Qt::darkYellow};
+    for (int i = 0; i < m_plotFields.size(); ++i) {
+        addGraphForField(m_plotFields[i], colors[i % colors.size()]);
+    }
+}
+
+void MainWindow::handleNewData(const QHash<QString, double> &values) {
+    // 将新数据追加到波形缓冲区
+    for (auto it = values.begin(); it != values.end(); ++it) {
+        const QString &field = it.key();
+        double val = it.value();
+        QVector<double> &vec = m_waveData[field];
+        vec.append(val);
+        if (vec.size() > m_maxWavePoints) {
+            vec.remove(0, vec.size() - m_maxWavePoints);
+        }
+    }
+
+    //// 可选：在接收区显示关键字段数值（调试用）
+    //if (values.contains("RPM")) {
+    //    ui->plainTextEditReceive->appendPlainText(QString("RPM: %1").arg(values["RPM"], 0, 'f', 1));
+    //}
+}
+
+void MainWindow::updatePlot() {
+    // 更新每条曲线的数据
+    for (const QString &field : m_plotFields) {
+        QCPGraph *graph = m_graphs.value(field);
+        if (!graph) continue;
+        const QVector<double> &data = m_waveData[field];
+        if (data.isEmpty()) continue;
+
+        // 构造 X 轴坐标（0,1,2,...）
+        QVector<double> x(data.size());
+        for (int i = 0; i < data.size(); ++i) x[i] = i;
+
+        graph->setData(x, data);
+    }
+
+    // 自动调整 X 轴范围（显示最近 500 点）
+    int maxPoints = 0;
+    for (const QString &field : m_plotFields) {
+        maxPoints = qMax(maxPoints, m_waveData[field].size());
+    }
+    if (maxPoints > 500) {
+        m_customPlot->xAxis->setRange(maxPoints - 500, maxPoints);
+    } else {
+        m_customPlot->xAxis->setRange(0, 500);
+    }
+
+    // 自动调整 Y 轴范围（可选，根据当前所有曲线的值）
+    m_customPlot->rescaleAxes(true);
+    m_customPlot->replot();
+}
+
+
+/*---------Serial Port Handling---------*/
 void MainWindow::refreshSerialPorts() {
     ui->comboPort->clear();
     foreach (const QSerialPortInfo &info, QSerialPortInfo::availablePorts()) {
@@ -42,9 +161,9 @@ void MainWindow::refreshSerialPorts() {
         ui->comboPort->addItem("No available ports");
 }
 
-void MainWindow::updateToggleButtonState(bool isOpen) {
+void MainWindow::updateUiForSerialState(bool isOpen)
+{
     if (isOpen) {
-        // Disable port/baud selection and refresh button when serial is open
         ui->pushButtonStartToggle->setText("Stop");
         ui->comboPort->setEnabled(false);
         ui->comboBaud->setEnabled(false);
@@ -57,22 +176,22 @@ void MainWindow::updateToggleButtonState(bool isOpen) {
     }
 }
 
-void MainWindow::sendCommand(const QString &cmd) {
-    if (!serial->isOpen()) {
-        QMessageBox::warning(this, "Warning", "Please open the serial port first");
-        return;
-    }
 
+void MainWindow::sendCommand(const QString &cmd) {
+    if (!m_serialManager) return;
     QByteArray data = cmd.toUtf8();
-    serial->write(data);
+    // 通过信号发送到 SerialManager 线程
+    QMetaObject::invokeMethod(m_serialManager, "sendData",
+                              Qt::QueuedConnection,
+                              Q_ARG(QByteArray, data));
     ui->plainTextEditReceive->appendPlainText(">> " + cmd);
 }
 
 void MainWindow::on_pushButtonStartToggle_clicked() {
-    if (serial->isOpen()) {
-        serial->close();
-        updateToggleButtonState(false);
-        statusBar()->showMessage("Serial port closed", 3000);
+    if (m_serialManager->thread() == nullptr) return;
+
+    if (ui->pushButtonStartToggle->text() == "Stop") {
+        QMetaObject::invokeMethod(m_serialManager, "closeSerialPort", Qt::QueuedConnection);
     }
     else {
         QString portName = ui->comboPort->currentText();
@@ -83,81 +202,32 @@ void MainWindow::on_pushButtonStartToggle_clicked() {
             return;
         }
         
-        serial->setPortName(portName);
-        serial->setBaudRate(baudRate);
-        serial->setDataBits(QSerialPort::Data8);
-        serial->setParity(QSerialPort::NoParity);
-        serial->setStopBits(QSerialPort::OneStop);
-        serial->setFlowControl(QSerialPort::NoFlowControl);
-    
-        if (!serial->open(QIODevice::ReadWrite)) {
-            QMessageBox::critical(this, "Error", "Failed to open serial port: " + serial->errorString());
-            updateToggleButtonState(false);
-            return;
-        }
+        QMetaObject::invokeMethod(m_serialManager, "openSerialPort",
+                                  Qt::QueuedConnection,
+                                  Q_ARG(QString, portName),
+                                  Q_ARG(qint32, baudRate));
 
-        updateToggleButtonState(true);
-        statusBar()->showMessage(QString("Opened on %1, Baud Rate %2").arg(portName).arg(baudRate), 3000);
+        ui->pushButtonStartToggle->setEnabled(false);
     }
 }
 
 void MainWindow::on_pushButtonRefresh_clicked() {
-    if (serial->isOpen()) {
-        // On -> Off
-        serial->close();
-        updateToggleButtonState(false);
-        statusBar()->showMessage("Serial port closed", 3000);
-    } else {
-        // Off -> On
-        QString portName = ui->comboPort->currentText();
-        qint32 baudRate = ui->comboBaud->currentText().toInt();
-
-        if (portName == "No available ports") {
-            QMessageBox::warning(this, "Warning", "No available ports, please refresh the list");
-            return;
-        }
-
-        serial->setPortName(portName);
-        serial->setBaudRate(baudRate);
-        serial->setDataBits(QSerialPort::Data8);
-        serial->setParity(QSerialPort::NoParity);
-        serial->setStopBits(QSerialPort::OneStop);
-        serial->setFlowControl(QSerialPort::NoFlowControl);
-
-        if (!serial->open(QIODevice::ReadWrite)) {
-            QMessageBox::critical(this, "Error", "Failed to open serial port: " + serial->errorString());
-            updateToggleButtonState(false);
-            return;
-        }
-
-        updateToggleButtonState(true);
-        statusBar()->showMessage(QString("Opened on %1, Baud Rate %2").arg(portName).arg(baudRate), 3000);
-    }
+    refreshSerialPorts();
 }
 
 void MainWindow::on_pushButtonSend_clicked() {
-    if (!serial->isOpen()) {
-        QMessageBox::warning(this, "Warning", "Please open the serial port first");
-        return;
-    }
-
     QString sendStr = ui->lineEditSend->text();
-    if (sendStr.isEmpty())
-        return;
+    if (sendStr.isEmpty()) return;
 
-    if (!sendStr.endsWith("\r\n")) {
+    if (!sendStr.endsWith("\r\n"))
         sendStr += "\r\n";
-    }
-
-    // Send the string as UTF-8 encoded bytes
     QByteArray data = sendStr.toUtf8();
-    qint64 written = serial->write(data);
-    if (written != data.size()) {
-        QMessageBox::warning(this, "Warning", "Incomplete data sent");
-    } else {
-        // Echo the sent command in the receive area for confirmation
-        ui->plainTextEditReceive->appendPlainText(">> " + sendStr);
-    }
+
+    // 发送到串口线程
+    QMetaObject::invokeMethod(m_serialManager, "sendData",
+                              Qt::QueuedConnection,
+                              Q_ARG(QByteArray, data));
+    ui->plainTextEditReceive->appendPlainText(">> " + sendStr.trimmed());
 }
 
 void MainWindow::on_pushButtonStart_clicked() { sendCommand("start\r\n"); }
@@ -168,27 +238,19 @@ void MainWindow::on_pushButtonAudible_clicked() { sendCommand("audible\r\n"); }
 
 void MainWindow::on_pushButtonReset_clicked() { sendCommand("reset\r\n"); }
 
-void MainWindow::readSerialData() {
-    if (!serial->isOpen())
-        return;
-
-    QByteArray data = serial->readAll();
-    if (data.isEmpty())
-        return;
-
-    // 将收到的原始数据以字符串形式显示到接收区
-    // 注意：如果下位机发送的是二进制，这里可能会显示乱码，但当前我们只测试文本
-    QString received = QString::fromUtf8(data);
-    ui->plainTextEditReceive->appendPlainText("<< " + received);
+/*--------Serial Port Status Handlers--------*/
+void MainWindow::handleSerialPortOpened(bool success, const QString &errorMsg) {
+    ui->pushButtonStartToggle->setEnabled(true);
+    if (success) {
+        updateUiForSerialState(true);
+        statusBar()->showMessage("Serial port opened", 3000);
+    } else {
+        updateUiForSerialState(false);
+        QMessageBox::critical(this, "Error", "Failed to open serial port: " + errorMsg);
+    }
 }
 
-void MainWindow::handleSerialError(QSerialPort::SerialPortError error) {
-    if (error == QSerialPort::ResourceError) {
-
-        if (serial->isOpen()) {
-            serial->close();
-        }
-        updateToggleButtonState(false);
-        statusBar()->showMessage("Device lost, automatically closed", 5000);
-    }
+void MainWindow::handleSerialPortClosed() {
+    updateUiForSerialState(false);
+    statusBar()->showMessage("Serial port closed", 3000);
 }

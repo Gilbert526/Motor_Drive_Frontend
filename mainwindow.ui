@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>800</width>
-    <height>600</height>
+    <width>1456</width>
+    <height>821</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -77,8 +77,8 @@
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>90</y>
-      <width>391</width>
+      <y>460</y>
+      <width>390</width>
       <height>71</height>
      </rect>
     </property>
@@ -88,7 +88,7 @@
     <widget class="QLineEdit" name="lineEditSend">
      <property name="geometry">
       <rect>
-       <x>10</x>
+       <x>15</x>
        <y>30</y>
        <width>301</width>
        <height>21</height>
@@ -98,10 +98,10 @@
     <widget class="QPushButton" name="pushButtonSend">
      <property name="geometry">
       <rect>
-       <x>321</x>
-       <y>31</y>
-       <width>20</width>
-       <height>20</height>
+       <x>320</x>
+       <y>30</y>
+       <width>21</width>
+       <height>21</height>
       </rect>
      </property>
      <property name="text">
@@ -113,8 +113,8 @@
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>170</y>
-      <width>391</width>
+      <y>540</y>
+      <width>761</width>
       <height>231</height>
      </rect>
     </property>
@@ -126,7 +126,7 @@
       <rect>
        <x>10</x>
        <y>20</y>
-       <width>371</width>
+       <width>741</width>
        <height>201</height>
       </rect>
      </property>
@@ -136,9 +136,9 @@
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>410</y>
+      <y>90</y>
       <width>391</width>
-      <height>151</height>
+      <height>361</height>
      </rect>
     </property>
     <property name="title">
@@ -197,19 +197,63 @@
      </property>
     </widget>
    </widget>
+   <widget class="QGroupBox" name="groupBoxTuning">
+    <property name="geometry">
+     <rect>
+      <x>420</x>
+      <y>10</y>
+      <width>351</width>
+      <height>521</height>
+     </rect>
+    </property>
+    <property name="title">
+     <string>Tuning</string>
+    </property>
+   </widget>
+   <widget class="QGroupBox" name="groupBoxPlotting">
+    <property name="geometry">
+     <rect>
+      <x>789</x>
+      <y>9</y>
+      <width>651</width>
+      <height>761</height>
+     </rect>
+    </property>
+    <property name="title">
+     <string>Plotting</string>
+    </property>
+    <widget class="QCustomPlot" name="customPlot" native="true">
+     <property name="geometry">
+      <rect>
+       <x>40</x>
+       <y>90</y>
+       <width>551</width>
+       <height>641</height>
+      </rect>
+     </property>
+    </widget>
+   </widget>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>800</width>
+     <width>1456</width>
      <height>22</height>
     </rect>
    </property>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>QCustomPlot</class>
+   <extends>QWidget</extends>
+   <header location="global">qcustomplot.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

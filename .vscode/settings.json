@@ -1,6 +1,6 @@
 {
     "cmake.cmakePath": "C:/Program Files/CMake/bin/cmake.exe",
     "cmake.copyCompileCommands": "${workspaceFolder}/compile_commands.json",
-    "cmake.sourceDirectory": "C:/Users/Gilbert/OneDrive - The University of Manchester/40330. Team Project/Repository/Motor_Drive_Frontend",
+    "cmake.sourceDirectory": "${workspaceFolder}",
     "cmake.configureOnOpen": true
 }

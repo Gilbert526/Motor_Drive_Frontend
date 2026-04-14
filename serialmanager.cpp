@@ -1,24 +1,23 @@
 #include "serialmanager.h"
 #include <QDebug>
 
-SerialManager::SerialManager(QObject *parent)
-    : QObject(parent)
-    , m_serial(new QSerialPort(this))
-{
+SerialManager::SerialManager(QObject *parent) : QObject(parent), m_serial(nullptr) {
+    m_serial = new QSerialPort(this);
     connect(m_serial, &QSerialPort::readyRead, this, &SerialManager::handleReadyRead);
-    connect(m_serial, &QSerialPort::errorOccurred, this, &SerialManager::handleError);
 }
 
 SerialManager::~SerialManager()
 {
-    close();
+    if (m_serial->isOpen())
+        m_serial->close();
 }
 
-bool SerialManager::open(const QString &portName, qint32 baudRate)
+void SerialManager::openSerialPort(const QString &portName, qint32 baudRate)
 {
-    if (m_serial->isOpen())
-        close();
-
+    if (m_serial->isOpen()) {
+        emit portOpened(false, "Serial port already open");
+        return;
+    }
     m_serial->setPortName(portName);
     m_serial->setBaudRate(baudRate);
     m_serial->setDataBits(QSerialPort::Data8);
@@ -27,45 +26,31 @@ bool SerialManager::open(const QString &portName, qint32 baudRate)
     m_serial->setFlowControl(QSerialPort::NoFlowControl);
 
     if (!m_serial->open(QIODevice::ReadWrite)) {
-        emit errorOccurred(m_serial->errorString());
-        return false;
+        emit portOpened(false, m_serial->errorString());
+        return;
     }
-    return true;
+    emit portOpened(true, "");
 }
 
-void SerialManager::close()
+void SerialManager::closeSerialPort()
 {
     if (m_serial->isOpen()) {
         m_serial->close();
-        emit portClosed();
     }
-}
-
-bool SerialManager::isOpen() const
-{
-    return m_serial->isOpen();
+    emit portClosed();
 }
 
 void SerialManager::sendData(const QByteArray &data)
 {
     if (m_serial->isOpen()) {
         m_serial->write(data);
-        if (!m_serial->waitForBytesWritten(100))
-            emit errorOccurred("Write timeout");
-    } else {
-        emit errorOccurred("Serial port not open");
     }
 }
 
 void SerialManager::handleReadyRead()
 {
     QByteArray data = m_serial->readAll();
-    if (!data.isEmpty())
-        emit dataReceived(data);
-}
-
-void SerialManager::handleError(QSerialPort::SerialPortError error)
-{
-    if (error != QSerialPort::NoError)
-        emit errorOccurred(m_serial->errorString());
+    if (!data.isEmpty()) {
+        emit rawDataReceived(data);
+    }
 }

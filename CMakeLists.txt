@@ -22,8 +22,12 @@ qt_add_executable(Motor_Drive_Frontend
     mainwindow.cpp
     mainwindow.ui
     mainwindow.h
-    #dataparser.cpp
-    #serialmanager.cpp
+    dataparser.cpp
+    dataparser.h
+    serialmanager.cpp
+    serialmanager.h
+    qcustomplot.cpp
+    qcustomplot.h
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -46,6 +50,8 @@ install(TARGETS ${PROJECT_NAME}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+target_include_directories(Motor_Drive_Frontend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 if(WIN32)
     set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE TRUE)

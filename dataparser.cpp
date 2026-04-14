@@ -1,172 +1,132 @@
 #include "dataparser.h"
 #include <QDebug>
-#include <QtEndian>
+#include <qendian.h>
 
-DataParser::DataParser(QObject *parent)
-    : QObject(parent)
-    , m_syncBytes({0xAA, 0x55})
-    , m_maxPoints(20000)
-{
+const QByteArray DataParser::SYNC_BYTES = QByteArray::fromHex("AA55");
+
+DataParser::DataParser(QObject *parent): QObject{parent} {
+    m_fields = {
+        {"HALL",       1, 'B', 1 << 0},
+        {"RPM",        4, 'f', 1 << 1},
+        {"POS",        2, 'H', 1 << 2},
+        {"ELPOS",      2, 'H', 1 << 3},
+        {"DUTY_A",     4, 'f', 1 << 4},
+        {"DUTY_B",     4, 'f', 1 << 5},
+        {"DUTY_C",     4, 'f', 1 << 6},
+        {"IA",         4, 'f', 1 << 7},
+        {"IB",         4, 'f', 1 << 8},
+        {"IC",         4, 'f', 1 << 9},
+        {"VA",         4, 'f', 1 << 10},
+        {"VB",         4, 'f', 1 << 11},
+        {"VBATT",      4, 'f', 1 << 12},
+        {"IBATT",      4, 'f', 1 << 13},
+        {"IA_RAW",     2, 'H', 1 << 14},
+        {"IB_RAW",     2, 'H', 1 << 15},
+        {"IC_RAW",     2, 'H', 1 << 16},
+        {"VA_RAW",     2, 'H', 1 << 17},
+        {"VB_RAW",     2, 'H', 1 << 18},
+        {"VBATT_RAW",  2, 'H', 1 << 19},
+        {"IBATT_RAW",  2, 'H', 1 << 20},
+        {"IA_MAX",     4, 'f', 1 << 21},
+        {"IB_MAX",     4, 'f', 1 << 22},
+        {"IC_MAX",     4, 'f', 1 << 23},
+        {"IBATT_MAX",  4, 'f', 1 << 24},
+        {"FOC_ID",     4, 'f', 1 << 25},
+        {"FOC_IQ",     4, 'f', 1 << 26},
+        {"FOC_IDSP",   4, 'f', 1 << 27},
+        {"FOC_IQSP",   4, 'f', 1 << 28},
+        {"FOC_VD",     4, 'f', 1 << 29},
+        {"FOC_VQ",     4, 'f', 1 << 30}
+    };
 }
 
-void DataParser::setSyncBytes(const QByteArray &sync)
-{
-    m_syncBytes = sync;
-}
-
-void DataParser::setFields(const QList<FieldDef> &fields)
-{
-    m_fields = fields;
-    m_dataQueues.clear();
-    for (const auto &field : m_fields) {
-        m_dataQueues[field.name] = QVector<double>();
-        m_dataQueues[field.name].reserve(m_maxPoints);
-    }
-}
-
-void DataParser::setMaxDataPoints(int points)
-{
-    m_maxPoints = points;
-    for (auto &queue : m_dataQueues) {
-        if (queue.size() > m_maxPoints)
-            queue = queue.mid(queue.size() - m_maxPoints);
-        queue.reserve(m_maxPoints);
-    }
-}
-
-void DataParser::parseReceivedData(const QByteArray &data)
-{
-    m_buffer.append(data);
-    tryParsePackets();
-}
-
-void DataParser::tryParsePackets()
-{
+void DataParser::parseData(const QByteArray &newData) {
+    m_buffer.append(newData);
     int idx = 0;
-    int bufferSize = m_buffer.size();
-    int syncLen = m_syncBytes.size();
-
-    while (idx + syncLen + 4 <= bufferSize) {
-        // 查找帧头
-        if (m_buffer.mid(idx, syncLen) != m_syncBytes) {
-            // 不是帧头，可能是文本信息
-            int end = m_buffer.indexOf(m_syncBytes, idx);
-            if (end == -1) {
-                // 没有更多帧头，将剩余数据当作文本输出
-                QByteArray text = m_buffer.mid(idx);
-                if (!text.isEmpty()) {
-                    emit textMessageReceived(QString::fromUtf8(text).trimmed());
-                }
-                m_buffer.clear();
-                return;
-            } else {
-                // 从 idx 到 end 之间的数据是文本
-                QByteArray text = m_buffer.mid(idx, end - idx);
-                if (!text.isEmpty()) {
-                    emit textMessageReceived(QString::fromUtf8(text).trimmed());
-                }
-                idx = end;
-                continue;
-            }
+    while (idx < m_buffer.size()) {
+        int nextIdx;
+        QHash<QString, double> values = tryParsePacket(idx, nextIdx);
+        if (!values.isEmpty()) {
+            emit parsedData(values);   // Inform MainWindow of new parsed data
+            idx = nextIdx;
+        } else {
+            break;  // 数据不足，等待更多数据
         }
-
-        // 读取 mask（4字节小端）
-        quint32 mask = 0;
-        for (int i = 0; i < 4; ++i) {
-            mask |= (static_cast<quint8>(m_buffer[idx + syncLen + i]) << (8 * i));
-        }
-
-        int pos = idx + syncLen + 4;
-        QMap<QString, double> packetData;
-
-        for (const auto &field : m_fields) {
-            if (mask & field.maskBit) {
-                if (pos + field.size > bufferSize) {
-                    // 数据不足，等待后续字节
-                    return;
-                }
-                double value = 0.0;
-                const char *raw = m_buffer.constData() + pos;
-                if (field.fmt == 'B') {
-                    value = static_cast<quint8>(*raw);
-                } else if (field.fmt == 'H') {
-                    value = qFromLittleEndian<quint16>(raw);
-                } else if (field.fmt == 'f') {
-                    value = qFromLittleEndian<float>(raw);
-                } else {
-                    qWarning() << "Unknown format" << field.fmt;
-                }
-                packetData[field.name] = value;
-                appendToQueue(field.name, value);
-                pos += field.size;
-            }
-        }
-
-        if (!packetData.isEmpty()) {
-            emit packetParsed(packetData);
-        }
-        idx = pos;
     }
-
-    // 移除已处理的字节
-    if (idx > 0)
+    // 保留未处理的部分（最多保留一帧的最大长度，避免无限增长）
+    if (idx > 0) {
         m_buffer = m_buffer.mid(idx);
+        if (m_buffer.size() > MAX_FRAME_SIZE)
+            m_buffer.clear();
+    }
 }
 
-void DataParser::appendToQueue(const QString &name, double value)
-{
-    if (!m_dataQueues.contains(name))
-        return;
-    auto &vec = m_dataQueues[name];
-    vec.append(value);
-    if (vec.size() > m_maxPoints)
-        vec.removeFirst();
-}
+QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartIdx) {
+    QHash<QString, double> result;
+    nextStartIdx = startIdx;
 
-QVector<double> DataParser::getFieldData(const QString &fieldName) const
-{
-    return m_dataQueues.value(fieldName);
-}
+    // 查找帧头
+    int headerPos = m_buffer.indexOf(SYNC_BYTES, startIdx);
+    if (headerPos == -1) {
+        // 没有找到帧头，跳过所有已扫描的数据（但保留最后几个字节防止跨边界）
+        nextStartIdx = m_buffer.size() - SYNC_BYTES.size() + 1;
+        if (nextStartIdx < startIdx) nextStartIdx = m_buffer.size();
+        return result;
+    }
 
-QByteArray DataParser::buildPacket(const QMap<QString, double> &values) const
-{
-    QByteArray packet;
-    packet.append(m_syncBytes);
+    // 帧头位置确定了，检查是否有足够空间读取 mask (4字节)
+    if (m_buffer.size() < headerPos + 2 + 4)
+        return result;
 
-    // 计算 mask
+    // 读取 mask（小端32位）
     quint32 mask = 0;
-    for (auto it = values.begin(); it != values.end(); ++it) {
-        QString name = it.key();
-        for (const auto &field : m_fields) {
-            if (field.name == name) {
-                mask |= field.maskBit;
-                break;
-            }
-        }
-    }
+    const uchar* p = reinterpret_cast<const uchar*>(m_buffer.data() + headerPos + 2);
+    mask = p[0] | (p[1]<<8) | (p[2]<<16) | (p[3]<<24);
 
-    // 追加 mask（小端）
-    for (int i = 0; i < 4; ++i) {
-        packet.append(static_cast<char>((mask >> (8 * i)) & 0xFF));
-    }
+    int payloadPos = headerPos + 2 + 4;
+    int currentPos = payloadPos;
 
-    // 按字段顺序追加数据（根据mask存在性）
-    for (const auto &field : m_fields) {
+    // 按字段定义顺序解析
+    for (const FieldDef &field : m_fields) {
         if (mask & field.maskBit) {
-            double val = values.value(field.name, 0.0);
-            if (field.fmt == 'B') {
-                quint8 byteVal = static_cast<quint8>(val);
-                packet.append(reinterpret_cast<const char*>(&byteVal), 1);
-            } else if (field.fmt == 'H') {
-                quint16 shortVal = static_cast<quint16>(val);
-                qToLittleEndian(shortVal, packet.data() + packet.size());
-                packet.resize(packet.size() + 2);
-            } else if (field.fmt == 'f') {
-                float floatVal = static_cast<float>(val);
-                qToLittleEndian(floatVal, packet.data() + packet.size());
-                packet.resize(packet.size() + 4);
-            }
+            // 该字段存在，检查缓冲区长度是否足够
+            if (m_buffer.size() < currentPos + field.size)
+                return result;  // 数据不足
+            QByteArray raw = m_buffer.mid(currentPos, field.size);
+            double value = unpackValue(raw, field);
+            result[field.name] = value;
+            currentPos += field.size;
         }
+        // 如果字段不存在，不移动指针，继续下一个字段
     }
-    return packet;
+
+    // 成功解析一个完整包
+    nextStartIdx = currentPos;
+    return result;
+}
+
+double DataParser::unpackValue(const QByteArray &data, const FieldDef &field) {
+    if (data.size() < field.size) return 0.0;
+    switch (field.format) {
+    case 'B': // unsigned char
+        return static_cast<double>(static_cast<quint8>(data[0]));
+    case 'H': // unsigned short (小端)
+        return static_cast<double>(qFromLittleEndian<quint16>(data.data()));
+    case 'f': // float (小端)
+        return static_cast<double>(qFromLittleEndian<float>(data.data()));
+    default:
+        return 0.0;
+    }
+}
+
+QVector<double> DataParser::getWaveform(const QString &fieldName) const {
+    // 此函数暂不实现，由 MainWindow 自己维护波形队列
+    return QVector<double>();
+}
+
+QStringList DataParser::getFieldNames() const {
+    QStringList names;
+    for (const auto &f : m_fields)
+        names << f.name;
+    return names;
 }
