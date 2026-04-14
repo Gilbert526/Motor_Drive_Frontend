@@ -29,8 +29,14 @@ private slots:
     void on_pushButtonSend_clicked();
     void on_pushButtonStart_clicked();
     void on_pushButtonStop_clicked();
+    void on_pushButtonAlign_clicked();
     void on_pushButtonAudible_clicked();
     void on_pushButtonReset_clicked();
+
+    void on_pushButtonPreset1_clicked();
+    void on_pushButtonPreset2_clicked();
+    void on_pushButtonPreset3_clicked();
+    void on_pushButtonPreset4_clicked();
 
     void handleSerialPortOpened(bool success, const QString &errorMsg);
     void handleSerialPortClosed();

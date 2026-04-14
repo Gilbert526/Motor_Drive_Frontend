@@ -234,9 +234,19 @@ void MainWindow::on_pushButtonStart_clicked() { sendCommand("start\r\n"); }
 
 void MainWindow::on_pushButtonStop_clicked() { sendCommand("stop\r\n"); }
 
+void MainWindow::on_pushButtonAlign_clicked() { sendCommand("align\r\n"); }
+
 void MainWindow::on_pushButtonAudible_clicked() { sendCommand("audible\r\n"); }
 
 void MainWindow::on_pushButtonReset_clicked() { sendCommand("reset\r\n"); }
+
+void MainWindow::on_pushButtonPreset1_clicked() { sendCommand("log preset 1\r\n"); }
+
+void MainWindow::on_pushButtonPreset2_clicked() { sendCommand("log preset 2\r\n"); }
+
+void MainWindow::on_pushButtonPreset3_clicked() { sendCommand("log preset 3\r\n"); }
+
+void MainWindow::on_pushButtonPreset4_clicked() { sendCommand("log preset 4\r\n"); }
 
 /*--------Serial Port Status Handlers--------*/
 void MainWindow::handleSerialPortOpened(bool success, const QString &errorMsg) {
