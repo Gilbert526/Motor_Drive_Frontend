@@ -317,8 +317,6 @@ C:/Users/gilbe/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Projec
   C:/Qt/6.11.0/mingw_64/include/QtCore/qyieldcpu.h \
   C:/Qt/6.11.0/mingw_64/include/QtGui/QAction \
   C:/Qt/6.11.0/mingw_64/include/QtGui/QActionGroup \
-  C:/Qt/6.11.0/mingw_64/include/QtGui/QDragEnterEvent \
-  C:/Qt/6.11.0/mingw_64/include/QtGui/QDropEvent \
   C:/Qt/6.11.0/mingw_64/include/QtGui/QFileSystemModel \
   C:/Qt/6.11.0/mingw_64/include/QtGui/QMatrix4x4 \
   C:/Qt/6.11.0/mingw_64/include/QtGui/QMouseEvent \

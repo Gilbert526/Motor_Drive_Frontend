@@ -25,6 +25,8 @@ public:
 
     QStringList getFieldNames() const;
 
+    QString getCommandNameForField(const QString &displayName) const;
+
 signals:
     void parsedData(const QHash<QString, double> &values);
 
@@ -39,6 +41,9 @@ private:
     QHash<QString, double> tryParsePacket(int startIdx, int &nextStartIdx);
 
     double unpackValue(const QByteArray &data, const FieldDef &field);
+
+    QHash<QString, QString> m_displayToCmd;
+    void initCommandMapping();
 };
 
 #endif // DATAPARSER_H

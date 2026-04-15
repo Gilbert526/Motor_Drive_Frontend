@@ -38,6 +38,7 @@ DataParser::DataParser(QObject *parent): QObject{parent} {
         {"FOC_VD",     4, 'f', 1 << 29},
         {"FOC_VQ",     4, 'f', 1 << 30}
     };
+    initCommandMapping();
 }
 
 void DataParser::parseData(const QByteArray &newData) {
@@ -129,4 +130,42 @@ QStringList DataParser::getFieldNames() const {
     for (const auto &f : m_fields)
         names << f.name;
     return names;
+}
+
+QString DataParser::getCommandNameForField(const QString &displayName) const {
+    return m_displayToCmd.value(displayName, displayName);
+}
+
+void DataParser::initCommandMapping() {
+    m_displayToCmd["HALL"]      = "hall";
+    m_displayToCmd["RPM"]       = "rpm";
+    m_displayToCmd["POS"]       = "pos";
+    m_displayToCmd["ELPOS"]     = "elpos";
+    m_displayToCmd["DUTY_A"]    = "duty_a";
+    m_displayToCmd["DUTY_B"]    = "duty_b";
+    m_displayToCmd["DUTY_C"]    = "duty_c";
+    m_displayToCmd["IA"]        = "ia";
+    m_displayToCmd["IB"]        = "ib";
+    m_displayToCmd["IC"]        = "ic";
+    m_displayToCmd["VA"]        = "va";
+    m_displayToCmd["VB"]        = "vb";
+    m_displayToCmd["VBATT"]     = "vbatt";
+    m_displayToCmd["IBATT"]     = "ibatt";
+    m_displayToCmd["IA_RAW"]    = "ia_raw";
+    m_displayToCmd["IB_RAW"]    = "ib_raw";
+    m_displayToCmd["IC_RAW"]    = "ic_raw";
+    m_displayToCmd["VA_RAW"]    = "va_raw";
+    m_displayToCmd["VB_RAW"]    = "vb_raw";
+    m_displayToCmd["VBATT_RAW"] = "vbatt_raw";
+    m_displayToCmd["IBATT_RAW"] = "ibatt_raw";
+    m_displayToCmd["IA_MAX"]    = "ia_max";
+    m_displayToCmd["IB_MAX"]    = "ib_max";
+    m_displayToCmd["IC_MAX"]    = "ic_max";
+    m_displayToCmd["IBATT_MAX"] = "ibatt_max";
+    m_displayToCmd["FOC_ID"]    = "id";
+    m_displayToCmd["FOC_IQ"]    = "iq";
+    m_displayToCmd["FOC_IDSP"]  = "idsp";
+    m_displayToCmd["FOC_IQSP"]  = "iqsp";
+    m_displayToCmd["FOC_VD"]    = "vd";
+    m_displayToCmd["FOC_VQ"]    = "vq";
 }

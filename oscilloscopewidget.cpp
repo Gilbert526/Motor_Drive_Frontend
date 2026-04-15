@@ -3,16 +3,14 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
-#include <QDragEnterEvent>
 #include <QMimeData>
 
 OscilloscopeWidget::OscilloscopeWidget(QWidget *parent):
     QWidget(parent),
-    m_plot(new QCustomPlot(this)) {
+    m_plot(new QCustomPlot(this)),
+    m_yLocked(false) {
         setMinimumHeight(200);
         setupUi();
-        setAcceptDrops(true);
-        m_plot->setAcceptDrops(false);
         m_colors = {Qt::red, Qt::green, Qt::blue, Qt::magenta, Qt::cyan, Qt::darkYellow, Qt::darkCyan};
 }
 
@@ -22,23 +20,31 @@ void OscilloscopeWidget::setupUi() {
     m_titleLabel->setAlignment(Qt::AlignCenter);
     m_titleLabel->setStyleSheet("font-weight: bold; background-color: #f0f0f0;");
     
-    // 配置按钮
+    // Config button
     m_configBtn = new QPushButton("⚙️", this);
     m_configBtn->setFixedSize(20, 20);
     connect(m_configBtn, &QPushButton::clicked, this, &OscilloscopeWidget::onConfigure);
 
-    // Add scope below button
+    // Add Scope Below Button
     QPushButton *addBelowBtn = new QPushButton("+", this);
     addBelowBtn->setFixedSize(20, 20);
     connect(addBelowBtn, &QPushButton::clicked, this, &OscilloscopeWidget::addBelowRequested);
 
-    // Remove scope button
+    // Remove Scope Button
     QPushButton *removeBtn = new QPushButton("-", this);
     removeBtn->setFixedSize(20, 20);
     connect(removeBtn, &QPushButton::clicked, this, &OscilloscopeWidget::removeRequested);
+
+    // Y-axis Lock Button
+    m_yLockBtn = new QPushButton("🔒", this);
+    m_yLockBtn->setFixedSize(20, 20);
+    m_yLockBtn->setCheckable(true);
+    m_yLockBtn->setToolTip("锁定Y轴后不会自动缩放");
+    connect(m_yLockBtn, &QPushButton::clicked, this, &OscilloscopeWidget::onToggleYLock);
     
     QHBoxLayout *titleLayout = new QHBoxLayout;
     titleLayout->addWidget(m_titleLabel);
+    titleLayout->addWidget(m_yLockBtn);
     titleLayout->addWidget(m_configBtn);
     titleLayout->addWidget(addBelowBtn);
     titleLayout->addWidget(removeBtn);
@@ -47,7 +53,9 @@ void OscilloscopeWidget::setupUi() {
     m_plot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
     m_plot->axisRect()->setRangeDrag(Qt::Vertical);
     m_plot->axisRect()->setRangeZoom(Qt::Vertical);
-    m_plot->xAxis->setLabel("Sample");
+    m_plot->xAxis->setLabel("Time (s)");
+    m_plot->xAxis->setNumberFormat("gbc"); // 自动选择格式
+    m_plot->xAxis->setNumberPrecision(2);  // 3 位小数
     m_plot->yAxis->setLabel("Value");
     m_plot->legend->setVisible(true);
     m_plot->legend->setFont(QFont("Arial", 7));
@@ -57,8 +65,6 @@ void OscilloscopeWidget::setupUi() {
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->addLayout(titleLayout);
     layout->addWidget(m_plot);
-    
-    setAcceptDrops(true);
 }
 
 void OscilloscopeWidget::setTitle(const QString &title) {
@@ -80,46 +86,37 @@ void OscilloscopeWidget::setFields(const QStringList &fields) {
     // 注意：不发射 fieldsChanged，避免循环
 }
 
-void OscilloscopeWidget::updatePlot(const QHash<QString, QVector<double>> &dataPool, int maxPoints) {
+void OscilloscopeWidget::updatePlot(const QHash<QString, QVector<double>> &dataPool,
+                                    const QVector<double> &timeStamps, int maxPoints) {
     if (m_fields.isEmpty()) return;
+    if (timeStamps.isEmpty()) return;
+
+    int totalPoints = timeStamps.size();
+    int startIdx = qMax(0, totalPoints - maxPoints);
+    int pointsToShow = totalPoints - startIdx;
+    if (pointsToShow <= 0) return;
+
+    QVector<double> x = timeStamps.mid(startIdx, pointsToShow);
+    double xMin = x.first();
+    double xMax = x.last();
     
-    // 找出所有曲线数据的最大长度
-    int maxDataSize = 0;
-    for (const QString &field : m_fields) {
-        if (dataPool.contains(field)) {
-            maxDataSize = qMax(maxDataSize, dataPool[field].size());
-        }
-    }
-    if (maxDataSize == 0) return;
-    
-    // 更新每条曲线的数据
+    // Update each graph's data
     for (const QString &field : m_fields) {
         QCPGraph *graph = m_graphs.value(field);
         if (!graph) continue;
         const QVector<double> &data = dataPool.value(field);
-        if (data.isEmpty()) continue;
-        
-        int totalPoints = data.size();
-        int startIdx = qMax(0, totalPoints - maxPoints);
-        int pointsToShow = totalPoints - startIdx;
-        
-        QVector<double> x(pointsToShow);
-        QVector<double> y(pointsToShow);
-        for (int i = 0; i < pointsToShow; ++i) {
-            x[i] = startIdx + i;
-            y[i] = data[startIdx + i];
-        }
+        if (data.size() < totalPoints) continue;  // 数据长度不一致，跳过
+
+        // 提取对应区间的 Y 值
+        QVector<double> y = data.mid(startIdx, pointsToShow);
         graph->setData(x, y);
     }
     
-    // 设置 X 轴范围（显示最近 maxPoints 点）
-    int xStart = qMax(0, maxDataSize - maxPoints);
-    m_plot->xAxis->setRange(xStart, maxDataSize);
+    // Update x-axis based on timestamps
+    m_plot->xAxis->setRange(xMin, xMax);
     // 只自动缩放 Y 轴，保留 X 轴范围
-    m_plot->rescaleAxes(false);
+    updateYAxis();
     m_plot->replot();
-
-    qDebug() << "updatePlot maxPoints=" << maxPoints << " maxDataSize=" << maxDataSize;
 }
 
 void OscilloscopeWidget::clear() {
@@ -130,22 +127,27 @@ void OscilloscopeWidget::clear() {
     m_plot->replot();
 }
 
-void OscilloscopeWidget::dragEnterEvent(QDragEnterEvent *event) {
-    if (event->mimeData()->hasText())
-        event->acceptProposedAction();
-}
-
-void OscilloscopeWidget::dropEvent(QDropEvent *event) {
-    QString fieldName = event->mimeData()->text();
-    if (!fieldName.isEmpty() && !m_fields.contains(fieldName)) {
-        QStringList newFields = m_fields;
-        newFields.append(fieldName);
-        setFields(newFields);
-    }
-    event->acceptProposedAction();
-}
-
 void OscilloscopeWidget::onConfigure() {
     // 通知主窗口弹出配置对话框
     emit fieldsChanged();
+}
+
+void OscilloscopeWidget::onToggleYLock() {
+    m_yLocked = m_yLockBtn->isChecked();
+    m_yLockBtn->setText(m_yLocked ? "🔓" : "🔒");
+    if (!m_yLocked) {
+        // 解锁时，立即自动调整一次Y轴（使用当前数据）
+        updateYAxis();
+        m_plot->replot();
+    }
+}
+
+void OscilloscopeWidget::updateYAxis() {
+    if (!m_yLocked) {
+        // 自动缩放 Y 轴（只缩放，不改变 X 轴范围）
+        m_plot->rescaleAxes(false);
+        // 增加一点边距，避免曲线贴边
+        m_plot->yAxis->scaleRange(1.1, m_plot->yAxis->range().center());
+    }
+    // 如果锁定，不做任何操作，保留用户当前设置的 Y 轴范围
 }

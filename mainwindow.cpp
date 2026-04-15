@@ -15,7 +15,10 @@ MainWindow::MainWindow(QWidget *parent):
     m_dataParser(nullptr),
     m_serialThread(nullptr),
     m_maxWavePoints(20000),     // 最多存储20000点
-    m_currentMaxPoints(500) {
+    m_currentMaxPoints(500),
+    m_plotPaused(false),
+    m_packetCounter(0),
+    m_packetIntervalSec(1.0 / DEFAULT_PACKET_FREQ_HZ) {
         ui->setupUi(this);
 
         // 初始化串口管理线程
@@ -87,6 +90,7 @@ MainWindow::MainWindow(QWidget *parent):
         ui->pushButtonStop->setText("Stop");
         ui->pushButtonAudible->setText("Audible");
         ui->pushButtonReset->setText("Reset");
+        ui->pushButtonPause->setText("⏸");
 
         updateUiForSerialState(false);
     }
@@ -101,19 +105,29 @@ MainWindow::~MainWindow() {
 
 // ==================== 波形区域初始化 ====================
 void MainWindow::setupPlottingArea() {
-    // 获取 UI 中已放置的控件（需在 .ui 文件中定义）
+    // Obtain pointers to UI elements
     m_fieldList = ui->fieldListWidget;
     m_scrollArea = ui->scrollArea;
     m_oscContainer = ui->oscilloscopeContainer;
     m_sampleSlider = ui->sampleSlider;
     m_sampleLabel = ui->sampleLabel;
 
-    // 设置字段列表支持拖拽
-    m_fieldList->setDragEnabled(true);
-    m_fieldList->setDragDropMode(QAbstractItemView::DragOnly);
+    // Set field list to single selection mode
     m_fieldList->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_fieldList->setDragEnabled(false);
+    m_fieldList->clear();
+    // Get available fields from DataParser and populate the list with checkable items
+    QStringList allFields = m_dataParser->getFieldNames();
+    for (const QString &field : allFields) {
+        QListWidgetItem *item = new QListWidgetItem(field);
+        item->setText(field);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+        item->setCheckState(Qt::Unchecked);
+        m_fieldList->addItem(item);
+    }
+    connect(m_fieldList, &QListWidget::itemChanged, this, &MainWindow::onFieldCheckStateChanged);
 
-    // 设置滚动区域内部容器的布局
+    // Set up the oscilloscope container with a vertical layout
     if (m_oscContainer->layout() == nullptr) {
         m_oscLayout = new QVBoxLayout(m_oscContainer);
         m_oscContainer->setLayout(m_oscLayout);
@@ -122,7 +136,7 @@ void MainWindow::setupPlottingArea() {
     }
     m_oscLayout->setAlignment(Qt::AlignTop);
 
-    // 采样滑动条
+    // Sample slider configuration
     m_sampleSlider->setRange(100, 10000);
     m_sampleSlider->setSingleStep(100);
     m_sampleSlider->setPageStep(100);
@@ -131,10 +145,10 @@ void MainWindow::setupPlottingArea() {
     m_sampleLabel->setText(QString::number(m_currentMaxPoints));
     connect(m_sampleSlider, &QSlider::valueChanged, this, &MainWindow::on_sampleSlider_valueChanged);
 
-    // 字段列表双击信号
+    // Double click field to add new oscilloscope
     connect(m_fieldList, &QListWidget::itemDoubleClicked, this, &MainWindow::on_fieldList_itemDoubleClicked);
 
-    // 添加一个默认示波器
+    // Add a scope by default
     addOscilloscope("Scope 1");
 }
 
@@ -184,7 +198,9 @@ void MainWindow::loadAvailableFields() {
     m_fieldList->clear();
     for (const QString &field : allFields) {
         QListWidgetItem *item = new QListWidgetItem(field);
-        item->setFlags(item->flags() | Qt::ItemIsDragEnabled);
+        item->setText(field);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+        item->setCheckState(Qt::Unchecked);
         m_fieldList->addItem(item);
     }
 }
@@ -231,23 +247,38 @@ void MainWindow::on_oscilloscopeConfigRequested(OscilloscopeWidget *osc) {
 }
 
 void MainWindow::on_sampleSlider_valueChanged(int value) {
-    m_currentMaxPoints = value;
-    m_sampleLabel->setText(QString::number(value));
+    // 1. Calculate the "snapped" value
+    int snappedValue = (value / 100) * 100;
+
+    // 2. Block signals temporarily to prevent infinite loops when we reset the value
+    m_sampleSlider->blockSignals(true);
+    m_sampleSlider->setValue(snappedValue);
+    m_sampleSlider->blockSignals(false);
+
+    // 3. Update your label and internal variables
+    m_currentMaxPoints = snappedValue;
+    m_sampleLabel->setText(QString::number(snappedValue));
     updateAllPlots();
 }
 
 void MainWindow::updateAllPlots() {
     for (OscilloscopeWidget *osc : m_oscilloscopes) {
-        osc->updatePlot(m_waveData, m_currentMaxPoints);
+        osc->updatePlot(m_waveData, m_timeStamps, m_currentMaxPoints);
     }
 }
 
 void MainWindow::updatePlot() {
-    updateAllPlots();
+    if (!m_plotPaused) {
+        updateAllPlots();
+    }
 }
 
 // ==================== 数据处理 ====================
 void MainWindow::handleNewData(const QHash<QString, double> &values) {
+    // Calculate current time
+    double currentTime = m_packetCounter * m_packetIntervalSec;
+    m_packetCounter++;
+    addTimeStamp(currentTime);
     // 追加到波形缓冲区
     for (auto it = values.begin(); it != values.end(); ++it) {
         const QString &field = it.key();
@@ -338,15 +369,40 @@ void MainWindow::on_pushButtonStop_clicked()    { sendCommand("stop\r\n"); }
 void MainWindow::on_pushButtonAlign_clicked()   { sendCommand("align\r\n"); }
 void MainWindow::on_pushButtonAudible_clicked() { sendCommand("audible\r\n"); }
 void MainWindow::on_pushButtonReset_clicked()   { sendCommand("reset\r\n"); }
+void MainWindow::on_pushButtonFocManual_clicked() { sendCommand("foc manual\r\n"); }
 void MainWindow::on_pushButtonPreset1_clicked() { sendCommand("log preset 1\r\n"); }
 void MainWindow::on_pushButtonPreset2_clicked() { sendCommand("log preset 2\r\n"); }
 void MainWindow::on_pushButtonPreset3_clicked() { sendCommand("log preset 3\r\n"); }
 void MainWindow::on_pushButtonPreset4_clicked() { sendCommand("log preset 4\r\n"); }
+void MainWindow::on_pushButtonBin_clicked()     { sendCommand("log bin\r\n"); }
+void MainWindow::on_pushButtonUtf8_clicked()    { sendCommand("log utf8\r\n"); }
+
+void MainWindow::on_pushButtonPause_clicked() {
+    m_plotPaused = !m_plotPaused;
+    ui->pushButtonPause->setText(m_plotPaused ? "▶" : "⏸");
+    if (!m_plotPaused) {
+        // 如果从暂停恢复，立即刷新一次
+        updateAllPlots();
+    }
+}
+
+void MainWindow::onFieldCheckStateChanged(QListWidgetItem *item) {
+    if (!item) return;
+    QString fieldName = item->text();
+    bool checked = (item->checkState() == Qt::Checked);
+    
+    // 构造命令字符串
+    QString cmdName = m_dataParser->getCommandNameForField(fieldName);
+    QString cmd = checked ? QString("log add %1\r\n").arg(cmdName)
+                          : QString("log rm %1\r\n").arg(cmdName);
+    sendCommand(cmd);   // 复用已有的 sendCommand
+}
 
 void MainWindow::handleSerialPortOpened(bool success, const QString &errorMsg) {
     ui->pushButtonStartToggle->setEnabled(true);
     if (success) {
         updateUiForSerialState(true);
+        syncFieldCheckStates();
         statusBar()->showMessage("Serial port opened", 3000);
     } else {
         updateUiForSerialState(false);
@@ -357,4 +413,22 @@ void MainWindow::handleSerialPortOpened(bool success, const QString &errorMsg) {
 void MainWindow::handleSerialPortClosed() {
     updateUiForSerialState(false);
     statusBar()->showMessage("Serial port closed", 3000);
+}
+
+void MainWindow::syncFieldCheckStates()
+{
+    for (int i = 0; i < m_fieldList->count(); ++i) {
+        QListWidgetItem *item = m_fieldList->item(i);
+        if (item->checkState() == Qt::Checked) {
+            sendCommand(QString("log add %1\r\n").arg(m_dataParser->getCommandNameForField(item->text())));
+        }
+    }
+}
+
+void MainWindow::addTimeStamp(double offsetSec)
+{
+    m_timeStamps.append(offsetSec);
+    if (m_timeStamps.size() > m_maxWavePoints) {
+        m_timeStamps.remove(0, m_timeStamps.size() - m_maxWavePoints);
+    }
 }

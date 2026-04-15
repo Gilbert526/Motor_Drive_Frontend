@@ -209,6 +209,19 @@
       <string>Align</string>
      </property>
     </widget>
+    <widget class="QPushButton" name="pushButtonFocManual">
+     <property name="geometry">
+      <rect>
+       <x>285</x>
+       <y>70</y>
+       <width>80</width>
+       <height>24</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>FOC Manual</string>
+     </property>
+    </widget>
    </widget>
    <widget class="QGroupBox" name="groupBoxTuning">
     <property name="geometry">
@@ -255,7 +268,7 @@
               <x>0</x>
               <y>0</y>
               <width>315</width>
-              <height>687</height>
+              <height>686</height>
              </rect>
             </property>
             <layout class="QVBoxLayout" name="verticalLayout_OscContainer">
@@ -310,6 +323,13 @@
              </property>
              <property name="alignment">
               <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="pushButtonPause">
+             <property name="text">
+              <string>PushButton</string>
              </property>
             </widget>
            </item>
@@ -383,6 +403,32 @@
      </property>
      <property name="text">
       <string>Preset 4</string>
+     </property>
+    </widget>
+    <widget class="QPushButton" name="pushButtonBin">
+     <property name="geometry">
+      <rect>
+       <x>15</x>
+       <y>70</y>
+       <width>80</width>
+       <height>24</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Bin</string>
+     </property>
+    </widget>
+    <widget class="QPushButton" name="pushButtonUtf8">
+     <property name="geometry">
+      <rect>
+       <x>105</x>
+       <y>70</y>
+       <width>80</width>
+       <height>24</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>UTF8</string>
      </property>
     </widget>
    </widget>

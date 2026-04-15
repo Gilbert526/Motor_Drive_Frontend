@@ -14,6 +14,8 @@
 #include <QVBoxLayout>
 #include "OscilloscopeWidget.h"
 
+#define DEFAULT_PACKET_FREQ_HZ 1000
+
 class SerialManager;
 class DataParser;
 
@@ -29,6 +31,8 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+    const QVector<double>& getTimeStamps() const { return m_timeStamps; }
+
 private slots:
     // 串口控制
     void on_pushButtonStartToggle_clicked();
@@ -39,10 +43,17 @@ private slots:
     void on_pushButtonAlign_clicked();
     void on_pushButtonAudible_clicked();
     void on_pushButtonReset_clicked();
+    void on_pushButtonFocManual_clicked();
     void on_pushButtonPreset1_clicked();
     void on_pushButtonPreset2_clicked();
     void on_pushButtonPreset3_clicked();
     void on_pushButtonPreset4_clicked();
+    void on_pushButtonBin_clicked();
+    void on_pushButtonUtf8_clicked();
+    
+    void on_pushButtonPause_clicked();
+
+    void onFieldCheckStateChanged(QListWidgetItem *item);
 
     // 串口状态处理
     void handleSerialPortOpened(bool success, const QString &errorMsg);
@@ -87,6 +98,14 @@ private:
     // 定时器
     QTimer *m_plotTimer;
 
+    // Timer
+    QVector<double> m_timeStamps;        // 每个采样点的时间（秒，相对）
+    qint64 m_packetCounter;          // 累计接收的包数（从0开始）
+    double m_packetIntervalSec;      // 包间隔秒数 = 1.0 / FREQ
+
+    // Pause scope
+    bool m_plotPaused;
+
     // 辅助函数
     void refreshSerialPorts();
     void updateUiForSerialState(bool isOpen);
@@ -96,6 +115,9 @@ private:
     void removeOscilloscope(OscilloscopeWidget *osc);
     void loadAvailableFields();         // 从 DataParser 加载字段列表到左侧
     void updateAllPlots();              // 刷新所有示波器
+    void syncFieldCheckStates();
+
+    void addTimeStamp(double offsetSec); // 添加时间戳
 };
 
 #endif // MAINWINDOW_H
