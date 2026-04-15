@@ -9,7 +9,10 @@
 OscilloscopeWidget::OscilloscopeWidget(QWidget *parent):
     QWidget(parent),
     m_plot(new QCustomPlot(this)) {
+        setMinimumHeight(200);
         setupUi();
+        setAcceptDrops(true);
+        m_plot->setAcceptDrops(false);
         m_colors = {Qt::red, Qt::green, Qt::blue, Qt::magenta, Qt::cyan, Qt::darkYellow, Qt::darkCyan};
 }
 
@@ -23,17 +26,32 @@ void OscilloscopeWidget::setupUi() {
     m_configBtn = new QPushButton("⚙️", this);
     m_configBtn->setFixedSize(20, 20);
     connect(m_configBtn, &QPushButton::clicked, this, &OscilloscopeWidget::onConfigure);
+
+    // Add scope below button
+    QPushButton *addBelowBtn = new QPushButton("+", this);
+    addBelowBtn->setFixedSize(20, 20);
+    connect(addBelowBtn, &QPushButton::clicked, this, &OscilloscopeWidget::addBelowRequested);
+
+    // Remove scope button
+    QPushButton *removeBtn = new QPushButton("-", this);
+    removeBtn->setFixedSize(20, 20);
+    connect(removeBtn, &QPushButton::clicked, this, &OscilloscopeWidget::removeRequested);
     
     QHBoxLayout *titleLayout = new QHBoxLayout;
     titleLayout->addWidget(m_titleLabel);
     titleLayout->addWidget(m_configBtn);
+    titleLayout->addWidget(addBelowBtn);
+    titleLayout->addWidget(removeBtn);
     
     // 绘图区域
     m_plot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
+    m_plot->axisRect()->setRangeDrag(Qt::Vertical);
+    m_plot->axisRect()->setRangeZoom(Qt::Vertical);
     m_plot->xAxis->setLabel("Sample");
     m_plot->yAxis->setLabel("Value");
     m_plot->legend->setVisible(true);
     m_plot->legend->setFont(QFont("Arial", 7));
+    m_plot->setOpenGl(true);
     
     // 主布局
     QVBoxLayout *layout = new QVBoxLayout(this);
@@ -81,9 +99,17 @@ void OscilloscopeWidget::updatePlot(const QHash<QString, QVector<double>> &dataP
         const QVector<double> &data = dataPool.value(field);
         if (data.isEmpty()) continue;
         
-        QVector<double> x(data.size());
-        for (int i = 0; i < data.size(); ++i) x[i] = i;
-        graph->setData(x, data);
+        int totalPoints = data.size();
+        int startIdx = qMax(0, totalPoints - maxPoints);
+        int pointsToShow = totalPoints - startIdx;
+        
+        QVector<double> x(pointsToShow);
+        QVector<double> y(pointsToShow);
+        for (int i = 0; i < pointsToShow; ++i) {
+            x[i] = startIdx + i;
+            y[i] = data[startIdx + i];
+        }
+        graph->setData(x, y);
     }
     
     // 设置 X 轴范围（显示最近 maxPoints 点）
@@ -92,6 +118,8 @@ void OscilloscopeWidget::updatePlot(const QHash<QString, QVector<double>> &dataP
     // 只自动缩放 Y 轴，保留 X 轴范围
     m_plot->rescaleAxes(false);
     m_plot->replot();
+
+    qDebug() << "updatePlot maxPoints=" << maxPoints << " maxDataSize=" << maxDataSize;
 }
 
 void OscilloscopeWidget::clear() {

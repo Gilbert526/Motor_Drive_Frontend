@@ -92,7 +92,8 @@ private:
     void updateUiForSerialState(bool isOpen);
     void sendCommand(const QString &cmd);
     void setupPlottingArea();           // 初始化动态示波器区域
-    void addOscilloscope(const QString &title = QString());
+    void addOscilloscope(const QString &title = QString(), int index = -1);
+    void removeOscilloscope(OscilloscopeWidget *osc);
     void loadAvailableFields();         // 从 DataParser 加载字段列表到左侧
     void updateAllPlots();              // 刷新所有示波器
 };

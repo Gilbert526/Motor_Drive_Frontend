@@ -235,91 +235,91 @@
     <property name="title">
      <string>Plotting</string>
     </property>
-     <layout class="QVBoxLayout" name="verticalLayout_Plotting">
-        <item>
-        <widget class="QSplitter" name="plotSplitter">
-            <property name="orientation">
-            <enum>Qt::Horizontal</enum>
+    <layout class="QVBoxLayout" name="verticalLayout_Plotting">
+     <item>
+      <widget class="QSplitter" name="plotSplitter">
+       <property name="orientation">
+        <enum>Qt::Orientation::Horizontal</enum>
+       </property>
+       <widget class="QListWidget" name="fieldListWidget"/>
+       <widget class="QWidget" name="rightPanel">
+        <layout class="QVBoxLayout" name="verticalLayout_RightPanel">
+         <item>
+          <widget class="QScrollArea" name="scrollArea">
+           <property name="widgetResizable">
+            <bool>true</bool>
+           </property>
+           <widget class="QWidget" name="oscilloscopeContainer">
+            <property name="geometry">
+             <rect>
+              <x>0</x>
+              <y>0</y>
+              <width>315</width>
+              <height>687</height>
+             </rect>
             </property>
-            <widget class="QListWidget" name="fieldListWidget"/>
-            <widget class="QWidget" name="rightPanel">
-            <layout class="QVBoxLayout" name="verticalLayout_RightPanel">
-            <item>
-            <widget class="QScrollArea" name="scrollArea">
-                <property name="widgetResizable">
-                <bool>true</bool>
-                </property>
-                <widget class="QWidget" name="oscilloscopeContainer">
-                <property name="geometry">
-                <rect>
-                <x>0</x>
-                <y>0</y>
-                <width>100</width>
-                <height>30</height>
-                </rect>
-                </property>
-                <layout class="QVBoxLayout" name="verticalLayout_OscContainer">
-                <property name="spacing">
-                <number>6</number>
-                </property>
-                <property name="leftMargin">
-                <number>0</number>
-                </property>
-                <property name="topMargin">
-                <number>0</number>
-                </property>
-                <property name="rightMargin">
-                <number>0</number>
-                </property>
-                <property name="bottomMargin">
-                <number>0</number>
-                </property>
-                </layout>
-                </widget>
-            </widget>
-            </item>
-            <item>
-            <layout class="QHBoxLayout" name="horizontalLayout_Slider">
-                <item>
-                <widget class="QLabel" name="sampleLabelPrefix">
-                <property name="text">
-                <string>Display points:</string>
-                </property>
-                </widget>
-                </item>
-                <item>
-                <widget class="QSlider" name="sampleSlider">
-                <property name="minimum">
-                <number>100</number>
-                </property>
-                <property name="maximum">
-                <number>10000</number>
-                </property>
-                <property name="value">
-                <number>500</number>
-                </property>
-                <property name="orientation">
-                <enum>Qt::Horizontal</enum>
-                </property>
-                </widget>
-                </item>
-                <item>
-                <widget class="QLabel" name="sampleLabel">
-                <property name="text">
-                <string>500</string>
-                </property>
-                <property name="alignment">
-                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-                </property>
-                </widget>
-                </item>
+            <layout class="QVBoxLayout" name="verticalLayout_OscContainer">
+             <property name="spacing">
+              <number>6</number>
+             </property>
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
             </layout>
-            </item>
-            </layout>
+           </widget>
+          </widget>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="horizontalLayout_Slider">
+           <item>
+            <widget class="QLabel" name="sampleLabelPrefix">
+             <property name="text">
+              <string>Display points:</string>
+             </property>
             </widget>
-        </widget>
-        </item>
+           </item>
+           <item>
+            <widget class="QSlider" name="sampleSlider">
+             <property name="minimum">
+              <number>100</number>
+             </property>
+             <property name="maximum">
+              <number>10000</number>
+             </property>
+             <property name="value">
+              <number>500</number>
+             </property>
+             <property name="orientation">
+              <enum>Qt::Orientation::Horizontal</enum>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="sampleLabel">
+             <property name="text">
+              <string>500</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
         </layout>
+       </widget>
+      </widget>
+     </item>
+    </layout>
    </widget>
    <widget class="QGroupBox" name="groupBoxLogging">
     <property name="geometry">
@@ -393,7 +393,7 @@
      <x>0</x>
      <y>0</y>
      <width>1456</width>
-     <height>22</height>
+     <height>21</height>
     </rect>
    </property>
   </widget>

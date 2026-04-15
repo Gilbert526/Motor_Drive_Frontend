@@ -22,6 +22,8 @@ public:
 
 signals:
     void fieldsChanged();   // 请求配置（点击齿轮时发出）
+    void removeRequested();
+    void addBelowRequested();
 
 protected:
     void dragEnterEvent(QDragEnterEvent *event) override;

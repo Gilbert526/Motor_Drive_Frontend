@@ -15,53 +15,81 @@ MainWindow::MainWindow(QWidget *parent):
     m_dataParser(nullptr),
     m_serialThread(nullptr),
     m_maxWavePoints(20000),     // 最多存储20000点
-    m_currentMaxPoints(500)
-{
-    ui->setupUi(this);
+    m_currentMaxPoints(500) {
+        ui->setupUi(this);
 
-    // 初始化串口管理线程
-    m_serialManager = new SerialManager();
-    m_serialThread = new QThread(this);
-    m_serialManager->moveToThread(m_serialThread);
-    connect(m_serialThread, &QThread::finished, m_serialManager, &QObject::deleteLater);
+        // 初始化串口管理线程
+        m_serialManager = new SerialManager();
+        m_serialThread = new QThread(this);
+        m_serialManager->moveToThread(m_serialThread);
+        connect(m_serialThread, &QThread::finished, m_serialManager, &QObject::deleteLater);
 
-    // 创建数据解析器（主线程）
-    m_dataParser = new DataParser(this);
+        // 创建数据解析器（主线程）
+        m_dataParser = new DataParser(this);
 
-    // 信号连接
-    connect(m_serialManager, &SerialManager::portOpened, this, &MainWindow::handleSerialPortOpened);
-    connect(m_serialManager, &SerialManager::portClosed, this, &MainWindow::handleSerialPortClosed);
-    connect(m_serialManager, &SerialManager::rawDataReceived, m_dataParser, &DataParser::parseData);
-    connect(m_dataParser, &DataParser::parsedData, this, &MainWindow::handleNewData);
+        // 信号连接
+        connect(m_serialManager, &SerialManager::portOpened, this, &MainWindow::handleSerialPortOpened);
+        connect(m_serialManager, &SerialManager::portClosed, this, &MainWindow::handleSerialPortClosed);
+        connect(m_serialManager, &SerialManager::rawDataReceived, m_dataParser, &DataParser::parseData);
+        connect(m_dataParser, &DataParser::parsedData, this, &MainWindow::handleNewData);
 
-    // 启动串口线程
-    m_serialThread->start();
+        // Display received message in text box
+        connect(m_serialManager, &SerialManager::rawDataReceived, this, [this](const QByteArray &data) {
+            // Translate into UTF8 text
+            QString text = QString::fromUtf8(data);
+            
+            // Filtering condition 1: Check for presence of replacement character (indicates decoding issues)
+            if (text.contains(QChar::ReplacementCharacter)) {
+                return;
+            }
+            
+            // Filtering condition 2: Check for non-printable characters (except common whitespace)
+            bool hasNonPrintable = false;
+            for (QChar ch : text) {
+                if (ch.isPrint() || ch == '\n' || ch == '\r' || ch == '\t') {
+                    continue;
+                }
+                hasNonPrintable = true;
+                break;
+            }
+            if (hasNonPrintable) {
+                return;
+            }
+            
+            // Display if it passes filters
+            if (!text.isEmpty()) {
+                ui->plainTextEditReceive->appendPlainText(text);
+            }
+        });
 
-    // 初始化示波器区域
-    setupPlottingArea();
+        // 启动串口线程
+        m_serialThread->start();
 
-    // 加载字段列表到左侧
-    loadAvailableFields();
+        // 初始化示波器区域
+        setupPlottingArea();
 
-    // 定时器刷新波形
-    m_plotTimer = new QTimer(this);
-    connect(m_plotTimer, &QTimer::timeout, this, &MainWindow::updatePlot);
-    m_plotTimer->start(50);
+        // 加载字段列表到左侧
+        loadAvailableFields();
 
-    // 串口UI初始化
-    refreshSerialPorts();
-    ui->comboBaud->addItems({"9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600"});
-    ui->comboBaud->setCurrentText("115200");
+        // 定时器刷新波形
+        m_plotTimer = new QTimer(this);
+        connect(m_plotTimer, &QTimer::timeout, this, &MainWindow::updatePlot);
+        m_plotTimer->start(50);
 
-    ui->pushButtonRefresh->setText("Refresh");
-    ui->pushButtonSend->setText("->");
-    ui->pushButtonStart->setText("Start");
-    ui->pushButtonStop->setText("Stop");
-    ui->pushButtonAudible->setText("Audible");
-    ui->pushButtonReset->setText("Reset");
+        // 串口UI初始化
+        refreshSerialPorts();
+        ui->comboBaud->addItems({"9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600"});
+        ui->comboBaud->setCurrentText("115200");
 
-    updateUiForSerialState(false);
-}
+        ui->pushButtonRefresh->setText("Refresh");
+        ui->pushButtonSend->setText("->");
+        ui->pushButtonStart->setText("Start");
+        ui->pushButtonStop->setText("Stop");
+        ui->pushButtonAudible->setText("Audible");
+        ui->pushButtonReset->setText("Reset");
+
+        updateUiForSerialState(false);
+    }
 
 MainWindow::~MainWindow() {
     if (m_serialThread->isRunning()) {
@@ -96,6 +124,9 @@ void MainWindow::setupPlottingArea() {
 
     // 采样滑动条
     m_sampleSlider->setRange(100, 10000);
+    m_sampleSlider->setSingleStep(100);
+    m_sampleSlider->setPageStep(100);
+    m_sampleSlider->setTickInterval(100);
     m_sampleSlider->setValue(m_currentMaxPoints);
     m_sampleLabel->setText(QString::number(m_currentMaxPoints));
     connect(m_sampleSlider, &QSlider::valueChanged, this, &MainWindow::on_sampleSlider_valueChanged);
@@ -107,7 +138,7 @@ void MainWindow::setupPlottingArea() {
     addOscilloscope("Scope 1");
 }
 
-void MainWindow::addOscilloscope(const QString &title) {
+void MainWindow::addOscilloscope(const QString &title, int index) {
     OscilloscopeWidget *osc = new OscilloscopeWidget;
     if (!title.isEmpty())
         osc->setTitle(title);
@@ -118,9 +149,33 @@ void MainWindow::addOscilloscope(const QString &title) {
     connect(osc, &OscilloscopeWidget::fieldsChanged, this, [this, osc]() {
         on_oscilloscopeConfigRequested(osc);
     });
+    connect(osc, &OscilloscopeWidget::removeRequested, this, [this, osc]() {
+        removeOscilloscope(osc);
+    });
+    connect(osc, &OscilloscopeWidget::addBelowRequested, this, [this, osc]() {
+        int idx = m_oscLayout->indexOf(osc);
+        if (idx >= 0) {
+            addOscilloscope(QString("Scope %1").arg(m_oscilloscopes.size() + 1), idx + 1);
+        }
+    });
 
-    m_oscLayout->addWidget(osc);
-    m_oscilloscopes.append(osc);
+    if (index < 0 || index > m_oscLayout->count()) {
+        m_oscLayout->addWidget(osc);
+        m_oscilloscopes.append(osc);
+    } else {
+        m_oscLayout->insertWidget(index, osc);
+        m_oscilloscopes.insert(index, osc);
+    }
+}
+
+void MainWindow::removeOscilloscope(OscilloscopeWidget *osc) {
+    if (!osc) return;
+    int idx = m_oscLayout->indexOf(osc);
+    if (idx >= 0) {
+        m_oscLayout->removeWidget(osc);
+        m_oscilloscopes.removeAt(idx);
+        osc->deleteLater();
+    }
 }
 
 void MainWindow::loadAvailableFields() {
