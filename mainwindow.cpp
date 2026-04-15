@@ -17,6 +17,7 @@ MainWindow::MainWindow(QWidget *parent):
     m_maxWavePoints(20000),     // 最多存储20000点
     m_currentMaxPoints(500),
     m_plotPaused(false),
+    m_syncingFromMask(false),
     m_packetCounter(0),
     m_packetIntervalSec(1.0 / DEFAULT_PACKET_FREQ_HZ) {
         ui->setupUi(this);
@@ -35,6 +36,8 @@ MainWindow::MainWindow(QWidget *parent):
         connect(m_serialManager, &SerialManager::portClosed, this, &MainWindow::handleSerialPortClosed);
         connect(m_serialManager, &SerialManager::rawDataReceived, m_dataParser, &DataParser::parseData);
         connect(m_dataParser, &DataParser::parsedData, this, &MainWindow::handleNewData);
+
+        connect(m_dataParser, &DataParser::maskReceived, this, &MainWindow::onMaskReceived);
 
         // Display received message in text box
         connect(m_serialManager, &SerialManager::rawDataReceived, this, [this](const QByteArray &data) {
@@ -295,6 +298,33 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
     // }
 }
 
+void MainWindow::onMaskReceived(quint32 mask) {
+    if (m_syncingFromMask) return;
+    m_syncingFromMask = true;
+
+    static quint32 lastMask = 0;
+    if (mask == lastMask) {
+        m_syncingFromMask = false;   // 关键：必须重置标志
+        return;
+    }
+    lastMask = mask;
+
+    // 遍历字段列表中的每个项
+    for (int i = 0; i < m_fieldList->count(); ++i) {
+        QListWidgetItem *item = m_fieldList->item(i);
+        if (!item) continue;
+        // 获取字段名对应的掩码位（需要字段定义信息）
+        QString fieldName = item->text();
+        quint32 bitMask = m_dataParser->getMaskForField(fieldName);
+        bool shouldCheck = (mask & bitMask) != 0;
+        if (shouldCheck != (item->checkState() == Qt::Checked)) {
+            item->setCheckState(shouldCheck ? Qt::Checked : Qt::Unchecked);
+        }
+    }
+
+    m_syncingFromMask = false;
+}
+
 // ==================== 串口处理 ====================
 void MainWindow::refreshSerialPorts() {
     ui->comboPort->clear();
@@ -387,6 +417,7 @@ void MainWindow::on_pushButtonPause_clicked() {
 }
 
 void MainWindow::onFieldCheckStateChanged(QListWidgetItem *item) {
+    if (m_syncingFromMask) return;
     if (!item) return;
     QString fieldName = item->text();
     bool checked = (item->checkState() == Qt::Checked);

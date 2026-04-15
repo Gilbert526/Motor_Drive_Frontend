@@ -27,8 +27,12 @@ public:
 
     QString getCommandNameForField(const QString &displayName) const;
 
+    quint32 getMaskForField(const QString &fieldName) const;
+
 signals:
     void parsedData(const QHash<QString, double> &values);
+
+    void maskReceived(quint32 mask);
 
 private:
     static const QByteArray SYNC_BYTES;   // 0xAA 0x55

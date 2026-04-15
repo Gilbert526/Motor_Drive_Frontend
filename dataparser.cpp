@@ -103,6 +103,7 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
 
     // 成功解析一个完整包
     nextStartIdx = currentPos;
+    emit maskReceived(mask);
     return result;
 }
 
@@ -134,6 +135,15 @@ QStringList DataParser::getFieldNames() const {
 
 QString DataParser::getCommandNameForField(const QString &displayName) const {
     return m_displayToCmd.value(displayName, displayName);
+}
+
+quint32 DataParser::getMaskForField(const QString &fieldName) const {
+    for (const FieldDef &field : m_fields) {
+        if (field.name == fieldName) {
+            return field.maskBit;
+        }
+    }
+    return 0;   // 未找到
 }
 
 void DataParser::initCommandMapping() {

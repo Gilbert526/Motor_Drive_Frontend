@@ -62,6 +62,9 @@ private slots:
     // 数据解析
     void handleNewData(const QHash<QString, double> &values);
 
+    // Update Field List on Mask Received
+    void onMaskReceived(quint32 mask);
+
     // 定时刷新波形
     void updatePlot();
 
@@ -105,6 +108,8 @@ private:
 
     // Pause scope
     bool m_plotPaused;
+
+    bool m_syncingFromMask;
 
     // 辅助函数
     void refreshSerialPorts();
