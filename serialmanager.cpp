@@ -6,14 +6,12 @@ SerialManager::SerialManager(QObject *parent) : QObject(parent), m_serial(nullpt
     connect(m_serial, &QSerialPort::readyRead, this, &SerialManager::handleReadyRead);
 }
 
-SerialManager::~SerialManager()
-{
+SerialManager::~SerialManager() {
     if (m_serial->isOpen())
         m_serial->close();
 }
 
-void SerialManager::openSerialPort(const QString &portName, qint32 baudRate)
-{
+void SerialManager::openSerialPort(const QString &portName, qint32 baudRate) {
     if (m_serial->isOpen()) {
         emit portOpened(false, "Serial port already open");
         return;
@@ -32,23 +30,20 @@ void SerialManager::openSerialPort(const QString &portName, qint32 baudRate)
     emit portOpened(true, "");
 }
 
-void SerialManager::closeSerialPort()
-{
+void SerialManager::closeSerialPort() {
     if (m_serial->isOpen()) {
         m_serial->close();
     }
     emit portClosed();
 }
 
-void SerialManager::sendData(const QByteArray &data)
-{
+void SerialManager::sendData(const QByteArray &data) {
     if (m_serial->isOpen()) {
         m_serial->write(data);
     }
 }
 
-void SerialManager::handleReadyRead()
-{
+void SerialManager::handleReadyRead() {
     QByteArray data = m_serial->readAll();
     if (!data.isEmpty()) {
         emit rawDataReceived(data);

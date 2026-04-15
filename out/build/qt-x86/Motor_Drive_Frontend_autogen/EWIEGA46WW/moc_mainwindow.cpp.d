@@ -1,5 +1,6 @@
 C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/out/build/qt-x86/Motor_Drive_Frontend_autogen/EWIEGA46WW/moc_mainwindow.cpp: C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/mainwindow.h \
   C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/out/build/qt-x86/Motor_Drive_Frontend_autogen/moc_predefs.h \
+  C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/OscilloscopeWidget.h \
   C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/qcustomplot.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/QCache \
   D:/Qt/6.11.0/mingw_64/include/QtCore/QDateTime \
@@ -318,6 +319,8 @@ C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Proj
   D:/Qt/6.11.0/mingw_64/include/QtCore/qyieldcpu.h \
   D:/Qt/6.11.0/mingw_64/include/QtGui/QAction \
   D:/Qt/6.11.0/mingw_64/include/QtGui/QActionGroup \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/QDragEnterEvent \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/QDropEvent \
   D:/Qt/6.11.0/mingw_64/include/QtGui/QFileSystemModel \
   D:/Qt/6.11.0/mingw_64/include/QtGui/QMatrix4x4 \
   D:/Qt/6.11.0/mingw_64/include/QtGui/QMouseEvent \
@@ -467,9 +470,15 @@ C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Proj
   D:/Qt/6.11.0/mingw_64/include/QtPrintSupport/qtprintsupportglobal.h \
   D:/Qt/6.11.0/mingw_64/include/QtPrintSupport/qtprintsupportversion.h \
   D:/Qt/6.11.0/mingw_64/include/QtWidgets/QCommonStyle \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/QLabel \
   D:/Qt/6.11.0/mingw_64/include/QtWidgets/QLayout \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/QListWidget \
   D:/Qt/6.11.0/mingw_64/include/QtWidgets/QMainWindow \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/QScrollArea \
   D:/Qt/6.11.0/mingw_64/include/QtWidgets/QScrollerProperties \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/QSlider \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/QSplitter \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/QVBoxLayout \
   D:/Qt/6.11.0/mingw_64/include/QtWidgets/QWidget \
   D:/Qt/6.11.0/mingw_64/include/QtWidgets/QtWidgets \
   D:/Qt/6.11.0/mingw_64/include/QtWidgets/QtWidgetsDepends \

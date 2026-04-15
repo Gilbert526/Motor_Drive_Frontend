@@ -114,7 +114,7 @@
      <rect>
       <x>10</x>
       <y>540</y>
-      <width>761</width>
+      <width>671</width>
       <height>231</height>
      </rect>
     </property>
@@ -126,7 +126,7 @@
       <rect>
        <x>10</x>
        <y>20</y>
-       <width>741</width>
+       <width>651</width>
        <height>201</height>
       </rect>
      </property>
@@ -215,7 +215,7 @@
      <rect>
       <x>420</x>
       <y>10</y>
-      <width>351</width>
+      <width>261</width>
       <height>521</height>
      </rect>
     </property>
@@ -226,25 +226,100 @@
    <widget class="QGroupBox" name="groupBoxPlotting">
     <property name="geometry">
      <rect>
-      <x>789</x>
+      <x>699</x>
       <y>9</y>
-      <width>651</width>
+      <width>741</width>
       <height>761</height>
      </rect>
     </property>
     <property name="title">
      <string>Plotting</string>
     </property>
-    <widget class="QCustomPlot" name="customPlot" native="true">
-     <property name="geometry">
-      <rect>
-       <x>40</x>
-       <y>90</y>
-       <width>551</width>
-       <height>641</height>
-      </rect>
-     </property>
-    </widget>
+     <layout class="QVBoxLayout" name="verticalLayout_Plotting">
+        <item>
+        <widget class="QSplitter" name="plotSplitter">
+            <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+            </property>
+            <widget class="QListWidget" name="fieldListWidget"/>
+            <widget class="QWidget" name="rightPanel">
+            <layout class="QVBoxLayout" name="verticalLayout_RightPanel">
+            <item>
+            <widget class="QScrollArea" name="scrollArea">
+                <property name="widgetResizable">
+                <bool>true</bool>
+                </property>
+                <widget class="QWidget" name="oscilloscopeContainer">
+                <property name="geometry">
+                <rect>
+                <x>0</x>
+                <y>0</y>
+                <width>100</width>
+                <height>30</height>
+                </rect>
+                </property>
+                <layout class="QVBoxLayout" name="verticalLayout_OscContainer">
+                <property name="spacing">
+                <number>6</number>
+                </property>
+                <property name="leftMargin">
+                <number>0</number>
+                </property>
+                <property name="topMargin">
+                <number>0</number>
+                </property>
+                <property name="rightMargin">
+                <number>0</number>
+                </property>
+                <property name="bottomMargin">
+                <number>0</number>
+                </property>
+                </layout>
+                </widget>
+            </widget>
+            </item>
+            <item>
+            <layout class="QHBoxLayout" name="horizontalLayout_Slider">
+                <item>
+                <widget class="QLabel" name="sampleLabelPrefix">
+                <property name="text">
+                <string>Display points:</string>
+                </property>
+                </widget>
+                </item>
+                <item>
+                <widget class="QSlider" name="sampleSlider">
+                <property name="minimum">
+                <number>100</number>
+                </property>
+                <property name="maximum">
+                <number>10000</number>
+                </property>
+                <property name="value">
+                <number>500</number>
+                </property>
+                <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+                </property>
+                </widget>
+                </item>
+                <item>
+                <widget class="QLabel" name="sampleLabel">
+                <property name="text">
+                <string>500</string>
+                </property>
+                <property name="alignment">
+                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                </property>
+                </widget>
+                </item>
+            </layout>
+            </item>
+            </layout>
+            </widget>
+        </widget>
+        </item>
+        </layout>
    </widget>
    <widget class="QGroupBox" name="groupBoxLogging">
     <property name="geometry">
@@ -324,14 +399,6 @@
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
- <customwidgets>
-  <customwidget>
-   <class>QCustomPlot</class>
-   <extends>QWidget</extends>
-   <header location="global">qcustomplot.h</header>
-   <container>1</container>
-  </customwidget>
- </customwidgets>
  <resources/>
  <connections/>
 </ui>
