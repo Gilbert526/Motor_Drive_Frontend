@@ -55,6 +55,7 @@ void OscilloscopeWidget::setupUi() {
     m_plot->axisRect()->setRangeZoom(Qt::Vertical);
     m_plot->xAxis->setLabel("Time (s)");
     m_plot->xAxis->setNumberFormat("gbc"); // 自动选择格式
+    m_plot->xAxis->setNumberFormat("f");
     m_plot->xAxis->setNumberPrecision(2);  // 3 位小数
     m_plot->yAxis->setLabel("Value");
     m_plot->legend->setVisible(true);

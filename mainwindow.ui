@@ -6,439 +6,526 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1456</width>
-    <height>821</height>
+    <width>1361</width>
+    <height>743</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <widget class="QGroupBox" name="groupBoxSerialSetting">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>10</y>
-      <width>391</width>
-      <height>71</height>
-     </rect>
-    </property>
-    <property name="title">
-     <string>Serial Port Settings</string>
-    </property>
-    <widget class="QComboBox" name="comboPort">
-     <property name="geometry">
-      <rect>
-       <x>15</x>
-       <y>31</y>
-       <width>80</width>
-       <height>21</height>
-      </rect>
-     </property>
-    </widget>
-    <widget class="QComboBox" name="comboBaud">
-     <property name="geometry">
-      <rect>
-       <x>105</x>
-       <y>31</y>
-       <width>80</width>
-       <height>21</height>
-      </rect>
-     </property>
-    </widget>
-    <widget class="QPushButton" name="pushButtonStartToggle">
-     <property name="geometry">
-      <rect>
-       <x>195</x>
-       <y>30</y>
-       <width>80</width>
-       <height>24</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>Start/Stop</string>
-     </property>
-    </widget>
-    <widget class="QPushButton" name="pushButtonRefresh">
-     <property name="geometry">
-      <rect>
-       <x>285</x>
-       <y>30</y>
-       <width>80</width>
-       <height>24</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>Refresh</string>
-     </property>
-    </widget>
-   </widget>
-   <widget class="QGroupBox" name="groupBoxSend">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>460</y>
-      <width>391</width>
-      <height>71</height>
-     </rect>
-    </property>
-    <property name="title">
-     <string>Sending</string>
-    </property>
-    <widget class="QLineEdit" name="lineEditSend">
-     <property name="geometry">
-      <rect>
-       <x>15</x>
-       <y>30</y>
-       <width>301</width>
-       <height>21</height>
-      </rect>
-     </property>
-    </widget>
-    <widget class="QPushButton" name="pushButtonSend">
-     <property name="geometry">
-      <rect>
-       <x>320</x>
-       <y>30</y>
-       <width>21</width>
-       <height>21</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>-&gt;</string>
-     </property>
-    </widget>
-   </widget>
-   <widget class="QGroupBox" name="groupBoxReceive">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>540</y>
-      <width>671</width>
-      <height>231</height>
-     </rect>
-    </property>
-    <property name="title">
-     <string>Receiving</string>
-    </property>
-    <widget class="QPlainTextEdit" name="plainTextEditReceive">
-     <property name="geometry">
-      <rect>
-       <x>10</x>
-       <y>20</y>
-       <width>651</width>
-       <height>201</height>
-      </rect>
-     </property>
-    </widget>
-   </widget>
-   <widget class="QGroupBox" name="groupBoxBasicCommand">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>90</y>
-      <width>391</width>
-      <height>111</height>
-     </rect>
-    </property>
-    <property name="title">
-     <string>Basic Command</string>
-    </property>
-    <widget class="QPushButton" name="pushButtonStart">
-     <property name="geometry">
-      <rect>
-       <x>15</x>
-       <y>30</y>
-       <width>80</width>
-       <height>24</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>Start</string>
-     </property>
-    </widget>
-    <widget class="QPushButton" name="pushButtonStop">
-     <property name="geometry">
-      <rect>
-       <x>105</x>
-       <y>30</y>
-       <width>80</width>
-       <height>24</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>Stop</string>
-     </property>
-    </widget>
-    <widget class="QPushButton" name="pushButtonReset">
-     <property name="geometry">
-      <rect>
-       <x>195</x>
-       <y>30</y>
-       <width>80</width>
-       <height>24</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>Reset</string>
-     </property>
-    </widget>
-    <widget class="QPushButton" name="pushButtonAudible">
-     <property name="geometry">
-      <rect>
-       <x>15</x>
-       <y>70</y>
-       <width>80</width>
-       <height>24</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>Audible</string>
-     </property>
-    </widget>
-    <widget class="QPushButton" name="pushButtonAlign">
-     <property name="geometry">
-      <rect>
-       <x>285</x>
-       <y>30</y>
-       <width>80</width>
-       <height>24</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>Align</string>
-     </property>
-    </widget>
-    <widget class="QPushButton" name="pushButtonFocManual">
-     <property name="geometry">
-      <rect>
-       <x>285</x>
-       <y>70</y>
-       <width>80</width>
-       <height>24</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>FOC Manual</string>
-     </property>
-    </widget>
-   </widget>
-   <widget class="QGroupBox" name="groupBoxTuning">
-    <property name="geometry">
-     <rect>
-      <x>420</x>
-      <y>10</y>
-      <width>261</width>
-      <height>521</height>
-     </rect>
-    </property>
-    <property name="title">
-     <string>Tuning</string>
-    </property>
-   </widget>
-   <widget class="QGroupBox" name="groupBoxPlotting">
-    <property name="geometry">
-     <rect>
-      <x>699</x>
-      <y>9</y>
-      <width>741</width>
-      <height>761</height>
-     </rect>
-    </property>
-    <property name="title">
-     <string>Plotting</string>
-    </property>
-    <layout class="QVBoxLayout" name="verticalLayout_Plotting">
-     <item>
-      <widget class="QSplitter" name="plotSplitter">
-       <property name="orientation">
-        <enum>Qt::Orientation::Horizontal</enum>
-       </property>
-       <widget class="QListWidget" name="fieldListWidget"/>
-       <widget class="QWidget" name="rightPanel">
-        <layout class="QVBoxLayout" name="verticalLayout_RightPanel">
-         <item>
-          <widget class="QScrollArea" name="scrollArea">
-           <property name="widgetResizable">
-            <bool>true</bool>
-           </property>
-           <widget class="QWidget" name="oscilloscopeContainer">
-            <property name="geometry">
-             <rect>
-              <x>0</x>
-              <y>0</y>
-              <width>315</width>
-              <height>686</height>
-             </rect>
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <item>
+     <layout class="QHBoxLayout" name="horizontalLayout" stretch="1,1">
+      <item>
+       <layout class="QVBoxLayout" name="verticalLayoutLeft" stretch="2,1">
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayoutTopLeft" stretch="3,2">
+          <property name="sizeConstraint">
+           <enum>QLayout::SizeConstraint::SetDefaultConstraint</enum>
+          </property>
+          <item>
+           <layout class="QVBoxLayout" name="verticalLayoutSerial" stretch="1,2,3,1">
+            <item>
+             <widget class="QGroupBox" name="groupBoxSerialSetting">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>390</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="title">
+               <string>Serial Port Settings</string>
+              </property>
+              <layout class="QVBoxLayout" name="verticalLayout_4">
+               <item>
+                <layout class="QGridLayout" name="gridLayoutSerialSettings">
+                 <item row="0" column="0">
+                  <widget class="QComboBox" name="comboPort">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="0" column="1">
+                  <widget class="QComboBox" name="comboBaud">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="0" column="2">
+                  <widget class="QPushButton" name="pushButtonStartToggle">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="text">
+                    <string>Start/Stop</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="0" column="3">
+                  <widget class="QPushButton" name="pushButtonRefresh">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="text">
+                    <string>Refresh</string>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QGroupBox" name="groupBoxBasicCommand">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>390</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="title">
+               <string>Basic Command</string>
+              </property>
+              <layout class="QGridLayout" name="gridLayout">
+               <item row="0" column="0">
+                <layout class="QGridLayout" name="gridLayoutBasicCommand">
+                 <item row="1" column="0">
+                  <widget class="QPushButton" name="pushButtonAudible">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="text">
+                    <string>Audible</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="0" column="0">
+                  <widget class="QPushButton" name="pushButtonStart">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="text">
+                    <string>Start</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="0" column="2">
+                  <widget class="QPushButton" name="pushButtonReset">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="text">
+                    <string>Reset</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="0" column="3">
+                  <widget class="QPushButton" name="pushButtonAlign">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="text">
+                    <string>Align</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="1" column="3">
+                  <widget class="QPushButton" name="pushButtonFocManual">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="text">
+                    <string>FOC Manual</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="0" column="1">
+                  <widget class="QPushButton" name="pushButtonStop">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="text">
+                    <string>Stop</string>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QGroupBox" name="groupBoxLogging">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>390</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="title">
+               <string>Logging</string>
+              </property>
+              <layout class="QGridLayout" name="gridLayout_2">
+               <item row="0" column="0">
+                <layout class="QGridLayout" name="gridLayoutLogging">
+                 <item row="0" column="0">
+                  <widget class="QPushButton" name="pushButtonPreset1">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="text">
+                    <string>Preset 1</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="0" column="1">
+                  <widget class="QPushButton" name="pushButtonPreset2">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="text">
+                    <string>Preset 2</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="0" column="2">
+                  <widget class="QPushButton" name="pushButtonPreset3">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="text">
+                    <string>Preset 3</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="0" column="3">
+                  <widget class="QPushButton" name="pushButtonPreset4">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="text">
+                    <string>Preset 4</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="1" column="0">
+                  <widget class="QPushButton" name="pushButtonBin">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="text">
+                    <string>Bin</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="1" column="1">
+                  <widget class="QPushButton" name="pushButtonUtf8">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="text">
+                    <string>UTF8</string>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QGroupBox" name="groupBoxSend">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>390</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="title">
+               <string>Sending</string>
+              </property>
+              <layout class="QHBoxLayout" name="horizontalLayout_2">
+               <item>
+                <layout class="QHBoxLayout" name="horizontalLayoutSend" stretch="20,1">
+                 <item>
+                  <widget class="QLineEdit" name="lineEditSend"/>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="pushButtonSend">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="minimumSize">
+                    <size>
+                     <width>27</width>
+                     <height>0</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>27</width>
+                     <height>21</height>
+                    </size>
+                   </property>
+                   <property name="text">
+                    <string>-&gt;</string>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QGroupBox" name="groupBoxTuning">
+            <property name="title">
+             <string>Tuning</string>
             </property>
-            <layout class="QVBoxLayout" name="verticalLayout_OscContainer">
-             <property name="spacing">
-              <number>6</number>
-             </property>
-             <property name="leftMargin">
-              <number>0</number>
-             </property>
-             <property name="topMargin">
-              <number>0</number>
-             </property>
-             <property name="rightMargin">
-              <number>0</number>
-             </property>
-             <property name="bottomMargin">
-              <number>0</number>
-             </property>
-            </layout>
            </widget>
-          </widget>
-         </item>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QGroupBox" name="groupBoxReceive">
+          <property name="title">
+           <string>Receiving</string>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayout_3">
+           <item>
+            <widget class="QPlainTextEdit" name="plainTextEditReceive"/>
+           </item>
+          </layout>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QGroupBox" name="groupBoxPlotting">
+        <property name="title">
+         <string>Plotting</string>
+        </property>
+        <layout class="QVBoxLayout" name="verticalLayout_2">
          <item>
-          <layout class="QHBoxLayout" name="horizontalLayout_Slider">
+          <layout class="QHBoxLayout" name="horizontalLayoutPlotting" stretch="2,7">
            <item>
-            <widget class="QLabel" name="sampleLabelPrefix">
-             <property name="text">
-              <string>Display points:</string>
+            <widget class="QListWidget" name="fieldListWidget">
+             <property name="minimumSize">
+              <size>
+               <width>90</width>
+               <height>0</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>150</width>
+               <height>16777215</height>
+              </size>
              </property>
             </widget>
            </item>
            <item>
-            <widget class="QSlider" name="sampleSlider">
-             <property name="minimum">
-              <number>100</number>
-             </property>
-             <property name="maximum">
-              <number>10000</number>
-             </property>
-             <property name="value">
-              <number>500</number>
-             </property>
-             <property name="orientation">
-              <enum>Qt::Orientation::Horizontal</enum>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QLabel" name="sampleLabel">
-             <property name="text">
-              <string>500</string>
-             </property>
-             <property name="alignment">
-              <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="pushButtonPause">
-             <property name="text">
-              <string>PushButton</string>
-             </property>
-            </widget>
+            <layout class="QVBoxLayout" name="verticalLayout_RightPanel">
+             <item>
+              <widget class="QScrollArea" name="scrollArea">
+               <property name="widgetResizable">
+                <bool>true</bool>
+               </property>
+               <widget class="QWidget" name="oscilloscopeContainer">
+                <property name="geometry">
+                 <rect>
+                  <x>0</x>
+                  <y>0</y>
+                  <width>488</width>
+                  <height>600</height>
+                 </rect>
+                </property>
+                <layout class="QVBoxLayout" name="verticalLayout_OscContainer">
+                 <property name="spacing">
+                  <number>6</number>
+                 </property>
+                 <property name="leftMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>0</number>
+                 </property>
+                </layout>
+               </widget>
+              </widget>
+             </item>
+             <item>
+              <layout class="QHBoxLayout" name="horizontalLayout_Slider">
+               <item>
+                <widget class="QLabel" name="sampleLabelPrefix">
+                 <property name="text">
+                  <string>Display points:</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QSlider" name="sampleSlider">
+                 <property name="minimumSize">
+                  <size>
+                   <width>200</width>
+                   <height>0</height>
+                  </size>
+                 </property>
+                 <property name="minimum">
+                  <number>100</number>
+                 </property>
+                 <property name="maximum">
+                  <number>10000</number>
+                 </property>
+                 <property name="value">
+                  <number>500</number>
+                 </property>
+                 <property name="orientation">
+                  <enum>Qt::Orientation::Horizontal</enum>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLabel" name="sampleLabel">
+                 <property name="text">
+                  <string>500</string>
+                 </property>
+                 <property name="alignment">
+                  <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="pushButtonPause">
+                 <property name="sizePolicy">
+                  <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                   <horstretch>0</horstretch>
+                   <verstretch>0</verstretch>
+                  </sizepolicy>
+                 </property>
+                 <property name="minimumSize">
+                  <size>
+                   <width>27</width>
+                   <height>0</height>
+                  </size>
+                 </property>
+                 <property name="maximumSize">
+                  <size>
+                   <width>27</width>
+                   <height>16777215</height>
+                  </size>
+                 </property>
+                 <property name="text">
+                  <string>⏸</string>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </item>
+            </layout>
            </item>
           </layout>
          </item>
         </layout>
        </widget>
-      </widget>
-     </item>
-    </layout>
-   </widget>
-   <widget class="QGroupBox" name="groupBoxLogging">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>210</y>
-      <width>391</width>
-      <height>241</height>
-     </rect>
-    </property>
-    <property name="title">
-     <string>Logging</string>
-    </property>
-    <widget class="QPushButton" name="pushButtonPreset3">
-     <property name="geometry">
-      <rect>
-       <x>195</x>
-       <y>30</y>
-       <width>80</width>
-       <height>24</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>Preset 3</string>
-     </property>
-    </widget>
-    <widget class="QPushButton" name="pushButtonPreset2">
-     <property name="geometry">
-      <rect>
-       <x>105</x>
-       <y>30</y>
-       <width>80</width>
-       <height>24</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>Preset 2</string>
-     </property>
-    </widget>
-    <widget class="QPushButton" name="pushButtonPreset1">
-     <property name="geometry">
-      <rect>
-       <x>15</x>
-       <y>30</y>
-       <width>80</width>
-       <height>24</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>Preset 1</string>
-     </property>
-    </widget>
-    <widget class="QPushButton" name="pushButtonPreset4">
-     <property name="geometry">
-      <rect>
-       <x>285</x>
-       <y>30</y>
-       <width>80</width>
-       <height>24</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>Preset 4</string>
-     </property>
-    </widget>
-    <widget class="QPushButton" name="pushButtonBin">
-     <property name="geometry">
-      <rect>
-       <x>15</x>
-       <y>70</y>
-       <width>80</width>
-       <height>24</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>Bin</string>
-     </property>
-    </widget>
-    <widget class="QPushButton" name="pushButtonUtf8">
-     <property name="geometry">
-      <rect>
-       <x>105</x>
-       <y>70</y>
-       <width>80</width>
-       <height>24</height>
-      </rect>
-     </property>
-     <property name="text">
-      <string>UTF8</string>
-     </property>
-    </widget>
-   </widget>
+      </item>
+     </layout>
+    </item>
+   </layout>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1456</width>
+     <width>1361</width>
      <height>21</height>
     </rect>
    </property>
