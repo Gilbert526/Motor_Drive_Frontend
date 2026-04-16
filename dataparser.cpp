@@ -6,8 +6,8 @@ const QByteArray DataParser::SYNC_BYTES = QByteArray::fromHex("AA55");
 
 DataParser::DataParser(QObject *parent): QObject{parent} {
     m_fields = {
-        {"HALL",       1, 'B', 1 << 0},
-        {"RPM",        4, 'f', 1 << 1},
+        {"RPM",        4, 'f', 1 << 0},
+        {"RPMSP",      4, 'f', 1 << 1},
         {"POS",        2, 'H', 1 << 2},
         {"ELPOS",      2, 'H', 1 << 3},
         {"DUTY_A",     4, 'f', 1 << 4},
@@ -147,8 +147,8 @@ quint32 DataParser::getMaskForField(const QString &fieldName) const {
 }
 
 void DataParser::initCommandMapping() {
-    m_displayToCmd["HALL"]      = "hall";
     m_displayToCmd["RPM"]       = "rpm";
+    m_displayToCmd["RPMSP"]     = "rpmsp";
     m_displayToCmd["POS"]       = "pos";
     m_displayToCmd["ELPOS"]     = "elpos";
     m_displayToCmd["DUTY_A"]    = "duty_a";
