@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1429</width>
-    <height>857</height>
+    <width>1306</width>
+    <height>761</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -16,7 +16,7 @@
   <widget class="QWidget" name="centralwidget">
    <layout class="QHBoxLayout" name="horizontalLayout">
     <item>
-     <layout class="QHBoxLayout" name="horizontalLayoutFullWindow" stretch="2,3">
+     <layout class="QHBoxLayout" name="horizontalLayoutFullWindow" stretch="0,1">
       <item>
        <layout class="QVBoxLayout" name="verticalLayoutLeft">
         <item>
@@ -35,6 +35,12 @@
                <size>
                 <width>390</width>
                 <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>390</width>
+                <height>16777215</height>
                </size>
               </property>
               <property name="title">
@@ -106,6 +112,12 @@
                <size>
                 <width>390</width>
                 <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>390</width>
+                <height>16777215</height>
                </size>
               </property>
               <property name="title">
@@ -209,6 +221,12 @@
                <size>
                 <width>390</width>
                 <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>390</width>
+                <height>16777215</height>
                </size>
               </property>
               <property name="title">
@@ -327,6 +345,12 @@
                 <height>0</height>
                </size>
               </property>
+              <property name="maximumSize">
+               <size>
+                <width>390</width>
+                <height>16777215</height>
+               </size>
+              </property>
               <property name="title">
                <string>Sending</string>
               </property>
@@ -372,6 +396,24 @@
            <layout class="QVBoxLayout" name="verticalLayoutSerialRight">
             <item>
              <widget class="QGroupBox" name="groupBox">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>200</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>200</width>
+                <height>16777215</height>
+               </size>
+              </property>
               <property name="title">
                <string>Quick Command</string>
               </property>
@@ -379,6 +421,24 @@
             </item>
             <item>
              <widget class="QGroupBox" name="groupBoxTuning">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>200</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>200</width>
+                <height>16777215</height>
+               </size>
+              </property>
               <property name="title">
                <string>Tuning</string>
               </property>
@@ -563,8 +623,8 @@
                  <rect>
                   <x>0</x>
                   <y>0</y>
-                  <width>637</width>
-                  <height>722</height>
+                  <width>500</width>
+                  <height>626</height>
                  </rect>
                 </property>
                 <layout class="QVBoxLayout" name="verticalLayout_OscContainer">
@@ -689,7 +749,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1429</width>
+     <width>1306</width>
      <height>22</height>
     </rect>
    </property>

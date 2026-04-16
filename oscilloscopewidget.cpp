@@ -44,13 +44,27 @@ void OscilloscopeWidget::setupUi() {
     m_yLockBtn->setCheckable(true);
     m_yLockBtn->setToolTip("Toggle disabling Y-axis auto-scaling");
     connect(m_yLockBtn, &QPushButton::clicked, this, &OscilloscopeWidget::onToggleYLock);
+
+    // Move Up Button (↑)
+    m_moveUpBtn = new QPushButton("↑", this);
+    m_moveUpBtn->setFixedSize(20, 20);
+    m_moveUpBtn->setToolTip("Move scope up");
+    connect(m_moveUpBtn, &QPushButton::clicked, this, &OscilloscopeWidget::moveUpRequested);
+
+    // Move Down Button (↓)
+    m_moveDownBtn = new QPushButton("↓", this);
+    m_moveDownBtn->setFixedSize(20, 20);
+    m_moveDownBtn->setToolTip("Move scope down");
+    connect(m_moveDownBtn, &QPushButton::clicked, this, &OscilloscopeWidget::moveDownRequested);
     
     QHBoxLayout *titleLayout = new QHBoxLayout;
     titleLayout->addWidget(m_titleLabel);
     titleLayout->addWidget(m_yLockBtn);
-    titleLayout->addWidget(m_configBtn);
     titleLayout->addWidget(addBelowBtn);
     titleLayout->addWidget(removeBtn);
+    titleLayout->addWidget(m_moveUpBtn);
+    titleLayout->addWidget(m_moveDownBtn);
+    titleLayout->addWidget(m_configBtn);
     
     // 绘图区域
     m_plot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
@@ -69,6 +83,11 @@ void OscilloscopeWidget::setupUi() {
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->addLayout(titleLayout);
     layout->addWidget(m_plot);
+}
+
+void OscilloscopeWidget::setMoveButtonsEnabled(bool upEnabled, bool downEnabled) {
+    m_moveUpBtn->setEnabled(upEnabled);
+    m_moveDownBtn->setEnabled(downEnabled);
 }
 
 void OscilloscopeWidget::setTitle(const QString &title) {

@@ -52,6 +52,7 @@ private slots:
     void on_pushButtonPreset2_clicked();
     void on_pushButtonPreset3_clicked();
     void on_pushButtonPreset4_clicked();
+    void on_pushButtonRemoveAll_clicked();
     void on_pushButtonBin_clicked();
     void on_pushButtonUtf8_clicked();
     // Tuning
@@ -88,6 +89,10 @@ private slots:
 
     // 配置某个示波器（弹出对话框选择字段）
     void on_oscilloscopeConfigRequested(OscilloscopeWidget *osc);
+
+    // Scope move up/down
+    void onMoveUpRequested();
+    void onMoveDownRequested();
 
 private:
     Ui::MainWindow *ui;
@@ -142,6 +147,7 @@ private:
     void setupPlottingArea();           // 初始化动态示波器区域
     void addOscilloscope(const QString &title = QString(), int index = -1);
     void removeOscilloscope(OscilloscopeWidget *osc);
+    void updateAllMoveButtons();        // Update state of move up/down buttons for oscilloscopes
     void loadAvailableFields();         // 从 DataParser 加载字段列表到左侧
     void updateAllPlots();              // 刷新所有示波器
     void syncFieldCheckStates();

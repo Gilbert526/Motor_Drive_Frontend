@@ -133,6 +133,7 @@ MainWindow::MainWindow(QWidget *parent):
         ui->pushButtonDecrement->setToolTip("Decrement parameter");
         ui->pushButtonTuneSend->setToolTip("Send tuning command");
         ui->pushButtonTuneUndo->setToolTip("Undo last tuning change");
+        ui->incrementLabel->setText("1");
         ui->incrementSlider->setToolTip("Adjust tuning increment step");
 
         m_stepValues = {0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0};
@@ -193,6 +194,7 @@ void MainWindow::setupPlottingArea() {
 
     // Add a scope by default
     addOscilloscope("Scope 1");
+    updateAllMoveButtons();
 }
 
 void MainWindow::addOscilloscope(const QString &title, int index) {
@@ -216,6 +218,9 @@ void MainWindow::addOscilloscope(const QString &title, int index) {
         }
     });
 
+    connect(osc, &OscilloscopeWidget::moveUpRequested, this, &MainWindow::onMoveUpRequested);
+    connect(osc, &OscilloscopeWidget::moveDownRequested, this, &MainWindow::onMoveDownRequested);
+
     if (index < 0 || index > m_oscLayout->count()) {
         m_oscLayout->addWidget(osc);
         m_oscilloscopes.append(osc);
@@ -223,6 +228,8 @@ void MainWindow::addOscilloscope(const QString &title, int index) {
         m_oscLayout->insertWidget(index, osc);
         m_oscilloscopes.insert(index, osc);
     }
+
+    updateAllMoveButtons();
 }
 
 void MainWindow::removeOscilloscope(OscilloscopeWidget *osc) {
@@ -232,6 +239,17 @@ void MainWindow::removeOscilloscope(OscilloscopeWidget *osc) {
         m_oscLayout->removeWidget(osc);
         m_oscilloscopes.removeAt(idx);
         osc->deleteLater();
+    }
+
+    updateAllMoveButtons();
+}
+
+void MainWindow::updateAllMoveButtons() {
+    int count = m_oscilloscopes.size();
+    for (int i = 0; i < count; ++i) {
+        bool upEnabled = (i > 0);
+        bool downEnabled = (i < count - 1);
+        m_oscilloscopes[i]->setMoveButtonsEnabled(upEnabled, downEnabled);
     }
 }
 
@@ -287,6 +305,53 @@ void MainWindow::on_oscilloscopeConfigRequested(OscilloscopeWidget *osc) {
         }
         osc->setFields(selected);
     }
+}
+
+void MainWindow::onMoveUpRequested() {
+    OscilloscopeWidget *osc = qobject_cast<OscilloscopeWidget*>(sender());
+    if (!osc) return;
+    int idx = m_oscilloscopes.indexOf(osc);
+    if (idx <= 0) return;
+
+    // 交换列表中的指针
+    m_oscilloscopes.swapItemsAt(idx, idx - 1);  // 或 qSwap(m_oscilloscopes[idx], m_oscilloscopes[idx-1]);
+
+    // 交换布局中的位置
+    // 获取两个 widget 在布局中的索引（实际上与列表顺序一致，但布局可能因隐藏等原因不同，此处假设一致）
+    // 更可靠：直接取布局中的两个 item，交换它们的位置
+    QLayoutItem *itemUp = m_oscLayout->takeAt(idx - 1);
+    QLayoutItem *itemDown = m_oscLayout->takeAt(idx - 1); // 注意：取走第一个后，原 idx 位置变为 idx-1
+    if (itemUp && itemDown) {
+        // 重新插入，顺序互换
+        m_oscLayout->insertWidget(idx - 1, itemDown->widget());
+        m_oscLayout->insertWidget(idx, itemUp->widget());
+    }
+    // 删除临时 item 对象（不删除 widget）
+    delete itemUp;
+    delete itemDown;
+
+    updateAllMoveButtons();
+}
+
+void MainWindow::onMoveDownRequested() {
+    OscilloscopeWidget *osc = qobject_cast<OscilloscopeWidget*>(sender());
+    if (!osc) return;
+    int idx = m_oscilloscopes.indexOf(osc);
+    if (idx < 0 || idx >= m_oscilloscopes.size() - 1) return;
+
+    m_oscilloscopes.swapItemsAt(idx, idx + 1);
+
+    // 交换布局中的位置
+    QLayoutItem *itemCurrent = m_oscLayout->takeAt(idx);
+    QLayoutItem *itemNext = m_oscLayout->takeAt(idx); // 此时原 idx+1 移动到 idx
+    if (itemCurrent && itemNext) {
+        m_oscLayout->insertWidget(idx, itemNext->widget());
+        m_oscLayout->insertWidget(idx + 1, itemCurrent->widget());
+    }
+    delete itemCurrent;
+    delete itemNext;
+
+    updateAllMoveButtons();
 }
 
 void MainWindow::on_sampleSlider_valueChanged(int value) {
@@ -444,6 +509,7 @@ void MainWindow::on_pushButtonPreset1_clicked() { sendCommand("log preset 1\r\n"
 void MainWindow::on_pushButtonPreset2_clicked() { sendCommand("log preset 2\r\n"); }
 void MainWindow::on_pushButtonPreset3_clicked() { sendCommand("log preset 3\r\n"); }
 void MainWindow::on_pushButtonPreset4_clicked() { sendCommand("log preset 4\r\n"); }
+void MainWindow::on_pushButtonRemoveAll_clicked() { sendCommand("log rm all\r\n"); }
 void MainWindow::on_pushButtonBin_clicked()     { sendCommand("log bin\r\n"); }
 void MainWindow::on_pushButtonUtf8_clicked()    { sendCommand("log utf8\r\n"); }
 

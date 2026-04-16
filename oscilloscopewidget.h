@@ -19,6 +19,8 @@ public:
     void clear();
     void setTitle(const QString &title);
 
+    void setMoveButtonsEnabled(bool upEnabled, bool downEnabled);
+
 signals:
     void fieldsChanged();   // 请求配置（点击齿轮时发出）
     void removeRequested();

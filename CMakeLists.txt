@@ -55,6 +55,24 @@ install(TARGETS ${PROJECT_NAME}
 
 target_include_directories(Motor_Drive_Frontend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
+get_target_property(_qt6_qmake_location Qt${QT_VERSION_MAJOR}::qmake LOCATION)
+get_filename_component(_qt6_bin_dir "${_qt6_qmake_location}" DIRECTORY)
+find_program(WINDEPLOYQT_EXECUTABLE
+    NAMES windeployqt
+    HINTS "${_qt6_bin_dir}"
+    REQUIRED
+)
+
+add_custom_target(package
+    COMMAND "${WINDEPLOYQT_EXECUTABLE}"
+        "$<TARGET_FILE:${PROJECT_NAME}>"
+        --no-compiler-runtime
+        --release
+    COMMENT "Packing Qt dependencies for ${PROJECT_NAME}..."
+    DEPENDS ${PROJECT_NAME}
+    VERBATIM
+)
+
 if(WIN32)
     set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
