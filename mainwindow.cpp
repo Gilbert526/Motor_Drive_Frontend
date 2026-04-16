@@ -18,6 +18,11 @@ MainWindow::MainWindow(QWidget *parent):
     m_currentMaxPoints(500),
     m_plotPaused(false),
     m_syncingFromMask(false),
+    m_lastSpeedValue(0.0),
+    m_lastTorqueValue(0.0),
+    m_targetManuallyEdited(false),
+    m_timeManuallyEdited(false),
+    m_updatingTargetType(false),
     m_recordHistory(true),
     m_packetCounter(0),
     m_packetIntervalSec(1.0 / DEFAULT_PACKET_FREQ_HZ) {
@@ -116,6 +121,21 @@ MainWindow::MainWindow(QWidget *parent):
 
         updateUiForSerialState(false);
 
+        /*--- Target Setting ---*/
+        // Initialize target selection
+        ui->comboBoxTargetSelection->addItems({"Speed", "Torque"});
+        m_currentTargetType = ui->comboBoxTargetSelection->currentText();
+
+        // Initialize target slider
+        updateTargetSliderLimits();
+        on_comboBoxTargetSelection_currentIndexChanged(0);
+        setTargetValue(0.0, true);
+        // Initialize time slider
+        ui->timeSlider->setRange(0, 60);
+        ui->timeSlider->setSingleStep(1);
+        ui->timeSlider->setValue(0);
+        on_timeSlider_valueChanged(0);
+
         /*--- Tuning ---*/
         // Populate subsystem combo box
         ui->comboBoxTuneSubsystem->addItems({"speed", "id", "iq", "fw", "gain", "offset"});
@@ -133,6 +153,7 @@ MainWindow::MainWindow(QWidget *parent):
         ui->incrementSlider->setValue(10); // 默认 1.0
         on_incrementSlider_valueChanged(10);
 
+        ui->pushButtonTuneEnquire->setToolTip("Enquire current parameter value and display in tuning value box");
         ui->pushButtonIncrement->setToolTip("Increment parameter");
         ui->pushButtonDecrement->setToolTip("Decrement parameter");
         ui->pushButtonTuneSend->setToolTip("Send tuning command");
@@ -519,6 +540,155 @@ void MainWindow::on_pushButtonRemoveAll_clicked() { sendCommand("log rm all\r\n"
 void MainWindow::on_pushButtonBin_clicked()     { sendCommand("log bin\r\n"); }
 void MainWindow::on_pushButtonUtf8_clicked()    { sendCommand("log utf8\r\n"); }
 
+void MainWindow::on_comboBoxTargetSelection_currentIndexChanged(int) {
+    if (m_updatingTargetType) return;  // Reentry prevention
+    m_updatingTargetType = true;
+
+    QString newType = ui->comboBoxTargetSelection->currentText();
+    QString oldType = (newType == "Speed") ? "Torque" : "Speed";
+
+    // 1. Save the current value of the old type (exact value, could be manually entered or from slider)
+    double oldValue;
+    if (m_targetManuallyEdited) {
+        bool ok;
+        oldValue = ui->lineEditTarget->text().toDouble(&ok);
+        if (!ok) oldValue = 0.0;
+    } else {
+        if (oldType == "Speed") {
+            oldValue = ui->targetSlider->value();
+        } else {
+            oldValue = ui->targetSlider->value() / 10.0;
+        }
+    }
+    if (oldType == "Speed") {
+        m_lastSpeedValue = oldValue;
+    } else {
+        m_lastTorqueValue = oldValue;
+    }
+
+    // 2. Update the slider range (signals are blocked to avoid interference)
+    ui->targetSlider->blockSignals(true);
+    updateTargetSliderLimits();   // Adjust range based on new type
+    ui->targetSlider->blockSignals(false);
+
+    // 3. Restore the last saved value of the newly selected type (and mark as manually edited, preserving precision)
+    double newValue = (newType == "Speed") ? m_lastSpeedValue : m_lastTorqueValue;
+    setTargetValue(newValue, true);   // The second parameter true indicates it should be treated as manually edited
+
+    m_updatingTargetType = false;
+}
+
+void MainWindow::on_targetSlider_valueChanged(int value) {
+    // Ignore changes triggered by programmatic updates when switching target type
+    if (m_updatingTargetType) return;
+
+    m_targetManuallyEdited = false;
+    if (ui->comboBoxTargetSelection->currentText() == "Speed") {
+        int snapped = (value / 10) * 10;
+        if (snapped != value) {
+            ui->targetSlider->blockSignals(true);
+            ui->targetSlider->setValue(snapped);
+            ui->targetSlider->blockSignals(false);
+            value = snapped;
+        }
+        double realValue = value;
+        ui->lineEditTarget->setText(QString::number(realValue, 'f', 0));
+    } else {
+        double realValue = value / 10.0;
+        ui->lineEditTarget->setText(QString::number(realValue, 'f', 1));
+    }
+}
+
+void MainWindow::on_lineEditTarget_editingFinished() {
+    bool ok;
+    double val = ui->lineEditTarget->text().toDouble(&ok);
+    if (!ok) return;
+
+    // Only limit the range, do not round
+    bool isSpeed = (ui->comboBoxTargetSelection->currentText() == "Speed");
+    if (isSpeed) {
+        val = qBound(-5000.0, val, 5000.0);
+    } else {
+        val = qBound(-10.0, val, 10.0);
+    }
+
+    // Move the slider to the nearest step value (speed in tens, torque in 0.1 increments)
+    int sliderValue;
+    if (isSpeed) {
+        sliderValue = static_cast<int>(qRound(val / 10.0) * 10);
+    } else {
+        sliderValue = static_cast<int>(qRound(val * 10.0));
+    }
+    ui->targetSlider->blockSignals(true);
+    ui->targetSlider->setValue(sliderValue);
+    ui->targetSlider->blockSignals(false);
+
+    // Restore the original value entered by the user (which may have been modified due to range limits, but keep its precision)
+    QString formatted = QString::number(val, 'f', 6);
+    // Remove trailing zeros and possible decimal point if not needed
+    formatted.remove(QRegularExpression("\\.?0+$"));
+    if (formatted.isEmpty()) formatted = "0";
+    ui->lineEditTarget->setText(formatted);
+    m_targetManuallyEdited = true;
+}
+
+void MainWindow::on_timeSlider_valueChanged(int value) {
+    m_timeManuallyEdited = false;
+    ui->lineEditTime->setText(QString::number(value));
+}
+
+void MainWindow::on_lineEditTime_editingFinished() {
+    bool ok;
+    double sec = ui->lineEditTime->text().toDouble(&ok);
+    if (!ok) return;
+    sec = qBound(0.0, sec, 60.0);
+    ui->timeSlider->setValue(static_cast<int>(qRound(sec)));
+    QString formatted = QString::number(sec, 'f', 6);
+    formatted.remove(QRegularExpression("\\.?0+$"));
+    if (formatted.isEmpty()) formatted = "0";
+    ui->lineEditTime->setText(formatted);
+    m_timeManuallyEdited = true;
+}
+
+void MainWindow::on_pushButtonTargetSend_clicked() {
+    QString mode = ui->comboBoxTargetSelection->currentText().toLower();
+    double target, time;
+    if (m_targetManuallyEdited) {
+        // Use value manually entered by the user
+        bool ok;
+        target = ui->lineEditTarget->text().toDouble(&ok);
+        if (!ok) return;
+        // Clamp again to ensure the range
+        if (mode == "speed") {
+            target = qBound(-5000.0, target, 5000.0);
+        } else {
+            target = qBound(-10.0, target, 10.0);
+        }
+    } else {
+        // Use the value from the slider
+        if (mode == "speed") {
+            target = ui->targetSlider->value();
+        } else {
+            target = ui->targetSlider->value() / 10.0;
+        }
+    }
+    if (m_timeManuallyEdited) {
+        bool ok;
+        time = ui->lineEditTime->text().toDouble(&ok);
+        if (!ok) return;
+        time = qBound(0.0, time, 60.0);
+    } else {
+        time = ui->timeSlider->value();
+    }
+    QString cmd;
+    if (qFuzzyIsNull(time) || ui->timeSlider->value() == 0) {
+        cmd = QString("%1 %2\r\n").arg(mode).arg(target, 0, 'f', 6);  // Keep sufficient precision
+    } else {
+        cmd = QString("%1 %2 %3\r\n").arg(mode).arg(target, 0, 'f', 6).arg(time, 0, 'f', 6);
+    }
+    sendCommand(cmd);
+}
+
 void MainWindow::on_pushButtonTuneSend_clicked() {
     QString subsys = ui->comboBoxTuneSubsystem->currentText();
     QString param = ui->comboBoxTuneParameter->currentText();
@@ -549,6 +719,14 @@ void MainWindow::on_pushButtonTuneUndo_clicked() {
     sendCommand(cmd);
     // Note: The slave will return the new value (i.e., oldVal) and its previous value (i.e., currentValue),
     // The response will again trigger parseTuneResponse, automatically updating the history stack and display.
+}
+
+void MainWindow::on_pushButtonTuneEnquire_clicked() {
+    QString subsys = ui->comboBoxTuneSubsystem->currentText();
+    QString param = ui->comboBoxTuneParameter->currentText();
+    QString cmd = QString("tune %1 %2 ?\r\n").arg(subsys, param);
+    m_recordHistory = false;
+    sendCommand(cmd);
 }
 
 void MainWindow::on_pushButtonIncrement_clicked() {
@@ -604,7 +782,7 @@ void MainWindow::on_comboBoxTuneSubsystem_currentIndexChanged(int index) {
     if (m_paramLastValue.contains(key)) {
         double lastVal = m_paramLastValue[key];
         m_currentParamHistory.currentValue = lastVal;
-        ui->lineEditTune->setText(QString::number(lastVal, 'f', 4));
+        ui->lineEditTune->setText(QString::number(lastVal, 'f', 6));
     } else {
         m_currentParamHistory.currentValue = 0.0;
         ui->lineEditTune->clear();
@@ -619,7 +797,7 @@ void MainWindow::on_comboBoxTuneParameter_currentIndexChanged(int index) {
     if (m_paramLastValue.contains(key)) {
         double lastVal = m_paramLastValue[key];
         m_currentParamHistory.currentValue = lastVal;
-        ui->lineEditTune->setText(QString::number(lastVal, 'f', 4));
+        ui->lineEditTune->setText(QString::number(lastVal, 'f', 6));
     } else {
         m_currentParamHistory.currentValue = 0.0;
         ui->lineEditTune->clear();
@@ -683,15 +861,69 @@ void MainWindow::addTimeStamp(double offsetSec)
     }
 }
 
+void MainWindow::updateTargetSliderLimits() {
+    bool isSpeed = (ui->comboBoxTargetSelection->currentText() == "Speed");
+    if (isSpeed) {
+        ui->targetSlider->setRange(-5000, 5000);
+        ui->targetSlider->setSingleStep(10);
+        ui->targetLabelPrefix->setText("Speed");
+    } else {
+        ui->targetSlider->setRange(-100, 100);   // -100 → -10.0, 100 → 10.0
+        ui->targetSlider->setSingleStep(1);
+        ui->targetLabelPrefix->setText("Torque");
+    }
+    // Adjust current value to avoid exceeding limits
+    int current = ui->targetSlider->value();
+    current = qBound(ui->targetSlider->minimum(), current, ui->targetSlider->maximum());
+    ui->targetSlider->setValue(current);
+}
+
+double MainWindow::getCurrentTargetValue() const {
+    if (m_targetManuallyEdited) {
+        bool ok;
+        double v = ui->lineEditTarget->text().toDouble(&ok);
+        if (ok) return v;
+    }
+    bool isSpeed = (ui->comboBoxTargetSelection->currentText() == "Speed");
+    if (isSpeed) {
+        return ui->targetSlider->value();
+    } else {
+        return ui->targetSlider->value() / 10.0;
+    }
+}
+
+void MainWindow::setTargetValue(double val, bool markAsEdited) {
+    ui->targetSlider->blockSignals(true);
+
+    bool isSpeed = (ui->comboBoxTargetSelection->currentText() == "Speed");
+    if (isSpeed) {
+        val = qBound(-5000.0, val, 5000.0);
+        int sliderVal = static_cast<int>(qRound(val / 10.0) * 10);
+        ui->targetSlider->setValue(sliderVal);
+    } else {
+        val = qBound(-10.0, val, 10.0);
+        int sliderVal = static_cast<int>(qRound(val * 10.0));
+        ui->targetSlider->setValue(sliderVal);
+    }
+    // Format display: remove trailing zeros, keep sufficient precision (up to 6 decimal places)
+    QString formatted = QString::number(val, 'f', 6);
+    formatted.remove(QRegularExpression("\\.?0+$"));
+    if (formatted.isEmpty()) formatted = "0";
+    ui->lineEditTarget->setText(formatted);
+
+    m_targetManuallyEdited = markAsEdited;
+    ui->targetSlider->blockSignals(false);
+}
+
 void MainWindow::parseTuneResponse(const QString &line) {
-    // Format: "motor speed set to 100.0000 (was 50.0000)"
-    QRegularExpression regex(R"((\w+)\s+(\w+)\s+set to\s+([0-9.-]+)\s+\(was\s+([0-9.-]+)\))");
-    QRegularExpressionMatch match = regex.match(line);
-    if (match.hasMatch()) {
-        QString subsys = match.captured(1);
-        QString param = match.captured(2);
-        double newVal = match.captured(3).toDouble();
-        double oldVal = match.captured(4).toDouble();
+    // Format: "speed p set to 100.000000 (was 50.000000)"
+    QRegularExpression setRegex(R"((\w+)\s+(\w+)\s+set to\s+([0-9.-]+)\s+\(was\s+([0-9.-]+)\))");
+    QRegularExpressionMatch setMatch = setRegex.match(line);
+    if (setMatch.hasMatch()) {
+        QString subsys = setMatch.captured(1);
+        QString param = setMatch.captured(2);
+        double newVal = setMatch.captured(3).toDouble();
+        double oldVal = setMatch.captured(4).toDouble();
 
         QString key = subsys + ":" + param;
         // Update history stack: push old value onto stack (max 32)
@@ -706,8 +938,28 @@ void MainWindow::parseTuneResponse(const QString &line) {
                 m_currentParamHistory.undoStack.push(oldVal);
             }
             m_currentParamHistory.currentValue = newVal;
-            ui->lineEditTune->setText(QString::number(newVal, 'f', 4));
+            ui->lineEditTune->setText(QString::number(newVal, 'f', 6));
         }
+        return;
+    }
+
+    // Format for enquire response: "speed p is 100.000000"
+    QRegularExpression queryRegex(R"((\w+)\s+(\w+)\s+is\s+([0-9.-]+))");
+    QRegularExpressionMatch queryMatch = queryRegex.match(line);
+    if (queryMatch.hasMatch()) {
+        QString subsys = queryMatch.captured(1);
+        QString param = queryMatch.captured(2);
+        double value = queryMatch.captured(3).toDouble();
+
+        QString key = subsys + ":" + param;
+        m_paramLastValue[key] = value;
+
+        if (getCurrentParamKey() == key) {
+            // Enquire command does not affect history stack
+            m_currentParamHistory.currentValue = value;
+            ui->lineEditTune->setText(QString::number(value, 'f', 6));
+        }
+        return;
     }
 }
 

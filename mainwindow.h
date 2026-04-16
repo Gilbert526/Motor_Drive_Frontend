@@ -57,9 +57,17 @@ private slots:
     void on_pushButtonRemoveAll_clicked();
     void on_pushButtonBin_clicked();
     void on_pushButtonUtf8_clicked();
+    // Setting Targets
+    void on_comboBoxTargetSelection_currentIndexChanged(int index);
+    void on_targetSlider_valueChanged(int value);
+    void on_lineEditTarget_editingFinished();
+    void on_timeSlider_valueChanged(int value);
+    void on_lineEditTime_editingFinished();
+    void on_pushButtonTargetSend_clicked();
     // Tuning
     void on_pushButtonTuneSend_clicked();
     void on_pushButtonTuneUndo_clicked();
+    void on_pushButtonTuneEnquire_clicked();
     void on_pushButtonIncrement_clicked();
     void on_pushButtonDecrement_clicked();
     void on_incrementSlider_valueChanged(int value);
@@ -130,6 +138,20 @@ private:
 
     bool m_syncingFromMask;
 
+    // Target type selection
+    QString m_currentTargetType;
+
+    // Target setting last values
+    double m_lastSpeedValue;
+    double m_lastTorqueValue;
+
+    // Manual Target Setting
+    bool m_targetManuallyEdited;
+    bool m_timeManuallyEdited;
+
+    // Changing target type flag
+    bool m_updatingTargetType;
+
     // Tuning parameter history for undo functionality
     struct TuneParamHistory {
         QStack<double> undoStack;  // 历史值栈（旧值）
@@ -155,6 +177,11 @@ private:
     void syncFieldCheckStates();
 
     void addTimeStamp(double offsetSec); // 添加时间戳
+
+    // Target setting helpers
+    void updateTargetSliderLimits();   // 根据 Speed/Torque 更新滑块范围和步进
+    double getCurrentTargetValue() const;
+    void setTargetValue(double val, bool markAsEdited = true);
 
     // Tuning parameter handling
     void parseTuneResponse(const QString &line);   // 解析下位机返回
