@@ -23,23 +23,26 @@ void OscilloscopeWidget::setupUi() {
     // Config button
     m_configBtn = new QPushButton("⚙️", this);
     m_configBtn->setFixedSize(20, 20);
+    m_configBtn->setToolTip("Configure fields to plot");
     connect(m_configBtn, &QPushButton::clicked, this, &OscilloscopeWidget::onConfigure);
 
     // Add Scope Below Button
     QPushButton *addBelowBtn = new QPushButton("+", this);
     addBelowBtn->setFixedSize(20, 20);
+    addBelowBtn->setToolTip("Add scope below");
     connect(addBelowBtn, &QPushButton::clicked, this, &OscilloscopeWidget::addBelowRequested);
 
     // Remove Scope Button
     QPushButton *removeBtn = new QPushButton("-", this);
     removeBtn->setFixedSize(20, 20);
+    removeBtn->setToolTip("Remove scope");
     connect(removeBtn, &QPushButton::clicked, this, &OscilloscopeWidget::removeRequested);
 
     // Y-axis Lock Button
     m_yLockBtn = new QPushButton("🔒", this);
     m_yLockBtn->setFixedSize(20, 20);
     m_yLockBtn->setCheckable(true);
-    m_yLockBtn->setToolTip("锁定Y轴后不会自动缩放");
+    m_yLockBtn->setToolTip("Toggle disabling Y-axis auto-scaling");
     connect(m_yLockBtn, &QPushButton::clicked, this, &OscilloscopeWidget::onToggleYLock);
     
     QHBoxLayout *titleLayout = new QHBoxLayout;

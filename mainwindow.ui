@@ -6,26 +6,23 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1361</width>
-    <height>743</height>
+    <width>1429</width>
+    <height>857</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QVBoxLayout" name="verticalLayout">
+   <layout class="QHBoxLayout" name="horizontalLayout">
     <item>
-     <layout class="QHBoxLayout" name="horizontalLayout" stretch="1,1">
+     <layout class="QHBoxLayout" name="horizontalLayoutFullWindow" stretch="2,3">
       <item>
-       <layout class="QVBoxLayout" name="verticalLayoutLeft" stretch="2,1">
+       <layout class="QVBoxLayout" name="verticalLayoutLeft">
         <item>
-         <layout class="QHBoxLayout" name="horizontalLayoutTopLeft" stretch="3,2">
-          <property name="sizeConstraint">
-           <enum>QLayout::SizeConstraint::SetDefaultConstraint</enum>
-          </property>
+         <layout class="QHBoxLayout" name="horizontalLayoutSerial" stretch="2,1">
           <item>
-           <layout class="QVBoxLayout" name="verticalLayoutSerial" stretch="1,2,3,1">
+           <layout class="QVBoxLayout" name="verticalLayoutSerialLeft" stretch="1,2,2,1">
             <item>
              <widget class="QGroupBox" name="groupBoxSerialSetting">
               <property name="sizePolicy">
@@ -298,6 +295,19 @@
                    </property>
                   </widget>
                  </item>
+                 <item row="1" column="3">
+                  <widget class="QPushButton" name="pushButtonRemoveAll">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="text">
+                    <string>Remove All</string>
+                   </property>
+                  </widget>
+                 </item>
                 </layout>
                </item>
               </layout>
@@ -347,7 +357,7 @@
                     </size>
                    </property>
                    <property name="text">
-                    <string>-&gt;</string>
+                    <string>➢</string>
                    </property>
                   </widget>
                  </item>
@@ -359,11 +369,147 @@
            </layout>
           </item>
           <item>
-           <widget class="QGroupBox" name="groupBoxTuning">
-            <property name="title">
-             <string>Tuning</string>
-            </property>
-           </widget>
+           <layout class="QVBoxLayout" name="verticalLayoutSerialRight">
+            <item>
+             <widget class="QGroupBox" name="groupBox">
+              <property name="title">
+               <string>Quick Command</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QGroupBox" name="groupBoxTuning">
+              <property name="title">
+               <string>Tuning</string>
+              </property>
+              <layout class="QVBoxLayout" name="verticalLayout_5">
+               <item>
+                <layout class="QVBoxLayout" name="verticalLayout" stretch="0,0,0,0">
+                 <item>
+                  <layout class="QHBoxLayout" name="horizontalLayoutTuneSelection">
+                   <item>
+                    <widget class="QComboBox" name="comboBoxTuneSubsystem"/>
+                   </item>
+                   <item>
+                    <widget class="QComboBox" name="comboBoxTuneParameter"/>
+                   </item>
+                  </layout>
+                 </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="horizontalLayoutTuneValue">
+                   <item>
+                    <widget class="QLineEdit" name="lineEditTune"/>
+                   </item>
+                   <item>
+                    <widget class="QPushButton" name="pushButtonTuneSend">
+                     <property name="sizePolicy">
+                      <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                       <horstretch>0</horstretch>
+                       <verstretch>0</verstretch>
+                      </sizepolicy>
+                     </property>
+                     <property name="maximumSize">
+                      <size>
+                       <width>24</width>
+                       <height>16777215</height>
+                      </size>
+                     </property>
+                     <property name="text">
+                      <string>➢</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <widget class="QPushButton" name="pushButtonTuneUndo">
+                     <property name="sizePolicy">
+                      <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                       <horstretch>0</horstretch>
+                       <verstretch>0</verstretch>
+                      </sizepolicy>
+                     </property>
+                     <property name="maximumSize">
+                      <size>
+                       <width>24</width>
+                       <height>16777215</height>
+                      </size>
+                     </property>
+                     <property name="text">
+                      <string>⭯</string>
+                     </property>
+                    </widget>
+                   </item>
+                  </layout>
+                 </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="horizontalLayoutTuneIncrement">
+                   <item>
+                    <widget class="QPushButton" name="pushButtonDecrement">
+                     <property name="text">
+                      <string>▼</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <widget class="QPushButton" name="pushButtonIncrement">
+                     <property name="text">
+                      <string>▲</string>
+                     </property>
+                    </widget>
+                   </item>
+                  </layout>
+                 </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="horizontalLayoutTuneSlider">
+                   <item>
+                    <widget class="QLabel" name="incrementLablePrefix">
+                     <property name="text">
+                      <string>Step</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <widget class="QSlider" name="incrementSlider">
+                     <property name="orientation">
+                      <enum>Qt::Orientation::Horizontal</enum>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <widget class="QLabel" name="incrementLabel">
+                     <property name="sizePolicy">
+                      <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+                       <horstretch>0</horstretch>
+                       <verstretch>0</verstretch>
+                      </sizepolicy>
+                     </property>
+                     <property name="minimumSize">
+                      <size>
+                       <width>45</width>
+                       <height>0</height>
+                      </size>
+                     </property>
+                     <property name="maximumSize">
+                      <size>
+                       <width>45</width>
+                       <height>16777215</height>
+                      </size>
+                     </property>
+                     <property name="text">
+                      <string>0.00001</string>
+                     </property>
+                     <property name="alignment">
+                      <set>Qt::AlignmentFlag::AlignCenter</set>
+                     </property>
+                    </widget>
+                   </item>
+                  </layout>
+                 </item>
+                </layout>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
           </item>
          </layout>
         </item>
@@ -393,7 +539,7 @@
             <widget class="QListWidget" name="fieldListWidget">
              <property name="minimumSize">
               <size>
-               <width>90</width>
+               <width>100</width>
                <height>0</height>
               </size>
              </property>
@@ -417,8 +563,8 @@
                  <rect>
                   <x>0</x>
                   <y>0</y>
-                  <width>488</width>
-                  <height>600</height>
+                  <width>637</width>
+                  <height>722</height>
                  </rect>
                 </property>
                 <layout class="QVBoxLayout" name="verticalLayout_OscContainer">
@@ -474,11 +620,29 @@
                </item>
                <item>
                 <widget class="QLabel" name="sampleLabel">
+                 <property name="sizePolicy">
+                  <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+                   <horstretch>0</horstretch>
+                   <verstretch>0</verstretch>
+                  </sizepolicy>
+                 </property>
+                 <property name="minimumSize">
+                  <size>
+                   <width>35</width>
+                   <height>0</height>
+                  </size>
+                 </property>
+                 <property name="maximumSize">
+                  <size>
+                   <width>35</width>
+                   <height>16777215</height>
+                  </size>
+                 </property>
                  <property name="text">
-                  <string>500</string>
+                  <string>10000</string>
                  </property>
                  <property name="alignment">
-                  <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+                  <set>Qt::AlignmentFlag::AlignCenter</set>
                  </property>
                 </widget>
                </item>
@@ -503,7 +667,7 @@
                   </size>
                  </property>
                  <property name="text">
-                  <string>⏸</string>
+                  <string>⏸️</string>
                  </property>
                 </widget>
                </item>
@@ -525,8 +689,8 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1361</width>
-     <height>21</height>
+     <width>1429</width>
+     <height>22</height>
     </rect>
    </property>
   </widget>

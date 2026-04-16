@@ -23,6 +23,8 @@ signals:
     void fieldsChanged();   // 请求配置（点击齿轮时发出）
     void removeRequested();
     void addBelowRequested();
+    void moveUpRequested();    // Move up requested
+    void moveDownRequested();  // Move down requested
 
 private slots:
     void onConfigure();
@@ -35,6 +37,8 @@ private:
     QList<QColor> m_colors;
     QLabel *m_titleLabel;
     QPushButton *m_configBtn;
+    QPushButton *m_moveUpBtn;
+    QPushButton *m_moveDownBtn;
 
     bool m_yLocked;           // Y轴是否锁定
     QPushButton *m_yLockBtn;  // 按钮指针

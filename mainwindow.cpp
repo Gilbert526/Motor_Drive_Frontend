@@ -18,6 +18,7 @@ MainWindow::MainWindow(QWidget *parent):
     m_currentMaxPoints(500),
     m_plotPaused(false),
     m_syncingFromMask(false),
+    m_recordHistory(true),
     m_packetCounter(0),
     m_packetIntervalSec(1.0 / DEFAULT_PACKET_FREQ_HZ) {
         ui->setupUi(this);
@@ -61,6 +62,12 @@ MainWindow::MainWindow(QWidget *parent):
             if (hasNonPrintable) {
                 return;
             }
+
+            // Parse each line for tuning undo
+            QStringList lines = text.split('\n');
+            for (const QString &line : lines) {
+                parseTuneResponse(line);
+            }
             
             // Display if it passes filters
             if (!text.isEmpty()) {
@@ -88,14 +95,47 @@ MainWindow::MainWindow(QWidget *parent):
         ui->comboBaud->setCurrentText("115200");
 
         ui->pushButtonRefresh->setText("Refresh");
-        ui->pushButtonSend->setText("->");
+        ui->pushButtonRefresh->setToolTip("Refresh serial ports");
+        ui->pushButtonSend->setText("➢");
+        ui->pushButtonSend->setToolTip("Send data");
         ui->pushButtonStart->setText("Start");
+        ui->pushButtonStart->setToolTip("Start running motor");
+        ui->pushButtonAlign->setText("Align");
+        ui->pushButtonAlign->setToolTip("Align motor electrical and mechanical zero positions");
         ui->pushButtonStop->setText("Stop");
+        ui->pushButtonStop->setToolTip("Stop motor");
         ui->pushButtonAudible->setText("Audible");
+        ui->pushButtonAudible->setToolTip("Toggle audible PWM frequencies");
         ui->pushButtonReset->setText("Reset");
-        ui->pushButtonPause->setText("⏸");
+        ui->pushButtonReset->setToolTip("Reset motor state");
+        ui->pushButtonPause->setText("⏸️");
 
         updateUiForSerialState(false);
+
+        /*--- Tuning ---*/
+        // Populate subsystem combo box
+        ui->comboBoxTuneSubsystem->addItems({"speed", "id", "iq", "fw", "gain", "offset"});
+
+        // Connect tuning parameter signals
+        connect(ui->comboBoxTuneSubsystem, QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this, &MainWindow::on_comboBoxTuneSubsystem_currentIndexChanged);
+
+        // Initialize tuning parameters for the first subsystem
+        on_comboBoxTuneSubsystem_currentIndexChanged(0);
+
+        // Initialize increment slider with predefined step values
+        const QVector<double> stepValues = {0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0};
+        ui->incrementSlider->setRange(0, stepValues.size() - 1);
+        ui->incrementSlider->setValue(10); // 默认 1.0
+        on_incrementSlider_valueChanged(10);
+
+        ui->pushButtonIncrement->setToolTip("Increment parameter");
+        ui->pushButtonDecrement->setToolTip("Decrement parameter");
+        ui->pushButtonTuneSend->setToolTip("Send tuning command");
+        ui->pushButtonTuneUndo->setToolTip("Undo last tuning change");
+        ui->incrementSlider->setToolTip("Adjust tuning increment step");
+
+        m_stepValues = {0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0};
     }
 
 MainWindow::~MainWindow() {
@@ -407,9 +447,116 @@ void MainWindow::on_pushButtonPreset4_clicked() { sendCommand("log preset 4\r\n"
 void MainWindow::on_pushButtonBin_clicked()     { sendCommand("log bin\r\n"); }
 void MainWindow::on_pushButtonUtf8_clicked()    { sendCommand("log utf8\r\n"); }
 
+void MainWindow::on_pushButtonTuneSend_clicked() {
+    QString subsys = ui->comboBoxTuneSubsystem->currentText();
+    QString param = ui->comboBoxTuneParameter->currentText();
+    QString valueStr = ui->lineEditTune->text();
+    bool ok;
+    double value = valueStr.toDouble(&ok);
+    if (!ok) {
+        QMessageBox::warning(this, "Error", "Invalid numeric value");
+        return;
+    }
+    // Set flag to record this change in history when the response comes back
+    m_recordHistory = true;
+    QString cmd = QString("tune %1 %2 %3\r\n").arg(subsys, param, valueStr);
+    sendCommand(cmd);
+}
+
+void MainWindow::on_pushButtonTuneUndo_clicked() {
+    if (m_currentParamHistory.undoStack.isEmpty()) {
+        QMessageBox::information(this, "Undo", "No previous value to undo");
+        return;
+    }
+    double oldVal = m_currentParamHistory.undoStack.pop();
+    // Send tuning command to revert value, but disable history recording for this action to avoid loops
+    m_recordHistory = false;
+    QString subsys = ui->comboBoxTuneSubsystem->currentText();
+    QString param = ui->comboBoxTuneParameter->currentText();
+    QString cmd = QString("tune %1 %2 %3\r\n").arg(subsys, param, QString::number(oldVal, 'f', 4));
+    sendCommand(cmd);
+    // Note: The slave will return the new value (i.e., oldVal) and its previous value (i.e., currentValue),
+    // The response will again trigger parseTuneResponse, automatically updating the history stack and display.
+}
+
+void MainWindow::on_pushButtonIncrement_clicked() {
+    double step = m_stepValues[ui->incrementSlider->value()];
+    QString subsys = ui->comboBoxTuneSubsystem->currentText();
+    QString param = ui->comboBoxTuneParameter->currentText();
+    // Set flag to record this change in history when the response comes back
+    m_recordHistory = true;
+    QString cmd = QString("increment %1 %2 %3\r\n").arg(subsys, param, QString::number(step, 'f', 6));
+    sendCommand(cmd);
+}
+
+void MainWindow::on_pushButtonDecrement_clicked() {
+    double step = -m_stepValues[ui->incrementSlider->value()];
+    QString subsys = ui->comboBoxTuneSubsystem->currentText();
+    QString param = ui->comboBoxTuneParameter->currentText();
+    // Set flag to record this change in history when the response comes back
+    m_recordHistory = true;
+    QString cmd = QString("increment %1 %2 %3\r\n").arg(subsys, param, QString::number(step, 'f', 6));
+    sendCommand(cmd);
+}
+
+void MainWindow::on_incrementSlider_valueChanged(int value) {
+    if (value >= 0 && value < m_stepValues.size()) {
+        double step = m_stepValues[value];
+        ui->incrementLabel->setText(formatStepValue(step));
+    }
+}
+
+void MainWindow::on_comboBoxTuneSubsystem_currentIndexChanged(int index) {
+    Q_UNUSED(index);
+    // Clear history stack when switching subsystem
+    m_currentParamHistory.undoStack.clear();
+    // Update parameter combo box based on selected subsystem
+    QString subsys = ui->comboBoxTuneSubsystem->currentText();
+    ui->comboBoxTuneParameter->clear();
+    // Define parameters for each subsystem
+    if (subsys == "speed") {
+        ui->comboBoxTuneParameter->addItems({"p", "i"});
+    } else if (subsys == "id") {
+        ui->comboBoxTuneParameter->addItems({"p", "i"});
+    } else if (subsys == "iq") {
+        ui->comboBoxTuneParameter->addItems({"p", "i"});
+    } else if (subsys == "fw") {
+        ui->comboBoxTuneParameter->addItems({"p", "i"});
+    } else if (subsys == "gain") {
+        ui->comboBoxTuneParameter->addItems({"ia", "ib", "ic", "va", "vb", "ibatt", "vbatt"});
+    } else if (subsys == "offset") {
+        ui->comboBoxTuneParameter->addItems({"ia", "ib", "ic", "va", "vb", "ibatt", "vbatt"});
+    }
+    // Display last known value for the first parameter of the new subsystem, if available
+    QString key = getCurrentParamKey();
+    if (m_paramLastValue.contains(key)) {
+        double lastVal = m_paramLastValue[key];
+        m_currentParamHistory.currentValue = lastVal;
+        ui->lineEditTune->setText(QString::number(lastVal, 'f', 4));
+    } else {
+        m_currentParamHistory.currentValue = 0.0;
+        ui->lineEditTune->clear();
+    }
+}
+
+void MainWindow::on_comboBoxTuneParameter_currentIndexChanged(int index) {
+    Q_UNUSED(index);
+    // Clear history stack when switching parameter
+    m_currentParamHistory.undoStack.clear();
+    QString key = getCurrentParamKey();
+    if (m_paramLastValue.contains(key)) {
+        double lastVal = m_paramLastValue[key];
+        m_currentParamHistory.currentValue = lastVal;
+        ui->lineEditTune->setText(QString::number(lastVal, 'f', 4));
+    } else {
+        m_currentParamHistory.currentValue = 0.0;
+        ui->lineEditTune->clear();
+    }
+}
+
 void MainWindow::on_pushButtonPause_clicked() {
     m_plotPaused = !m_plotPaused;
-    ui->pushButtonPause->setText(m_plotPaused ? "▶" : "⏸");
+    ui->pushButtonPause->setText(m_plotPaused ? "▶️" : "⏸️");
     if (!m_plotPaused) {
         // 如果从暂停恢复，立即刷新一次
         updateAllPlots();
@@ -461,5 +608,55 @@ void MainWindow::addTimeStamp(double offsetSec)
     m_timeStamps.append(offsetSec);
     if (m_timeStamps.size() > m_maxWavePoints) {
         m_timeStamps.remove(0, m_timeStamps.size() - m_maxWavePoints);
+    }
+}
+
+void MainWindow::parseTuneResponse(const QString &line) {
+    // Format: "motor speed set to 100.0000 (was 50.0000)"
+    QRegularExpression regex(R"((\w+)\s+(\w+)\s+set to\s+([0-9.-]+)\s+\(was\s+([0-9.-]+)\))");
+    QRegularExpressionMatch match = regex.match(line);
+    if (match.hasMatch()) {
+        QString subsys = match.captured(1);
+        QString param = match.captured(2);
+        double newVal = match.captured(3).toDouble();
+        double oldVal = match.captured(4).toDouble();
+
+        QString key = subsys + ":" + param;
+        // Update history stack: push old value onto stack (max 32)
+        m_paramLastValue[key] = newVal;
+
+        // If the current UI selection is this parameter, update lineEditTune to show the new value
+        if (getCurrentParamKey() == key) {
+            // Push to stack depending on the flag (undo command does not push)
+            if (m_recordHistory) {
+                if (m_currentParamHistory.undoStack.size() >= 32)
+                    m_currentParamHistory.undoStack.pop_front();
+                m_currentParamHistory.undoStack.push(oldVal);
+            }
+            m_currentParamHistory.currentValue = newVal;
+            ui->lineEditTune->setText(QString::number(newVal, 'f', 4));
+        }
+    }
+}
+
+QString MainWindow::getCurrentParamKey() const {
+    return ui->comboBoxTuneSubsystem->currentText() + ":" + ui->comboBoxTuneParameter->currentText();
+}
+
+QString MainWindow::formatStepValue(double step) const
+{
+    double absStep = std::fabs(step);
+    if (absStep >= 1.0) {
+        return QString::number(step, 'f', 0);        // 0 decimal places for integer steps
+    } else if (absStep >= 0.1) {
+        return QString::number(step, 'f', 1);        // 1 decimal place for steps between 0.1 and 1
+    } else if (absStep >= 0.01) {
+        return QString::number(step, 'f', 2);        // 2 decimal places for steps between 0.01 and 0.1
+    } else if (absStep >= 0.001) {
+        return QString::number(step, 'f', 3);        // 3 decimal places for steps between 0.001 and 0.01
+    } else if (absStep >= 0.0001) {
+        return QString::number(step, 'f', 4);        // 4 decimal places for steps between 0.0001 and 0.001
+    } else {
+        return QString::number(step, 'f', 5);        // 5 decimal places for steps between 0.00001 and 0.0001
     }
 }
