@@ -98,8 +98,12 @@ MainWindow::MainWindow(QWidget *parent):
         ui->pushButtonRefresh->setToolTip("Refresh serial ports");
         ui->pushButtonSend->setText("➢");
         ui->pushButtonSend->setToolTip("Send data");
-        ui->pushButtonStart->setText("Start");
-        ui->pushButtonStart->setToolTip("Start running motor");
+        ui->pushButtonFoc->setText("FOC");
+        ui->pushButtonFoc->setToolTip("Start motor with FOC");
+        ui->pushButtonVvvf->setText("VVVF");
+        ui->pushButtonVvvf->setToolTip("Start motor with VVVF ramp-up");
+        ui->pushButtonSixstep->setText("Sixstep");
+        ui->pushButtonSixstep->setToolTip("Start motor with six-step commutation");
         ui->pushButtonAlign->setText("Align");
         ui->pushButtonAlign->setToolTip("Align motor electrical and mechanical zero positions");
         ui->pushButtonStop->setText("Stop");
@@ -499,7 +503,9 @@ void MainWindow::on_pushButtonSend_clicked() {
     ui->plainTextEditReceive->appendPlainText(">> " + sendStr.trimmed());
 }
 
-void MainWindow::on_pushButtonStart_clicked()   { sendCommand("start\r\n"); }
+void MainWindow::on_pushButtonFoc_clicked()     { sendCommand("start foc\r\n"); }
+void MainWindow::on_pushButtonVvvf_clicked()    { sendCommand("start vvvf\r\n"); }
+void MainWindow::on_pushButtonSixstep_clicked() { sendCommand("sixstep\r\n"); }
 void MainWindow::on_pushButtonStop_clicked()    { sendCommand("stop\r\n"); }
 void MainWindow::on_pushButtonAlign_clicked()   { sendCommand("align\r\n"); }
 void MainWindow::on_pushButtonAudible_clicked() { sendCommand("audible\r\n"); }

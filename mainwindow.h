@@ -41,7 +41,9 @@ private slots:
     void on_pushButtonRefresh_clicked();
     // Basic Commands
     void on_pushButtonSend_clicked();
-    void on_pushButtonStart_clicked();
+    void on_pushButtonVvvf_clicked();
+    void on_pushButtonSixstep_clicked();
+    void on_pushButtonFoc_clicked();
     void on_pushButtonStop_clicked();
     void on_pushButtonAlign_clicked();
     void on_pushButtonAudible_clicked();
