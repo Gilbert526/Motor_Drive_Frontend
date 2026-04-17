@@ -81,6 +81,7 @@ CMakeLists.txt.user*
 .uic/
 /build*/
 
+*compile_commands.json
 out/build/qt-x86/.cmake/
 out/build/qt-x86/cmake/
 out/build/qt-x86/CMakeFiles/

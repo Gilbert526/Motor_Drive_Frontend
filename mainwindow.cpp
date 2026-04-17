@@ -1213,6 +1213,7 @@ void MainWindow::parseTuneResponse(const QString &line) {
             m_currentParamHistory.currentValue = newVal;
             ui->lineEditTune->setText(QString::number(newVal, 'f', 6));
         }
+        statusBar()->showMessage(QString("Value Captured (%1 %2 %3)").arg(subsys).arg(param).arg(newVal, 0, 'f', 6), 3000);
         return;
     }
 
@@ -1232,6 +1233,7 @@ void MainWindow::parseTuneResponse(const QString &line) {
             m_currentParamHistory.currentValue = value;
             ui->lineEditTune->setText(QString::number(value, 'f', 6));
         }
+        statusBar()->showMessage(QString("Enquire Captured (%1 %2 %3)").arg(subsys).arg(param).arg(value, 0, 'f', 6), 3000);
         return;
     }
 }
