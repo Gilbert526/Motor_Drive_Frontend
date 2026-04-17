@@ -828,7 +828,7 @@ void MainWindow::on_targetSlider_valueChanged(int value) {
 
     m_targetManuallyEdited = false;
     if (ui->comboBoxTargetSelection->currentText() == "Speed") {
-        int snapped = (value / 10) * 10;
+        int snapped = (value / 100) * 100;
         if (snapped != value) {
             ui->targetSlider->blockSignals(true);
             ui->targetSlider->setValue(snapped);
@@ -859,7 +859,7 @@ void MainWindow::on_lineEditTarget_editingFinished() {
     // Move the slider to the nearest step value (speed in tens, torque in 0.1 increments)
     int sliderValue;
     if (isSpeed) {
-        sliderValue = static_cast<int>(qRound(val / 10.0) * 10);
+        sliderValue = static_cast<int>(qRound(val / 100.0) * 100); // Round to nearest 100
     } else {
         sliderValue = static_cast<int>(qRound(val * 10.0));
     }
@@ -1138,7 +1138,7 @@ void MainWindow::updateTargetSliderLimits() {
     bool isSpeed = (ui->comboBoxTargetSelection->currentText() == "Speed");
     if (isSpeed) {
         ui->targetSlider->setRange(-5000, 5000);
-        ui->targetSlider->setSingleStep(10);
+        ui->targetSlider->setSingleStep(100);
         ui->targetLabelPrefix->setText("Speed");
     } else {
         ui->targetSlider->setRange(-100, 100);   // -100 → -10.0, 100 → 10.0
@@ -1171,7 +1171,7 @@ void MainWindow::setTargetValue(double val, bool markAsEdited) {
     bool isSpeed = (ui->comboBoxTargetSelection->currentText() == "Speed");
     if (isSpeed) {
         val = qBound(-5000.0, val, 5000.0);
-        int sliderVal = static_cast<int>(qRound(val / 10.0) * 10);
+        int sliderVal = static_cast<int>(qRound(val / 100.0) * 100);
         ui->targetSlider->setValue(sliderVal);
     } else {
         val = qBound(-10.0, val, 10.0);
