@@ -28,6 +28,7 @@ MainWindow::MainWindow(QWidget *parent):
     m_packetCounter(0),
     m_packetIntervalSec(1.0 / DEFAULT_PACKET_FREQ_HZ) {
         ui->setupUi(this);
+        setWindowTitle("Tuning Master");
 
         // 初始化串口管理线程
         m_serialManager = new SerialManager();
