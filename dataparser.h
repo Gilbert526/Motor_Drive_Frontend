@@ -29,6 +29,14 @@ public:
 
     quint32 getMaskForField(const QString &fieldName) const;
 
+    /**
+     * @brief Parse the length of a complete binary frame from the given data
+     * @param data Raw data containing the frame header (0xAA 0x55)
+     * @param startIdx Start index of the frame header (default is 0)
+     * @return Total number of bytes in the frame (including header and mask), or -1 if data is insufficient or format is incorrect
+     */
+    int getFrameLength(const QByteArray &data, int startIdx = 0) const;
+
 signals:
     void parsedData(const QHash<QString, double> &values);
 

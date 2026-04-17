@@ -47,36 +47,62 @@ MainWindow::MainWindow(QWidget *parent):
 
         // Display received message in text box
         connect(m_serialManager, &SerialManager::rawDataReceived, this, [this](const QByteArray &data) {
-            // Translate into UTF8 text
-            QString text = QString::fromUtf8(data);
-            
-            // Filtering condition 1: Check for presence of replacement character (indicates decoding issues)
-            if (text.contains(QChar::ReplacementCharacter)) {
-                return;
-            }
-            
-            // Filtering condition 2: Check for non-printable characters (except common whitespace)
-            bool hasNonPrintable = false;
-            for (QChar ch : text) {
-                if (ch.isPrint() || ch == '\n' || ch == '\r' || ch == '\t') {
-                    continue;
+            static QByteArray buffer;           // Buffer for original data
+            static QByteArray lineBuffer;       // Accumulated incomplete text lines
+            buffer.append(data);
+
+            int idx = 0;
+            while (idx < buffer.size()) {
+                // Look for the next frame header (0xAA 0x55)
+                int headerPos = buffer.indexOf(QByteArray::fromHex("AA55"), idx);
+                if (headerPos == -1) {
+                    // Check for a split header: if the last byte is 0xAA, stop here
+                    int endOfText = buffer.size();
+                    if (buffer.endsWith(char(0xAA))) {
+                        endOfText -= 1;
+                    }
+                    if (endOfText > idx) {
+                        lineBuffer.append(buffer.mid(idx, endOfText - idx));
+                        idx = endOfText; 
+                    }
+                    break;
                 }
-                hasNonPrintable = true;
-                break;
-            }
-            if (hasNonPrintable) {
-                return;
+
+                // Text data before the frame header (possibly incomplete line)
+                if (headerPos > idx) {
+                    lineBuffer.append(buffer.mid(idx, headerPos - idx));
+                }
+
+                // Process complete lines in lineBuffer (separated by newline characters)
+                int newlinePos;
+                while ((newlinePos = lineBuffer.indexOf('\n')) != -1) {
+                    QByteArray line = lineBuffer.left(newlinePos + 1); // Include newline character
+                    QString text = QString::fromUtf8(line).trimmed();
+                    if (!text.isEmpty()) {
+                        ui->plainTextEditReceive->appendPlainText(text);
+                        parseTuneResponse(text);   // Parse tuning response
+                    }
+                    lineBuffer.remove(0, newlinePos + 1);
+                }
+
+                // Try to get the binary frame length
+                int frameLen = m_dataParser->getFrameLength(buffer, headerPos);
+                if (frameLen == -1) {
+                    // Insufficient data, retain the unprocessed portion from headerPos (incomplete frame header)
+                    idx = headerPos;
+                    break;
+                }
+
+                // Skip the entire binary frame
+                idx = headerPos + frameLen;
             }
 
-            // Parse each line for tuning undo
-            QStringList lines = text.split('\n');
-            for (const QString &line : lines) {
-                parseTuneResponse(line);
-            }
-            
-            // Display if it passes filters
-            if (!text.isEmpty()) {
-                ui->plainTextEditReceive->appendPlainText(text);
+            // If the loop ends normally (idx reaches the end), clear the buffer
+            if (idx >= buffer.size()) {
+                buffer.clear();
+            } else {
+                // Retain the unprocessed portion (possibly an incomplete binary frame header)
+                buffer = buffer.mid(idx);
             }
         });
 

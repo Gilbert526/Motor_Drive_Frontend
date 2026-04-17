@@ -146,6 +146,37 @@ quint32 DataParser::getMaskForField(const QString &fieldName) const {
     return 0;   // 未找到
 }
 
+int DataParser::getFrameLength(const QByteArray &data, int startIdx) const
+{
+    // Check if the data is sufficient to contain the frame header (2 bytes) + mask (4 bytes)
+    if (data.size() < startIdx + 2 + 4)
+        return -1;
+
+    // Check if the frame header is 0xAA 0x55
+    if (data.at(startIdx) != char(0xAA) || data.at(startIdx + 1) != char(0x55))
+        return -1;
+
+    // Read the mask (little-endian 32-bit)
+    quint32 mask = 0;
+    const uchar* p = reinterpret_cast<const uchar*>(data.data() + startIdx + 2);
+    mask = p[0] | (p[1]<<8) | (p[2]<<16) | (p[3]<<24);
+
+    // Calculate the total length of the payload area
+    int payloadLen = 0;
+    for (const FieldDef &field : m_fields) {
+        if (mask & field.maskBit) {
+            payloadLen += field.size;
+        }
+    }
+
+    // Total length = frame header(2) + mask(4) + payload length
+    int totalLen = 2 + 4 + payloadLen;
+    if (data.size() < startIdx + totalLen)
+        return -1;   // Insufficient data
+
+    return totalLen;
+}
+
 void DataParser::initCommandMapping() {
     m_displayToCmd["RPM"]       = "rpm";
     m_displayToCmd["RPMSP"]     = "rpmsp";
