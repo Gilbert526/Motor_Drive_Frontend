@@ -23,6 +23,11 @@ public:
 
     void addField(const QString &fieldName);
 
+    void setFieldColor(const QString &fieldName, const QColor &color);
+    QColor getFieldColor(const QString &fieldName) const;
+
+    void setColorList(const QList<QColor> &colors);
+
 protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dragMoveEvent(QDragMoveEvent *event) override;

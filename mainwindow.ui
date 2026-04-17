@@ -810,7 +810,7 @@
          <item>
           <layout class="QHBoxLayout" name="horizontalLayoutPlotting" stretch="2,7">
            <item>
-            <widget class="QListWidget" name="fieldListWidget">
+            <widget class="DragListWidget" name="fieldListWidget">
              <property name="minimumSize">
               <size>
                <width>100</width>
@@ -973,6 +973,13 @@
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>DragListWidget</class>
+   <extends>QListWidget</extends>
+   <header location="global">draglistwidget.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

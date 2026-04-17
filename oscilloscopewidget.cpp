@@ -13,7 +13,6 @@ OscilloscopeWidget::OscilloscopeWidget(QWidget *parent):
         setAcceptDrops(true);
         m_plot->setAcceptDrops(false);
         setupUi();
-        m_colors = {Qt::red, Qt::green, Qt::blue, Qt::magenta, Qt::cyan, Qt::darkYellow, Qt::darkCyan};
 }
 
 void OscilloscopeWidget::setupUi() {
@@ -158,6 +157,34 @@ void OscilloscopeWidget::addField(const QString &fieldName) {
     QStringList newFields = m_fields;
     newFields.append(fieldName);
     setFields(newFields);
+}
+
+void OscilloscopeWidget::setFieldColor(const QString &fieldName, const QColor &color) {
+    if (!m_graphs.contains(fieldName))
+        return;
+    m_graphs[fieldName]->setPen(QPen(color, 1.5));
+    m_plot->replot();
+}
+
+QColor OscilloscopeWidget::getFieldColor(const QString &fieldName) const {
+    if (m_graphs.contains(fieldName))
+        return m_graphs[fieldName]->pen().color();
+    return QColor();
+}
+
+void OscilloscopeWidget::setColorList(const QList<QColor> &colors)
+{
+    m_colors = colors;
+    // If a plot is already created, refresh the colors
+    if (!m_fields.isEmpty()) {
+        for (int i = 0; i < m_fields.size(); ++i) {
+            const QString &field = m_fields[i];
+            if (m_graphs.contains(field)) {
+                m_graphs[field]->setPen(QPen(m_colors[i % m_colors.size()], 1.5));
+            }
+        }
+        m_plot->replot();
+    }
 }
 
 void OscilloscopeWidget::dragEnterEvent(QDragEnterEvent *event) {

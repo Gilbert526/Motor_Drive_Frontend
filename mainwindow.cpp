@@ -14,6 +14,7 @@ MainWindow::MainWindow(QWidget *parent):
     m_serialManager(nullptr),
     m_dataParser(nullptr),
     m_serialThread(nullptr),
+    m_historyIndex(-1),
     m_maxWavePoints(20000),     // 最多存储20000点
     m_currentMaxPoints(500),
     m_plotPaused(false),
@@ -128,7 +129,7 @@ MainWindow::MainWindow(QWidget *parent):
         ui->pushButtonRefresh->setText("Refresh");
         ui->pushButtonRefresh->setToolTip("Refresh serial ports");
         ui->pushButtonSend->setText("➢");
-        ui->pushButtonSend->setToolTip("Send data");
+        ui->pushButtonSend->setToolTip("Send command");
         ui->pushButtonFoc->setText("FOC");
         ui->pushButtonFoc->setToolTip("Start motor with FOC");
         ui->pushButtonVvvf->setText("VVVF");
@@ -144,6 +145,10 @@ MainWindow::MainWindow(QWidget *parent):
         ui->pushButtonReset->setText("Reset");
         ui->pushButtonReset->setToolTip("Reset motor state");
         ui->pushButtonPause->setText("⏸️");
+        ui->plainTextEditReceive->setReadOnly(true);
+
+        // Command line features
+        ui->lineEditSend->installEventFilter(this);
 
         updateUiForSerialState(false);
 
@@ -151,6 +156,13 @@ MainWindow::MainWindow(QWidget *parent):
         // Initialize target selection
         ui->comboBoxTargetSelection->addItems({"Speed", "Torque"});
         m_currentTargetType = ui->comboBoxTargetSelection->currentText();
+
+        ui->comboBoxTargetSelection->setToolTip("Select target type for motor control (Speed or Torque)");
+        ui->targetSlider->setToolTip("Adjust target value using slider");
+        ui->timeSlider->setToolTip("Adjust time duration for ramping to target value, set to 0 for immediate change");
+        ui->lineEditTarget->setToolTip("Manually enter target value (overrides slider)");
+        ui->lineEditTime->setToolTip("Manually enter time duration in seconds (overrides time slider)");
+        ui->pushButtonTargetSend->setToolTip("Send target command");
 
         // Initialize target slider
         updateTargetSliderLimits();
@@ -196,6 +208,23 @@ MainWindow::~MainWindow() {
         m_serialThread->wait();
     }
     delete ui;
+}
+
+QList<QColor> MainWindow::getPresetColors()
+{
+    return {
+        Qt::red, Qt::green, Qt::blue, Qt::magenta,
+        Qt::cyan, Qt::darkYellow, Qt::darkCyan, Qt::darkMagenta,
+        QColor(240, 131, 0),
+        QColor(106, 45, 151),
+        QColor(255, 143, 191)
+    };
+}
+
+QStringList MainWindow::getColorNames()
+{
+    return {"Red", "Green", "Blue", "Magenta", "Cyan", "Dark Yellow", "Dark Cyan", "Dark Magenta",
+            "Mikan", "Purple", "Pink"};
 }
 
 // ==================== 波形区域初始化 ====================
@@ -252,6 +281,7 @@ void MainWindow::setupPlottingArea() {
 
 void MainWindow::addOscilloscope(const QString &title, int index) {
     OscilloscopeWidget *osc = new OscilloscopeWidget;
+    osc->setColorList(getPresetColors());
     if (!title.isEmpty())
         osc->setTitle(title);
     else
@@ -329,36 +359,197 @@ void MainWindow::on_fieldList_itemDoubleClicked(QListWidgetItem *item) {
 }
 
 void MainWindow::on_oscilloscopeConfigRequested(OscilloscopeWidget *osc) {
-    // 弹出多选对话框，让用户选择要显示的字段
     QDialog dialog(this);
-    dialog.setWindowTitle("Select Fields to Display");
-    QListWidget *list = new QListWidget(&dialog);
-    list->setSelectionMode(QAbstractItemView::MultiSelection);
+    dialog.setWindowTitle("Configure Fields to Plot");
+    dialog.setMinimumWidth(350);
+
+    QTableWidget *table = new QTableWidget(&dialog);
+    table->setColumnCount(2);
+    table->setHorizontalHeaderLabels({"Field", "Color"});
+    table->setColumnWidth(0, 180); // 设置第一列宽度为 180 像素
+    table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    table->verticalHeader()->setVisible(false);
+
     QStringList allFields = m_dataParser->getFieldNames();
     QStringList currentFields = osc->getFields();
 
-    for (const QString &field : allFields) {
-        QListWidgetItem *item = new QListWidgetItem(field);
+    // 预设颜色列表（与 OscilloscopeWidget 中一致）
+    QList<QColor> presetColors = MainWindow::getPresetColors();
+    QStringList colorNames = MainWindow::getColorNames();
+
+    // 存储每个字段的颜色下拉框指针
+    QHash<int, QComboBox*> colorCombos;
+
+    table->setRowCount(allFields.size());
+    for (int i = 0; i < allFields.size(); ++i) {
+        QString field = allFields[i];
+        bool checked = currentFields.contains(field);
+
+        // 第一列：字段名 + 复选框（不可编辑）
+        QTableWidgetItem *item = new QTableWidgetItem(field);
+        item->setFlags(item->flags() & ~Qt::ItemIsEditable);   // 禁止编辑
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-        item->setCheckState(currentFields.contains(field) ? Qt::Checked : Qt::Unchecked);
-        list->addItem(item);
+        item->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
+        table->setItem(i, 0, item);
+
+        // 第二列：如果已勾选，创建颜色下拉框；否则留空
+        if (checked) {
+            QComboBox *combo = new QComboBox();
+            // 添加预设颜色（带图标）
+            for (int j = 0; j < presetColors.size(); ++j) {
+                QPixmap pixmap(16, 16);
+                pixmap.fill(presetColors[j]);
+                combo->addItem(QIcon(pixmap), colorNames[j], presetColors[j]);
+            }
+            combo->addItem("Custom...");   // 自定义选项
+
+            // 尝试获取当前字段的现有颜色
+            QColor currentColor = osc->getFieldColor(field);
+            if (currentColor.isValid()) {
+                int index = presetColors.indexOf(currentColor);
+                if (index >= 0)
+                    combo->setCurrentIndex(index);
+                else
+                    combo->setCurrentIndex(presetColors.size()); // Custom...
+            } else {
+                // 默认：根据字段在 currentFields 中的索引分配预设颜色
+                int idx = currentFields.indexOf(field);
+                if (idx >= 0 && idx < presetColors.size())
+                    combo->setCurrentIndex(idx);
+            }
+
+            // 处理 Custom... 选项：弹出颜色对话框
+            connect(combo, QOverload<int>::of(&QComboBox::activated), this, [combo, field, this](int index) {
+                if (index == combo->count() - 1) { // 最后一项是 "Custom..."
+                    QColor newColor = QColorDialog::getColor(combo->palette().button().color(), nullptr,
+                                                             QString("Select Color for %1").arg(field));
+                    if (newColor.isValid()) {
+                        // 将自定义颜色存储为用户数据，并改变按钮图标显示
+                        QPixmap pixmap(16, 16);
+                        pixmap.fill(newColor);
+                        combo->setItemIcon(index, QIcon(pixmap));
+                        combo->setItemData(index, newColor, Qt::UserRole);
+                        combo->setCurrentIndex(index);
+                    } else {
+                        // 取消选择，恢复之前的选择
+                        int prev = combo->property("prevIndex").toInt();
+                        combo->setCurrentIndex(prev);
+                    }
+                }
+                combo->setProperty("prevIndex", combo->currentIndex());
+            });
+
+            // 存储当前索引以便取消时恢复
+            combo->setProperty("prevIndex", combo->currentIndex());
+
+            table->setCellWidget(i, 1, combo);
+            colorCombos[i] = combo;
+        } else {
+            table->setCellWidget(i, 1, nullptr);
+        }
     }
+
+    // 双击字段行：切换勾选状态
+    connect(table, &QTableWidget::cellDoubleClicked, this, [table](int row, int column) {
+        Q_UNUSED(column);
+        QTableWidgetItem *item = table->item(row, 0);
+        if (item) {
+            Qt::CheckState newState = (item->checkState() == Qt::Checked) ? Qt::Unchecked : Qt::Checked;
+            item->setCheckState(newState);
+        }
+    });
+
+    // 响应复选框状态变化：动态添加/删除颜色下拉框
+    connect(table, &QTableWidget::itemChanged, this, [table, &colorCombos, presetColors, colorNames](QTableWidgetItem *item) {
+        if (item->column() != 0) return;
+        int row = item->row();
+        bool checked = (item->checkState() == Qt::Checked);
+        QString field = item->text();
+
+        if (checked && !colorCombos.contains(row)) {
+            // 创建颜色下拉框
+            QComboBox *combo = new QComboBox();
+            for (int j = 0; j < presetColors.size(); ++j) {
+                QPixmap pixmap(16, 16);
+                pixmap.fill(presetColors[j]);
+                combo->addItem(QIcon(pixmap), colorNames[j], presetColors[j]);
+            }
+            combo->addItem("Custom...");
+            combo->setCurrentIndex(0);
+            combo->setProperty("prevIndex", 0);
+
+            // 处理 Custom... 选项
+            connect(combo, QOverload<int>::of(&QComboBox::activated), [combo, field](int index) {
+                if (index == combo->count() - 1) {
+                    QColor newColor = QColorDialog::getColor(Qt::white, nullptr,
+                                                            QString("Select Color for %1").arg(field));
+                    if (newColor.isValid()) {
+                        QPixmap pixmap(16, 16);
+                        pixmap.fill(newColor);
+                        combo->setItemIcon(index, QIcon(pixmap));
+                        combo->setItemData(index, newColor, Qt::UserRole);
+                        combo->setCurrentIndex(index);
+                    } else {
+                        int prev = combo->property("prevIndex").toInt();
+                        combo->setCurrentIndex(prev);
+                    }
+                }
+                combo->setProperty("prevIndex", combo->currentIndex());
+            });
+
+            table->setCellWidget(row, 1, combo);
+            colorCombos[row] = combo;
+        } else if (!checked && colorCombos.contains(row)) {
+            QWidget *oldWidget = table->cellWidget(row, 1);
+            if (oldWidget) {
+                table->removeCellWidget(row, 1);
+                oldWidget->deleteLater();
+            }
+            colorCombos.remove(row);
+        }
+    });
 
     QDialogButtonBox *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
     QVBoxLayout *layout = new QVBoxLayout(&dialog);
-    layout->addWidget(list);
+    layout->addWidget(table);
     layout->addWidget(buttonBox);
 
     if (dialog.exec() == QDialog::Accepted) {
-        QStringList selected;
-        for (int i = 0; i < list->count(); ++i) {
-            if (list->item(i)->checkState() == Qt::Checked)
-                selected << list->item(i)->text();
+        QStringList selectedFields;
+        QHash<QString, QColor> colorOverrides;
+
+        for (int i = 0; i < allFields.size(); ++i) {
+            QTableWidgetItem *item = table->item(i, 0);
+            if (item->checkState() == Qt::Checked) {
+                QString field = allFields[i];
+                selectedFields << field;
+
+                QComboBox *combo = qobject_cast<QComboBox*>(table->cellWidget(i, 1));
+                if (combo) {
+                    int idx = combo->currentIndex();
+                    QColor color;
+                    if (idx >= 0 && idx < presetColors.size()) {
+                        color = presetColors[idx];
+                    } else if (idx == presetColors.size()) {
+                        // Custom... 选项：从 item data 中取自定义颜色
+                        color = combo->itemData(idx, Qt::UserRole).value<QColor>();
+                        if (!color.isValid())
+                            color = Qt::black; // fallback
+                    }
+                    if (color.isValid())
+                        colorOverrides[field] = color;
+                }
+            }
         }
-        osc->setFields(selected);
+
+        osc->setFields(selectedFields);
+        for (auto it = colorOverrides.begin(); it != colorOverrides.end(); ++it) {
+            osc->setFieldColor(it.key(), it.value());
+        }
     }
 }
 
@@ -407,6 +598,32 @@ void MainWindow::onMoveDownRequested() {
     delete itemNext;
 
     updateAllMoveButtons();
+}
+
+bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
+    if (obj == ui->lineEditSend && event->type() == QEvent::KeyPress) {
+        QKeyEvent *keyEvent = static_cast<QKeyEvent*>(event);
+        if (keyEvent->key() == Qt::Key_Up) {
+            // 上键：浏览上一条历史
+            if (!m_sendHistory.isEmpty() && m_historyIndex > 0) {
+                m_historyIndex--;
+                ui->lineEditSend->setText(m_sendHistory[m_historyIndex]);
+            }
+            return true;
+        } else if (keyEvent->key() == Qt::Key_Down) {
+            // 下键：浏览下一条历史
+            if (!m_sendHistory.isEmpty() && m_historyIndex < m_sendHistory.size() - 1) {
+                m_historyIndex++;
+                ui->lineEditSend->setText(m_sendHistory[m_historyIndex]);
+            } else if (m_historyIndex == m_sendHistory.size() - 1) {
+                // 已经到最后一条，清空输入框
+                ui->lineEditSend->clear();
+                m_historyIndex = m_sendHistory.size(); // 指向末尾之后
+            }
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(obj, event);
 }
 
 void MainWindow::on_sampleSlider_valueChanged(int value) {
@@ -543,15 +760,11 @@ void MainWindow::on_pushButtonRefresh_clicked() {
 }
 
 void MainWindow::on_pushButtonSend_clicked() {
-    QString sendStr = ui->lineEditSend->text();
-    if (sendStr.isEmpty()) return;
-    if (!sendStr.endsWith("\r\n"))
-        sendStr += "\r\n";
-    QByteArray data = sendStr.toUtf8();
-    QMetaObject::invokeMethod(m_serialManager, "sendData",
-                              Qt::QueuedConnection,
-                              Q_ARG(QByteArray, data));
-    ui->plainTextEditReceive->appendPlainText(">> " + sendStr.trimmed());
+    sendCurrentLineEditCommand();
+}
+
+void MainWindow::on_lineEditSend_returnPressed() {
+    sendCurrentLineEditCommand();
 }
 
 void MainWindow::on_pushButtonFoc_clicked()     { sendCommand("start foc\r\n"); }
@@ -841,6 +1054,35 @@ void MainWindow::on_pushButtonPause_clicked() {
         // 如果从暂停恢复，立即刷新一次
         updateAllPlots();
     }
+}
+
+void MainWindow::sendCurrentLineEditCommand() {
+    QString sendStr = ui->lineEditSend->text();
+    if (sendStr.isEmpty())
+        return;
+
+    // 存入历史（避免与上一条重复）
+    if (m_sendHistory.isEmpty() || m_sendHistory.last() != sendStr) {
+        m_sendHistory.append(sendStr);
+        if (m_sendHistory.size() > 64)
+            m_sendHistory.removeFirst();
+    }
+    m_historyIndex = m_sendHistory.size(); // 指向末尾之后
+
+    // 发送数据（自动添加换行）
+    QString cmd = sendStr;
+    if (!cmd.endsWith("\r\n"))
+        cmd += "\r\n";
+    QByteArray data = cmd.toUtf8();
+    QMetaObject::invokeMethod(m_serialManager, "sendData",
+                              Qt::QueuedConnection,
+                              Q_ARG(QByteArray, data));
+
+    // 显示回显
+    ui->plainTextEditReceive->appendPlainText(">> " + sendStr.trimmed());
+
+    // 清空输入框
+    ui->lineEditSend->clear();
 }
 
 void MainWindow::onFieldCheckStateChanged(QListWidgetItem *item) {

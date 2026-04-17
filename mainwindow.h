@@ -35,12 +35,16 @@ public:
 
     const QVector<double>& getTimeStamps() const { return m_timeStamps; }
 
+    static QList<QColor> getPresetColors();
+    static QStringList getColorNames();
+
 private slots:
     // Serial
     void on_pushButtonStartToggle_clicked();
     void on_pushButtonRefresh_clicked();
     // Basic Commands
     void on_pushButtonSend_clicked();
+    void on_lineEditSend_returnPressed();
     void on_pushButtonVvvf_clicked();
     void on_pushButtonSixstep_clicked();
     void on_pushButtonFoc_clicked();
@@ -104,11 +108,18 @@ private slots:
     void onMoveUpRequested();
     void onMoveDownRequested();
 
+protected:
+    bool eventFilter(QObject *obj, QEvent *event) override;
+
 private:
     Ui::MainWindow *ui;
     SerialManager   *m_serialManager;
     DataParser      *m_dataParser;
     QThread         *m_serialThread;
+
+    // Command line history
+    QStringList m_sendHistory;
+    int m_historyIndex;
 
     // 波形数据存储（所有字段的历史数据）
     QHash<QString, QVector<double>> m_waveData;
@@ -165,6 +176,8 @@ private:
     QVector<double> m_stepValues;
 
     // 辅助函数
+    void sendCurrentLineEditCommand();
+
     void refreshSerialPorts();
     void updateUiForSerialState(bool isOpen);
     void sendCommand(const QString &cmd);
