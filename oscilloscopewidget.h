@@ -34,6 +34,7 @@ signals:
     void addBelowRequested();
     void moveUpRequested();    // Move up requested
     void moveDownRequested();  // Move down requested
+    void refreshRequested();
 
 private slots:
     void onConfigure();

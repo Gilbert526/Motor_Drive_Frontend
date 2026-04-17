@@ -274,6 +274,8 @@ void MainWindow::addOscilloscope(const QString &title, int index) {
     connect(osc, &OscilloscopeWidget::moveUpRequested, this, &MainWindow::onMoveUpRequested);
     connect(osc, &OscilloscopeWidget::moveDownRequested, this, &MainWindow::onMoveDownRequested);
 
+    connect(osc, &OscilloscopeWidget::refreshRequested, this, &MainWindow::updateAllPlots);
+
     if (index < 0 || index > m_oscLayout->count()) {
         m_oscLayout->addWidget(osc);
         m_oscilloscopes.append(osc);

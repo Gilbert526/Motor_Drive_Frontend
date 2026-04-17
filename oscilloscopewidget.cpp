@@ -109,6 +109,7 @@ void OscilloscopeWidget::setFields(const QStringList &fields) {
     }
     m_plot->legend->setVisible(!m_fields.isEmpty());
     // 注意：不发射 fieldsChanged，避免循环
+    emit refreshRequested();
 }
 
 void OscilloscopeWidget::updatePlot(const QHash<QString, QVector<double>> &dataPool,
