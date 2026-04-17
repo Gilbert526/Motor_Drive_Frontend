@@ -30,6 +30,8 @@ qt_add_executable(Motor_Drive_Frontend
     qcustomplot.h
     oscilloscopewidget.cpp
     oscilloscopewidget.h
+    draglistwidget.cpp
+    draglistwidget.h
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE

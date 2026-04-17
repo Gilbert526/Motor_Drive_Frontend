@@ -209,7 +209,9 @@ void MainWindow::setupPlottingArea() {
 
     // Set field list to single selection mode
     m_fieldList->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_fieldList->setDragEnabled(false);
+    m_fieldList->setDragEnabled(true);
+    m_fieldList->setDragDropMode(QAbstractItemView::DragOnly);
+    m_fieldList->setDefaultDropAction(Qt::CopyAction);
     m_fieldList->clear();
     // Get available fields from DataParser and populate the list with checkable items
     QStringList allFields = m_dataParser->getFieldNames();

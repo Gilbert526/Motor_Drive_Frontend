@@ -10,6 +10,8 @@ OscilloscopeWidget::OscilloscopeWidget(QWidget *parent):
     m_plot(new QCustomPlot(this)),
     m_yLocked(false) {
         setMinimumHeight(200);
+        setAcceptDrops(true);
+        m_plot->setAcceptDrops(false);
         setupUi();
         m_colors = {Qt::red, Qt::green, Qt::blue, Qt::magenta, Qt::cyan, Qt::darkYellow, Qt::darkCyan};
 }
@@ -148,6 +150,50 @@ void OscilloscopeWidget::clear() {
     m_fields.clear();
     m_plot->legend->setVisible(false);
     m_plot->replot();
+}
+
+void OscilloscopeWidget::addField(const QString &fieldName) {
+    if (m_fields.contains(fieldName)) return;
+    QStringList newFields = m_fields;
+    newFields.append(fieldName);
+    setFields(newFields);
+}
+
+void OscilloscopeWidget::dragEnterEvent(QDragEnterEvent *event) {
+    if (event->mimeData()->hasText() || event->mimeData()->hasFormat("application/x-qabstractitemmodeldatalist"))
+        event->acceptProposedAction();
+}
+
+void OscilloscopeWidget::dragMoveEvent(QDragMoveEvent *event) {
+    if (event->mimeData()->hasText() || event->mimeData()->hasFormat("application/x-qabstractitemmodeldatalist")) {
+        event->acceptProposedAction();
+    }
+}
+
+void OscilloscopeWidget::dropEvent(QDropEvent *event) {
+    QString fieldName;
+
+    if (event->mimeData()->hasText()) {
+        fieldName = event->mimeData()->text();
+    } 
+    // If dragging from a standard QListWidget, the text is buried in a stream
+    else if (event->mimeData()->hasFormat("application/x-qabstractitemmodeldatalist")) {
+        QTreeWidget *tree = qobject_cast<QTreeWidget*>(event->source()); // or QListWidget
+        if (event->source()) {
+             // If coming from your QListWidget, it's easier to just get the current item
+             QListWidget *list = qobject_cast<QListWidget*>(event->source());
+             if (list && list->currentItem()) {
+                 fieldName = list->currentItem()->text();
+             }
+        }
+    }
+    
+    if (!fieldName.isEmpty() && !m_fields.contains(fieldName)) {
+        addField(fieldName);
+        event->acceptProposedAction();
+    } else {
+        event->ignore();
+    }
 }
 
 void OscilloscopeWidget::onConfigure() {

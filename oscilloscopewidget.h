@@ -21,6 +21,13 @@ public:
 
     void setMoveButtonsEnabled(bool upEnabled, bool downEnabled);
 
+    void addField(const QString &fieldName);
+
+protected:
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragMoveEvent(QDragMoveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
+
 signals:
     void fieldsChanged();   // 请求配置（点击齿轮时发出）
     void removeRequested();
