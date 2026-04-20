@@ -32,6 +32,7 @@ qt_add_executable(Motor_Drive_Frontend
     oscilloscopewidget.h
     draglistwidget.cpp
     draglistwidget.h
+    app_icon.rc
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
