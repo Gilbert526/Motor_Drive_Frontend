@@ -32,10 +32,19 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
+    struct TelemetryStatus {
+        quint32 errorCode = 0;
+        QStringList errorNames;
+        quint8 controlMode = 0;
+        QString controlModeName = "UNKNOWN_CONTROL_MODE";
+        bool controlModeKnown = false;
+    };
+
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
     const QVector<double>& getTimeStamps() const { return m_timeStamps; }
+    const TelemetryStatus& telemetryStatus() const { return m_telemetryStatus; }
 
     static QList<QColor> getPresetColors();
     static QStringList getColorNames();
@@ -91,6 +100,11 @@ private slots:
 
     // 数据解析
     void handleNewData(const QHash<QString, double> &values);
+    void handlePacketStatus(quint32 errorCode,
+                            const QStringList &errorNames,
+                            quint8 controlMode,
+                            const QString &controlModeName,
+                            bool controlModeKnown);
 
     // Update Field List on Mask Received
     void onMaskReceived(quint32 mask);
@@ -155,6 +169,7 @@ private:
     QFile m_logFile;
     QTextStream m_logStream;
     QStringList m_logFields;
+    TelemetryStatus m_telemetryStatus;
 
     bool m_syncingFromMask;
 

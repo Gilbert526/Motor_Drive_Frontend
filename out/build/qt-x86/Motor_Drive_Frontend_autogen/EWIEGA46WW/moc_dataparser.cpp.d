@@ -3,6 +3,7 @@ C:/Users/gilbe/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Projec
   C:/Qt/6.11.0/mingw_64/include/QtCore/QByteArray \
   C:/Qt/6.11.0/mingw_64/include/QtCore/QHash \
   C:/Qt/6.11.0/mingw_64/include/QtCore/QObject \
+  C:/Qt/6.11.0/mingw_64/include/QtCore/QStringList \
   C:/Qt/6.11.0/mingw_64/include/QtCore/QVector \
   C:/Qt/6.11.0/mingw_64/include/QtCore/q17memory.h \
   C:/Qt/6.11.0/mingw_64/include/QtCore/q20bit.h \

@@ -5,6 +5,29 @@
 const QByteArray DataParser::SYNC_BYTES = QByteArray::fromHex("AA55");
 
 DataParser::DataParser(QObject *parent): QObject{parent} {
+    m_errors = {
+        {"ERROR_PWM_CONFIG",     ERROR_PWM_CONFIG},
+        {"ERROR_ADC_CONFIG",     ERROR_ADC_CONFIG},
+        {"ERROR_DMA_CONFIG",     ERROR_DMA_CONFIG},
+        {"ERROR_TIM_CONFIG",     ERROR_TIM_CONFIG},
+        {"ERROR_ENCODER_CONFIG", ERROR_ENCODER_CONFIG},
+        {"ERROR_FOC_CONFIG",     ERROR_FOC_CONFIG},
+        {"ERROR_OVERCURRENT",    ERROR_OVERCURRENT}
+    };
+
+    m_modes = {
+        {"MOTOR_PROTECTION", static_cast<quint8>(MotorControlMode::MOTOR_PROTECTION)},
+        {"MOTOR_STOP",       static_cast<quint8>(MotorControlMode::MOTOR_STOP)},
+        {"MOTOR_MANUAL",     static_cast<quint8>(MotorControlMode::MOTOR_MANUAL)},
+        {"MOTOR_ALIGN",      static_cast<quint8>(MotorControlMode::MOTOR_ALIGN)},
+        {"MOTOR_STARTUP",    static_cast<quint8>(MotorControlMode::MOTOR_STARTUP)},
+        {"MOTOR_VVVF",       static_cast<quint8>(MotorControlMode::MOTOR_VVVF)},
+        {"MOTOR_SIX_STEP",   static_cast<quint8>(MotorControlMode::MOTOR_SIX_STEP)},
+        {"MOTOR_FOC_MANUAL", static_cast<quint8>(MotorControlMode::MOTOR_FOC_MANUAL)},
+        {"MOTOR_FOC_LINEAR", static_cast<quint8>(MotorControlMode::MOTOR_FOC_LINEAR)},
+        {"MOTOR_FOC_DPWM",   static_cast<quint8>(MotorControlMode::MOTOR_FOC_DPWM)}
+    };
+
     m_fields = {
         {"RPM",        4, 'f', 1 << 0},
         {"RPMSP",      4, 'f', 1 << 1},
@@ -47,7 +70,7 @@ void DataParser::parseData(const QByteArray &newData) {
     while (idx < m_buffer.size()) {
         int nextIdx;
         QHash<QString, double> values = tryParsePacket(idx, nextIdx);
-        if (!values.isEmpty()) {
+        if (nextIdx > idx) {
             emit parsedData(values);   // Inform MainWindow of new parsed data
             idx = nextIdx;
         } else {
@@ -76,15 +99,18 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
     }
 
     // 帧头位置确定了，检查是否有足够空间读取 mask (4字节)
-    if (m_buffer.size() < headerPos + 2 + 4)
+    if (m_buffer.size() < headerPos + 2 + 4 + 1 + 4)
         return result;
 
     // 读取 mask（小端32位）
-    quint32 mask = 0;
-    const uchar* p = reinterpret_cast<const uchar*>(m_buffer.data() + headerPos + 2);
-    mask = p[0] | (p[1]<<8) | (p[2]<<16) | (p[3]<<24);
+    const int errorPos = headerPos + 2;
+    const int modePos = errorPos + 4;
+    const int maskPos = modePos + 1;
+    const quint32 errorCode = qFromLittleEndian<quint32>(m_buffer.constData() + errorPos);
+    const quint8 controlMode = static_cast<quint8>(m_buffer.at(modePos));
+    const quint32 mask = qFromLittleEndian<quint32>(m_buffer.constData() + maskPos);
 
-    int payloadPos = headerPos + 2 + 4;
+    int payloadPos = maskPos + 4;
     int currentPos = payloadPos;
 
     // 按字段定义顺序解析
@@ -103,6 +129,13 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
 
     // 成功解析一个完整包
     nextStartIdx = currentPos;
+    const QStringList errorNames = getErrorNames(errorCode);
+    emit errorReceived(errorCode, errorNames);
+    emit packetStatusReceived(errorCode,
+                              errorNames,
+                              controlMode,
+                              getControlModeName(controlMode),
+                              isControlModeKnown(controlMode));
     emit maskReceived(mask);
     return result;
 }
@@ -146,20 +179,47 @@ quint32 DataParser::getMaskForField(const QString &fieldName) const {
     return 0;   // 未找到
 }
 
+QStringList DataParser::getErrorNames(quint32 errorCode) const {
+    QStringList names;
+    for (const ErrorDef &error : m_errors) {
+        if (errorCode & error.maskBit) {
+            names << error.name;
+        }
+    }
+    return names;
+}
+
+QString DataParser::getControlModeName(quint8 mode) const {
+    for (const ModeDef &modeDef : m_modes) {
+        if (modeDef.value == mode) {
+            return modeDef.name;
+        }
+    }
+    return "UNKNOWN_CONTROL_MODE";
+}
+
+bool DataParser::isControlModeKnown(quint8 mode) const {
+    for (const ModeDef &modeDef : m_modes) {
+        if (modeDef.value == mode) {
+            return true;
+        }
+    }
+    return false;
+}
+
 int DataParser::getFrameLength(const QByteArray &data, int startIdx) const
 {
     // Check if the data is sufficient to contain the frame header (2 bytes) + mask (4 bytes)
-    if (data.size() < startIdx + 2 + 4)
+    if (data.size() < startIdx + 2 + 4 + 1 + 4)
         return -1;
 
     // Check if the frame header is 0xAA 0x55
     if (data.at(startIdx) != char(0xAA) || data.at(startIdx + 1) != char(0x55))
         return -1;
 
-    // Read the mask (little-endian 32-bit)
-    quint32 mask = 0;
-    const uchar* p = reinterpret_cast<const uchar*>(data.data() + startIdx + 2);
-    mask = p[0] | (p[1]<<8) | (p[2]<<16) | (p[3]<<24);
+    // Read the mask (little-endian 32-bit) after the error code and mode byte.
+    const int maskPos = startIdx + 2 + 4 + 1;
+    const quint32 mask = qFromLittleEndian<quint32>(data.constData() + maskPos);
 
     // Calculate the total length of the payload area
     int payloadLen = 0;
@@ -170,7 +230,7 @@ int DataParser::getFrameLength(const QByteArray &data, int startIdx) const
     }
 
     // Total length = frame header(2) + mask(4) + payload length
-    int totalLen = 2 + 4 + payloadLen;
+    int totalLen = 2 + 4 + 1 + 4 + payloadLen;
     if (data.size() < startIdx + totalLen)
         return -1;   // Insufficient data
 

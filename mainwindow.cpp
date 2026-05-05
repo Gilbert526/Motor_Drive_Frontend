@@ -47,6 +47,7 @@ MainWindow::MainWindow(QWidget *parent):
         connect(m_serialManager, &SerialManager::portClosed, this, &MainWindow::handleSerialPortClosed);
         connect(m_serialManager, &SerialManager::rawDataReceived, m_dataParser, &DataParser::parseData);
         connect(m_dataParser, &DataParser::parsedData, this, &MainWindow::handleNewData);
+        connect(m_dataParser, &DataParser::packetStatusReceived, this, &MainWindow::handlePacketStatus);
 
         connect(m_dataParser, &DataParser::maskReceived, this, &MainWindow::onMaskReceived);
 
@@ -689,6 +690,31 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
     // }
 }
 
+void MainWindow::handlePacketStatus(quint32 errorCode,
+                                    const QStringList &errorNames,
+                                    quint8 controlMode,
+                                    const QString &controlModeName,
+                                    bool controlModeKnown) {
+    m_telemetryStatus.errorCode = errorCode;
+    m_telemetryStatus.errorNames = errorNames;
+    m_telemetryStatus.controlMode = controlMode;
+    m_telemetryStatus.controlModeName = controlModeName;
+    m_telemetryStatus.controlModeKnown = controlModeKnown;
+
+    if (errorCode != 0 && m_telemetryStatus.errorNames.isEmpty()) {
+        m_telemetryStatus.errorNames << "UNKNOWN_ERROR_BITS";
+    }
+
+    if (errorCode == 0) {
+        return;
+    }
+
+    const QString message = QString("Error 0x%1: %2")
+        .arg(errorCode, 8, 16, QLatin1Char('0'))
+        .arg(m_telemetryStatus.errorNames.join(" | "));
+    statusBar()->showMessage(message, 5000);
+}
+
 void MainWindow::onMaskReceived(quint32 mask) {
     if (m_syncingFromMask) return;
     m_syncingFromMask = true;
@@ -1086,7 +1112,7 @@ bool MainWindow::startTelemetryLogging() {
         return true;
     }
 
-    const QString fileName = QDateTime::currentDateTime().toString("yyyy-MM-dd-hh.mm.ss'_log_data.csv'");
+    const QString fileName = QDateTime::currentDateTime().toString("yyyy-MM-dd-hh.mm.ss'_log_data'");
     m_logFile.setFileName(QDir::current().filePath(fileName));
     if (!m_logFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QMessageBox::critical(this, "Error", "Failed to create telemetry log file: " + m_logFile.errorString());
@@ -1095,7 +1121,7 @@ bool MainWindow::startTelemetryLogging() {
 
     m_logFields = m_dataParser->getFieldNames();
     m_logStream.setDevice(&m_logFile);
-    m_logStream << "timestamp";
+    m_logStream << "timestamp,error_code,error_flags,control_mode,control_mode_name";
     for (const QString &field : m_logFields) {
         m_logStream << "," << field;
     }
@@ -1129,7 +1155,11 @@ void MainWindow::writeTelemetryLogRow(const QHash<QString, double> &values) {
         return;
     }
 
-    m_logStream << QDateTime::currentDateTime().toString(Qt::ISODateWithMs);
+    m_logStream << QDateTime::currentDateTime().toString(Qt::ISODateWithMs)
+                << "," << m_telemetryStatus.errorCode
+                << "," << m_telemetryStatus.errorNames.join("|")
+                << "," << static_cast<int>(m_telemetryStatus.controlMode)
+                << "," << m_telemetryStatus.controlModeName;
     for (const QString &field : m_logFields) {
         m_logStream << "," << QString::number(values.value(field, 0.0), 'g', 17);
     }
