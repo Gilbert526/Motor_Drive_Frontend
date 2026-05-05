@@ -317,7 +317,7 @@ void MainWindow::setupGaugeArea()
     gaugeLayout->setAlignment(Qt::AlignCenter);
     gaugeLayout->addStretch(1);
     addGauge("VBATT", "Battery", "V", 0.0, 30.0, 14.0, 26.0, 6);
-    addGauge("RPM", "Speed", "rpm", -7000.0, 7000.0, 4000.0, 6000.0, 14);
+    addGauge("RPM", "Speed", "RPM", -7000.0, 7000.0, 4000.0, 6000.0, 14);
     gaugeLayout->addStretch(1);
 
     if (!m_gaugeTimer) {
@@ -1269,7 +1269,7 @@ bool MainWindow::startTelemetryLogging() {
         return true;
     }
 
-    const QString fileName = QDateTime::currentDateTime().toString("yyyy-MM-dd-hh.mm.ss'_log_data'");
+    const QString fileName = QDateTime::currentDateTime().toString("yyyy-MM-dd-hh.mm.ss'_log_data.csv'");
     m_logFile.setFileName(QDir::current().filePath(fileName));
     if (!m_logFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QMessageBox::critical(this, "Error", "Failed to create telemetry log file: " + m_logFile.errorString());
