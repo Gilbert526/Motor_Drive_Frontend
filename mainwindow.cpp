@@ -7,6 +7,8 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QListWidgetItem>
+#include <QDateTime>
+#include <QDir>
 
 MainWindow::MainWindow(QWidget *parent):
     QMainWindow(parent),
@@ -18,6 +20,7 @@ MainWindow::MainWindow(QWidget *parent):
     m_maxWavePoints(20000),     // 最多存储20000点
     m_currentMaxPoints(500),
     m_plotPaused(false),
+    m_isLogging(false),
     m_syncingFromMask(false),
     m_lastSpeedValue(0.0),
     m_lastTorqueValue(0.0),
@@ -146,6 +149,14 @@ MainWindow::MainWindow(QWidget *parent):
         ui->pushButtonReset->setText("Reset");
         ui->pushButtonReset->setToolTip("Reset motor state");
         ui->pushButtonPause->setText("⏸️");
+        ui->pushButtonSave->setCheckable(true);
+        ui->pushButtonSave->setToolTip("Start or stop saving telemetry to CSV");
+        ui->pushButtonSave->setStyleSheet(
+            "QPushButton:checked {"
+            " background-color: #31e63a;"
+            " border: 1px solid #0a8a1f;"
+            "}"
+        );
         ui->plainTextEditReceive->setReadOnly(true);
 
         // Command line features
@@ -204,6 +215,7 @@ MainWindow::MainWindow(QWidget *parent):
     }
 
 MainWindow::~MainWindow() {
+    stopTelemetryLogging();
     if (m_serialThread->isRunning()) {
         m_serialThread->quit();
         m_serialThread->wait();
@@ -671,6 +683,7 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
         }
     }
     // 可选：在接收区显示关键数值（调试用，可注释）
+    writeTelemetryLogRow(values);
     // if (values.contains("RPM")) {
     //     ui->plainTextEditReceive->appendPlainText(QString("RPM: %1").arg(values["RPM"], 0, 'f', 1));
     // }
@@ -1055,6 +1068,72 @@ void MainWindow::on_pushButtonPause_clicked() {
         // 如果从暂停恢复，立即刷新一次
         updateAllPlots();
     }
+}
+
+void MainWindow::on_pushButtonSave_clicked() {
+    if (m_isLogging) {
+        stopTelemetryLogging();
+        return;
+    }
+
+    if (!startTelemetryLogging()) {
+        ui->pushButtonSave->setChecked(false);
+    }
+}
+
+bool MainWindow::startTelemetryLogging() {
+    if (m_isLogging) {
+        return true;
+    }
+
+    const QString fileName = QDateTime::currentDateTime().toString("yyyy-MM-dd-hh.mm.ss'_log_data.csv'");
+    m_logFile.setFileName(QDir::current().filePath(fileName));
+    if (!m_logFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::critical(this, "Error", "Failed to create telemetry log file: " + m_logFile.errorString());
+        return false;
+    }
+
+    m_logFields = m_dataParser->getFieldNames();
+    m_logStream.setDevice(&m_logFile);
+    m_logStream << "timestamp";
+    for (const QString &field : m_logFields) {
+        m_logStream << "," << field;
+    }
+    m_logStream << "\n";
+
+    m_isLogging = true;
+    ui->pushButtonSave->setChecked(true);
+    ui->pushButtonSave->setToolTip("Saving telemetry to " + m_logFile.fileName());
+    return true;
+}
+
+void MainWindow::stopTelemetryLogging() {
+    if (!m_isLogging && !m_logFile.isOpen()) {
+        return;
+    }
+
+    m_logStream.flush();
+    m_logStream.setDevice(nullptr);
+    if (m_logFile.isOpen()) {
+        m_logFile.close();
+    }
+    m_isLogging = false;
+    if (ui && ui->pushButtonSave) {
+        ui->pushButtonSave->setChecked(false);
+        ui->pushButtonSave->setToolTip("Start or stop saving telemetry to CSV");
+    }
+}
+
+void MainWindow::writeTelemetryLogRow(const QHash<QString, double> &values) {
+    if (!m_isLogging || !m_logFile.isOpen()) {
+        return;
+    }
+
+    m_logStream << QDateTime::currentDateTime().toString(Qt::ISODateWithMs);
+    for (const QString &field : m_logFields) {
+        m_logStream << "," << QString::number(values.value(field, 0.0), 'g', 17);
+    }
+    m_logStream << "\n";
 }
 
 void MainWindow::sendCurrentLineEditCommand() {

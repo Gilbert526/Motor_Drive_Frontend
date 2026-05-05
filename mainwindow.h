@@ -12,11 +12,13 @@
 #include <QSlider>
 #include <QLabel>
 #include <QVBoxLayout>
+#include <QFile>
+#include <QTextStream>
 #include "OscilloscopeWidget.h"
 #include <QStack>
 #include <QMap>
 
-#define DEFAULT_PACKET_FREQ_HZ 1000
+#define DEFAULT_PACKET_FREQ_HZ 5000
 
 class SerialManager;
 class DataParser;
@@ -79,6 +81,7 @@ private slots:
     void on_comboBoxTuneParameter_currentIndexChanged(int index);
     // Scope control
     void on_pushButtonPause_clicked();
+    void on_pushButtonSave_clicked();
 
     void onFieldCheckStateChanged(QListWidgetItem *item);
 
@@ -147,6 +150,12 @@ private:
     // Pause scope
     bool m_plotPaused;
 
+    // CSV telemetry logging
+    bool m_isLogging;
+    QFile m_logFile;
+    QTextStream m_logStream;
+    QStringList m_logFields;
+
     bool m_syncingFromMask;
 
     // Target type selection
@@ -190,6 +199,10 @@ private:
     void syncFieldCheckStates();
 
     void addTimeStamp(double offsetSec); // 添加时间戳
+
+    bool startTelemetryLogging();
+    void stopTelemetryLogging();
+    void writeTelemetryLogRow(const QHash<QString, double> &values);
 
     // Target setting helpers
     void updateTargetSliderLimits();   // 根据 Speed/Torque 更新滑块范围和步进
