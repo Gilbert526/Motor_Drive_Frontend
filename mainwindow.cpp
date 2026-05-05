@@ -349,7 +349,7 @@ void MainWindow::addGauge(const QString &fieldName,
     meter->setDivisionCount(divisionCount);
     meter->setPeakHoldMs(1000);
 
-    gaugeLayout->addWidget(meter, 1);
+    gaugeLayout->addWidget(meter, 0);
     m_gaugeBindings.append({fieldName, meter});
 }
 
@@ -417,12 +417,20 @@ void MainWindow::updateStatusIndicators()
                                   m_telemetryStatus.controlMode == protection;
     const bool overcurrentActive = (m_telemetryStatus.errorCode & DataParser::ERROR_OVERCURRENT) != 0;
     const bool undervoltageActive = (m_telemetryStatus.errorCode & DataParser::ERROR_UNDERVOLTAGE) != 0;
+    const quint32 configErrorMask = DataParser::ERROR_PWM_CONFIG |
+                                    DataParser::ERROR_ADC_CONFIG |
+                                    DataParser::ERROR_DMA_CONFIG |
+                                    DataParser::ERROR_TIM_CONFIG |
+                                    DataParser::ERROR_ENCODER_CONFIG |
+                                    DataParser::ERROR_FOC_CONFIG;
+    const bool configErrorActive = (m_telemetryStatus.errorCode & configErrorMask) != 0;
 
     setIndicator(ui->labelFoc, focActive, QColor(36, 166, 78));
     setIndicator(ui->labelVvvf, vvvfActive, QColor(36, 166, 78));
     setIndicator(ui->labelProtect, protectionActive, QColor(210, 64, 55));
     setIndicator(ui->labelOvercurrent, overcurrentActive, QColor(210, 64, 55));
     setIndicator(ui->labelUndervolt, undervoltageActive, QColor(210, 64, 55));
+    setIndicator(ui->labelConfig, configErrorActive, QColor(210, 64, 55));
 }
 
 void MainWindow::addOscilloscope(const QString &title, int index) {

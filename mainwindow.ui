@@ -973,7 +973,7 @@
               </widget>
              </item>
              <item row="1" column="2">
-              <widget class="QLabel" name="label_6">
+              <widget class="QLabel" name="labelConfig">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
                  <horstretch>0</horstretch>
@@ -993,7 +993,7 @@
                 </size>
                </property>
                <property name="text">
-                <string>TextLabel</string>
+                <string>Config</string>
                </property>
                <property name="alignment">
                 <set>Qt::AlignmentFlag::AlignCenter</set>
@@ -1050,8 +1050,8 @@
                  <rect>
                   <x>0</x>
                   <y>0</y>
-                  <width>413</width>
-                  <height>618</height>
+                  <width>410</width>
+                  <height>610</height>
                  </rect>
                 </property>
                 <layout class="QVBoxLayout" name="verticalLayout_OscContainer">
@@ -1205,7 +1205,7 @@
      <x>0</x>
      <y>0</y>
      <width>1432</width>
-     <height>21</height>
+     <height>20</height>
     </rect>
    </property>
   </widget>
