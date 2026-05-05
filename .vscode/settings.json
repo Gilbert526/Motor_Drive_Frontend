@@ -2,5 +2,6 @@
     "cmake.cmakePath": "C:/Program Files/CMake/bin/cmake.exe",
     "cmake.copyCompileCommands": "${workspaceFolder}/compile_commands.json",
     "cmake.sourceDirectory": "${workspaceFolder}",
-    "cmake.configureOnOpen": true
+    "cmake.configureOnOpen": true,
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
 }

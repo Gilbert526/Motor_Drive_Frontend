@@ -32,6 +32,7 @@ MainWindow::MainWindow(QWidget *parent):
     m_updatingTargetType(false),
     m_recordHistory(true),
     m_packetCounter(0),
+    m_gaugeTimer(nullptr),
     m_packetIntervalSec(1.0 / DEFAULT_PACKET_FREQ_HZ) {
         ui->setupUi(this);
         setWindowTitle("Tuning Master");
@@ -121,6 +122,7 @@ MainWindow::MainWindow(QWidget *parent):
         // 初始化示波器区域
         setupPlottingArea();
         setupGaugeArea();
+        updateStatusIndicators();
 
         // 加载字段列表到左侧
         loadAvailableFields();
@@ -312,8 +314,17 @@ void MainWindow::setupGaugeArea()
     gaugeLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
     m_gaugeBindings.clear();
 
-    addGauge("VBATT", "Battery", "V", 0.0, 25.0, 16.0, 22.0);
-    addGauge("RPM", "Speed", "rpm", -7000.0, 7000.0, 5000.0, 6500.0);
+    gaugeLayout->setAlignment(Qt::AlignCenter);
+    gaugeLayout->addStretch(1);
+    addGauge("VBATT", "Battery", "V", 0.0, 30.0, 14.0, 26.0, 6);
+    addGauge("RPM", "Speed", "rpm", -7000.0, 7000.0, 4000.0, 6000.0, 14);
+    gaugeLayout->addStretch(1);
+
+    if (!m_gaugeTimer) {
+        m_gaugeTimer = new QTimer(this);
+        connect(m_gaugeTimer, &QTimer::timeout, this, &MainWindow::flushGaugeUpdates);
+        m_gaugeTimer->start(16);
+    }
 }
 
 void MainWindow::addGauge(const QString &fieldName,
@@ -322,7 +333,8 @@ void MainWindow::addGauge(const QString &fieldName,
                           double minimum,
                           double maximum,
                           double warningThreshold,
-                          double criticalThreshold)
+                          double criticalThreshold,
+                          int divisionCount)
 {
     QHBoxLayout *gaugeLayout = qobject_cast<QHBoxLayout*>(ui->gaugeArea->layout());
     if (!gaugeLayout) {
@@ -334,20 +346,83 @@ void MainWindow::addGauge(const QString &fieldName,
     meter->setUnit(unit);
     meter->setRange(minimum, maximum);
     meter->setThresholds(warningThreshold, criticalThreshold);
-    meter->setMajorTickCount(6);
+    meter->setDivisionCount(divisionCount);
     meter->setPeakHoldMs(1000);
 
-    gaugeLayout->addWidget(meter);
+    gaugeLayout->addWidget(meter, 1);
     m_gaugeBindings.append({fieldName, meter});
 }
 
 void MainWindow::updateGauges(const QHash<QString, double> &values)
 {
-    for (const GaugeBinding &binding : std::as_const(m_gaugeBindings)) {
-        if (binding.meter && values.contains(binding.fieldName)) {
-            binding.meter->setValue(values.value(binding.fieldName));
+    for (GaugeBinding &binding : m_gaugeBindings) {
+        if (values.contains(binding.fieldName)) {
+            binding.pendingValue = values.value(binding.fieldName);
+            binding.hasPendingValue = true;
         }
     }
+}
+
+void MainWindow::flushGaugeUpdates()
+{
+    for (GaugeBinding &binding : m_gaugeBindings) {
+        if (binding.meter && binding.hasPendingValue) {
+            binding.meter->setValue(binding.pendingValue);
+            binding.hasPendingValue = false;
+        }
+    }
+}
+
+void MainWindow::updateStatusIndicators()
+{
+    const auto setIndicator = [](QLabel *label, bool active, const QColor &activeColor) {
+        if (!label) {
+            return;
+        }
+
+        if (active) {
+            label->setStyleSheet(QString(
+                "QLabel {"
+                " background-color: %1;"
+                " color: white;"
+                " border: 1px solid %2;"
+                " border-radius: 4px;"
+                " font-weight: bold;"
+                "}"
+            ).arg(activeColor.name(), activeColor.darker(130).name()));
+        } else {
+            label->setStyleSheet(
+                "QLabel {"
+                " background-color: #d7d9dc;"
+                " color: #555;"
+                " border: 1px solid #aeb4ba;"
+                " border-radius: 4px;"
+                " font-weight: normal;"
+                "}"
+            );
+        }
+    };
+
+    const quint8 focLinear = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_FOC_LINEAR);
+    const quint8 focDpwm = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_FOC_DPWM);
+    const quint8 vvvf = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_VVVF);
+    const quint8 protection = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_PROTECTION);
+
+    const bool focActive = m_telemetryStatus.controlModeKnown &&
+                           (m_telemetryStatus.controlMode == focLinear ||
+                            m_telemetryStatus.controlMode == focDpwm);
+    const bool vvvfActive = m_telemetryStatus.controlModeKnown &&
+                            m_telemetryStatus.controlMode == vvvf;
+    const bool protectionActive = m_telemetryStatus.controlModeKnown &&
+                                  m_telemetryStatus.controlMode == protection;
+    const bool overcurrentActive = (m_telemetryStatus.errorCode & DataParser::ERROR_OVERCURRENT) != 0;
+    const bool undervoltageActive = (m_telemetryStatus.errorCode & DataParser::ERROR_UNDERVOLTAGE) != 0;
+
+    setIndicator(ui->labelFoc, focActive, QColor(36, 166, 78));
+    setIndicator(ui->labelVvvf, vvvfActive, QColor(36, 166, 78));
+    setIndicator(ui->labelProtect, protectionActive, QColor(210, 64, 55));
+    setIndicator(ui->labelOvercurrent, overcurrentActive, QColor(210, 64, 55));
+    setIndicator(ui->labelUndervolt, undervoltageActive, QColor(210, 64, 55));
 }
 
 void MainWindow::addOscilloscope(const QString &title, int index) {
@@ -753,17 +828,33 @@ void MainWindow::handlePacketStatus(quint32 errorCode,
                                     quint8 controlMode,
                                     const QString &controlModeName,
                                     bool controlModeKnown) {
+    QStringList normalizedErrorNames = errorNames;
+    if (errorCode != 0 && normalizedErrorNames.isEmpty()) {
+        normalizedErrorNames << "UNKNOWN_ERROR_BITS";
+    }
+
+    const quint32 previousErrorCode = m_telemetryStatus.errorCode;
+    const bool statusChanged = m_telemetryStatus.errorCode != errorCode ||
+                               m_telemetryStatus.errorNames != normalizedErrorNames ||
+                               m_telemetryStatus.controlMode != controlMode ||
+                               m_telemetryStatus.controlModeName != controlModeName ||
+                               m_telemetryStatus.controlModeKnown != controlModeKnown;
+
     m_telemetryStatus.errorCode = errorCode;
-    m_telemetryStatus.errorNames = errorNames;
+    m_telemetryStatus.errorNames = normalizedErrorNames;
     m_telemetryStatus.controlMode = controlMode;
     m_telemetryStatus.controlModeName = controlModeName;
     m_telemetryStatus.controlModeKnown = controlModeKnown;
 
-    if (errorCode != 0 && m_telemetryStatus.errorNames.isEmpty()) {
-        m_telemetryStatus.errorNames << "UNKNOWN_ERROR_BITS";
+    if (statusChanged) {
+        updateStatusIndicators();
     }
 
     if (errorCode == 0) {
+        return;
+    }
+
+    if (errorCode == previousErrorCode && !statusChanged) {
         return;
     }
 

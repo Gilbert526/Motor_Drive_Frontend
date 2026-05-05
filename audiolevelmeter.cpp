@@ -3,22 +3,28 @@
 #include <QFontMetrics>
 #include <QPainter>
 #include <QSizePolicy>
+#include <QVector>
 #include <QtMath>
+
+#include <algorithm>
+#include <functional>
+#include <utility>
 
 AudioLevelMeter::AudioLevelMeter(QWidget *parent)
     : QWidget(parent),
       m_minimum(0.0),
       m_maximum(100.0),
       m_value(0.0),
+      m_displayValue(0.0),
       m_peakValue(0.0),
       m_warningThreshold(65.0),
       m_criticalThreshold(85.0),
-      m_majorTickCount(6),
+      m_divisionCount(5),
       m_peakHoldMs(1000),
       m_peakHoldRemainingMs(0)
 {
-    setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
-    setMinimumSize(90, 180);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    setMinimumSize(80, 180);
 
     m_peakDecayTimer.setInterval(40);
     connect(&m_peakDecayTimer, &QTimer::timeout, this, [this]() {
@@ -43,6 +49,13 @@ AudioLevelMeter::AudioLevelMeter(QWidget *parent)
             m_peakDecayTimer.stop();
         }
     });
+
+    m_valueDisplayTimer.setInterval(500);
+    connect(&m_valueDisplayTimer, &QTimer::timeout, this, [this]() {
+        m_displayValue = m_value;
+        update();
+    });
+    m_valueDisplayTimer.start();
 }
 
 void AudioLevelMeter::setTitle(const QString &title)
@@ -74,6 +87,7 @@ void AudioLevelMeter::setRange(double minimum, double maximum)
     m_minimum = minimum;
     m_maximum = maximum;
     m_value = clampedValue(m_value);
+    m_displayValue = clampedValue(m_displayValue);
     m_peakValue = clampedValue(m_peakValue);
     m_warningThreshold = m_minimum + (m_maximum - m_minimum) * 0.65;
     m_criticalThreshold = m_minimum + (m_maximum - m_minimum) * 0.85;
@@ -87,10 +101,15 @@ void AudioLevelMeter::setThresholds(double warningThreshold, double criticalThre
     update();
 }
 
+void AudioLevelMeter::setDivisionCount(int divisionCount)
+{
+    m_divisionCount = qMax(1, divisionCount);
+    update();
+}
+
 void AudioLevelMeter::setMajorTickCount(int tickCount)
 {
-    m_majorTickCount = qMax(2, tickCount);
-    update();
+    setDivisionCount(qMax(1, tickCount - 1));
 }
 
 void AudioLevelMeter::setPeakHoldMs(int holdMs)
@@ -116,7 +135,7 @@ void AudioLevelMeter::setValue(double value)
 
 QSize AudioLevelMeter::sizeHint() const
 {
-    return QSize(110, 240);
+    return QSize(80, 240);
 }
 
 QSize AudioLevelMeter::minimumSizeHint() const
@@ -145,7 +164,7 @@ void AudioLevelMeter::paintEvent(QPaintEvent *event)
     const int valueHeight = 24;
     painter.drawText(QRect(area.left(), area.top(), area.width(), valueHeight),
                      Qt::AlignCenter,
-                     formattedValue(m_value));
+                     formattedValue(m_displayValue));
 
     painter.setFont(titleFont);
     const int titleHeight = 22;
@@ -166,12 +185,12 @@ void AudioLevelMeter::paintEvent(QPaintEvent *event)
     painter.setBrush(QColor(28, 30, 33));
     painter.drawRoundedRect(trackRect, 4, 4);
 
-    const double ratio = normalizedValue(m_value);
-    const int fillHeight = qRound(meterRect.height() * ratio);
+    const int zeroY = yForValue(meterRect, 0.0);
+    const int valueY = yForValue(meterRect, m_value);
     QRect fillRect(meterRect.left() + 3,
-                   meterRect.bottom() - fillHeight + 1,
+                   qMin(zeroY, valueY),
                    meterRect.width() - 5,
-                   fillHeight - 3);
+                   qAbs(zeroY - valueY));
 
     if (fillRect.height() > 0) {
         painter.fillRect(fillRect, fillColorForValue(m_value));
@@ -183,16 +202,36 @@ void AudioLevelMeter::paintEvent(QPaintEvent *event)
         painter.drawLine(meterRect.left() + 3, y, meterRect.right() - 3, y);
     }
 
-    const int peakY = meterRect.bottom() - qRound(meterRect.height() * normalizedValue(m_peakValue));
+    painter.setPen(QPen(QColor(140, 140, 140), 1));
+    painter.drawLine(meterRect.left() + 2, zeroY, meterRect.right() - 2, zeroY);
+
+    const int peakY = yForValue(meterRect, m_peakValue);
     painter.setPen(QPen(QColor(245, 245, 245), 2));
     painter.drawLine(meterRect.left() + 2, peakY, meterRect.right() - 2, peakY);
 
     painter.setPen(QColor(65, 65, 65));
     const QFontMetrics fm(painter.font());
-    for (int i = 0; i < m_majorTickCount; ++i) {
-        const double tickRatio = (m_majorTickCount == 1) ? 0.0 : i / double(m_majorTickCount - 1);
-        const double tickValue = m_maximum - tickRatio * (m_maximum - m_minimum);
-        const int y = meterRect.top() + qRound(meterRect.height() * tickRatio);
+    QVector<double> tickValues;
+    tickValues.reserve(m_divisionCount + 2);
+    for (int i = 0; i <= m_divisionCount; ++i) {
+        const double tickValue = m_maximum - i * (m_maximum - m_minimum) / double(m_divisionCount);
+        tickValues.append(tickValue);
+    }
+
+    bool hasZeroTick = false;
+    for (double tickValue : std::as_const(tickValues)) {
+        if (qFuzzyIsNull(tickValue)) {
+            hasZeroTick = true;
+            break;
+        }
+    }
+    if (!hasZeroTick && m_minimum <= 0.0 && m_maximum >= 0.0) {
+        tickValues.append(0.0);
+        std::sort(tickValues.begin(), tickValues.end(), std::greater<double>());
+    }
+
+    for (double tickValue : std::as_const(tickValues)) {
+        const int y = yForValue(meterRect, tickValue);
         const QString label = QString::number(tickValue, 'f', (m_maximum - m_minimum <= 10.0) ? 1 : 0);
 
         painter.drawLine(meterRect.left() - 5, y, meterRect.left() - 1, y);
@@ -214,6 +253,11 @@ double AudioLevelMeter::normalizedValue(double value) const
     }
 
     return (clampedValue(value) - m_minimum) / (m_maximum - m_minimum);
+}
+
+int AudioLevelMeter::yForValue(const QRect &meterRect, double value) const
+{
+    return meterRect.bottom() - qRound(meterRect.height() * normalizedValue(value));
 }
 
 QString AudioLevelMeter::formattedValue(double value) const

@@ -155,6 +155,8 @@ private:
     struct GaugeBinding {
         QString fieldName;
         AudioLevelMeter *meter = nullptr;
+        double pendingValue = 0.0;
+        bool hasPendingValue = false;
     };
     QList<GaugeBinding> m_gaugeBindings;
 
@@ -162,6 +164,7 @@ private:
 
     // 定时器
     QTimer *m_plotTimer;
+    QTimer *m_gaugeTimer;
 
     // Timer
     QVector<double> m_timeStamps;        // 每个采样点的时间（秒，相对）
@@ -220,8 +223,11 @@ private:
                   double minimum,
                   double maximum,
                   double warningThreshold,
-                  double criticalThreshold);
+                  double criticalThreshold,
+                  int divisionCount);
     void updateGauges(const QHash<QString, double> &values);
+    void flushGaugeUpdates();
+    void updateStatusIndicators();
     void addOscilloscope(const QString &title = QString(), int index = -1);
     void removeOscilloscope(OscilloscopeWidget *osc);
     void updateAllMoveButtons();        // Update state of move up/down buttons for oscilloscopes
