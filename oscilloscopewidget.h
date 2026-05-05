@@ -46,10 +46,16 @@ private slots:
     void onToggleYLock();
 
 private:
+    struct RenderBuffers {
+        QVector<double> x;
+        QVector<double> y;
+    };
+
     QCustomPlot *m_plot;
     QStringList m_fields;
     QHash<QString, QCPGraph*> m_graphs;
     QList<QColor> m_colors;
+    QHash<QString, RenderBuffers> m_renderBuffers;
     QLabel *m_titleLabel;
     QPushButton *m_configBtn;
     QPushButton *m_moveUpBtn;
@@ -57,7 +63,7 @@ private:
 
     bool m_yLocked;           // Y轴是否锁定
     QPushButton *m_yLockBtn;  // 按钮指针
-    void updateYAxis();       // 根据锁定状态决定是否自动缩放
+    void updateYAxis(double yMin, double yMax, bool hasData); // 根据锁定状态决定是否自动缩放
     
     void setupUi();
 };

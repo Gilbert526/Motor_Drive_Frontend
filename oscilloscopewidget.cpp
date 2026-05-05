@@ -4,6 +4,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QMimeData>
+#include <limits>
 
 OscilloscopeWidget::OscilloscopeWidget(QWidget *parent):
     QWidget(parent),
@@ -79,6 +80,8 @@ void OscilloscopeWidget::setupUi() {
     m_plot->legend->setVisible(true);
     m_plot->legend->setFont(QFont("Arial", 7));
     m_plot->setOpenGl(true);
+    m_plot->setNoAntialiasingOnDrag(true);
+    m_plot->setPlottingHint(QCP::phFastPolylines, true);
     
     // 主布局
     QVBoxLayout *layout = new QVBoxLayout(this);
@@ -99,11 +102,13 @@ void OscilloscopeWidget::setFields(const QStringList &fields) {
     m_fields = fields;
     m_plot->clearGraphs();
     m_graphs.clear();
+    m_renderBuffers.clear();
     
     for (int i = 0; i < m_fields.size(); ++i) {
         QCPGraph *graph = m_plot->addGraph();
         graph->setName(m_fields[i]);
         graph->setPen(QPen(m_colors[i % m_colors.size()], 1.5));
+        graph->setAdaptiveSampling(true);
         m_graphs[m_fields[i]] = graph;
     }
     m_plot->legend->setVisible(!m_fields.isEmpty());
@@ -121,9 +126,14 @@ void OscilloscopeWidget::updatePlot(const QHash<QString, QVector<double>> &dataP
     int pointsToShow = totalPoints - startIdx;
     if (pointsToShow <= 0) return;
 
-    QVector<double> x = timeStamps.mid(startIdx, pointsToShow);
-    double xMin = x.first();
-    double xMax = x.last();
+    const double xMin = timeStamps[startIdx];
+    const double xMax = timeStamps[totalPoints - 1];
+    const int targetSamples = qMax(200, m_plot->viewport().width() * 2);
+    const bool shouldDownsample = pointsToShow > targetSamples;
+    const int stride = shouldDownsample ? qMax(1, pointsToShow / targetSamples) : 1;
+    double yMin = std::numeric_limits<double>::max();
+    double yMax = std::numeric_limits<double>::lowest();
+    bool hasVisibleData = false;
     
     // Update each graph's data
     for (const QString &field : m_fields) {
@@ -132,24 +142,77 @@ void OscilloscopeWidget::updatePlot(const QHash<QString, QVector<double>> &dataP
         const QVector<double> &data = dataPool.value(field);
         if (data.size() < totalPoints) continue;  // 数据长度不一致，跳过
 
-        // 提取对应区间的 Y 值
-        QVector<double> y = data.mid(startIdx, pointsToShow);
-        graph->setData(x, y);
+        RenderBuffers &buffers = m_renderBuffers[field];
+        buffers.x.clear();
+        buffers.y.clear();
+        buffers.x.reserve(shouldDownsample ? (pointsToShow / stride) * 2 + 2 : pointsToShow);
+        buffers.y.reserve(buffers.x.capacity());
+
+        if (shouldDownsample) {
+            for (int bucketStart = startIdx; bucketStart < totalPoints; bucketStart += stride) {
+                const int bucketEnd = qMin(totalPoints, bucketStart + stride);
+                int minIndex = bucketStart;
+                int maxIndex = bucketStart;
+                double minValue = data[bucketStart];
+                double maxValue = minValue;
+
+                for (int i = bucketStart + 1; i < bucketEnd; ++i) {
+                    const double value = data[i];
+                    if (value < minValue) {
+                        minValue = value;
+                        minIndex = i;
+                    }
+                    if (value > maxValue) {
+                        maxValue = value;
+                        maxIndex = i;
+                    }
+                }
+
+                if (minIndex <= maxIndex) {
+                    buffers.x.append(timeStamps[minIndex]);
+                    buffers.y.append(minValue);
+                    if (minIndex != maxIndex) {
+                        buffers.x.append(timeStamps[maxIndex]);
+                        buffers.y.append(maxValue);
+                    }
+                } else {
+                    buffers.x.append(timeStamps[maxIndex]);
+                    buffers.y.append(maxValue);
+                    buffers.x.append(timeStamps[minIndex]);
+                    buffers.y.append(minValue);
+                }
+
+                yMin = qMin(yMin, minValue);
+                yMax = qMax(yMax, maxValue);
+                hasVisibleData = true;
+            }
+        } else {
+            for (int i = startIdx; i < totalPoints; ++i) {
+                const double value = data[i];
+                buffers.x.append(timeStamps[i]);
+                buffers.y.append(value);
+                yMin = qMin(yMin, value);
+                yMax = qMax(yMax, value);
+                hasVisibleData = true;
+            }
+        }
+
+        graph->setData(buffers.x, buffers.y, true);
     }
     
     // Update x-axis based on timestamps
     m_plot->xAxis->setRange(xMin, xMax);
-    // 只自动缩放 Y 轴，保留 X 轴范围
-    updateYAxis();
-    m_plot->replot();
+    updateYAxis(yMin, yMax, hasVisibleData);
+    m_plot->replot(QCustomPlot::rpQueuedReplot);
 }
 
 void OscilloscopeWidget::clear() {
     m_plot->clearGraphs();
     m_graphs.clear();
+    m_renderBuffers.clear();
     m_fields.clear();
     m_plot->legend->setVisible(false);
-    m_plot->replot();
+    m_plot->replot(QCustomPlot::rpQueuedReplot);
 }
 
 void OscilloscopeWidget::addField(const QString &fieldName) {
@@ -233,18 +296,35 @@ void OscilloscopeWidget::onToggleYLock() {
     m_yLocked = m_yLockBtn->isChecked();
     m_yLockBtn->setText(m_yLocked ? "🔓" : "🔒");
     if (!m_yLocked) {
-        // 解锁时，立即自动调整一次Y轴（使用当前数据）
-        updateYAxis();
-        m_plot->replot();
+        bool hasData = false;
+        double yMin = std::numeric_limits<double>::max();
+        double yMax = std::numeric_limits<double>::lowest();
+
+        for (auto it = m_renderBuffers.cbegin(); it != m_renderBuffers.cend(); ++it) {
+            const QVector<double> &values = it.value().y;
+            for (double value : values) {
+                yMin = qMin(yMin, value);
+                yMax = qMax(yMax, value);
+                hasData = true;
+            }
+        }
+
+        updateYAxis(yMin, yMax, hasData);
+        m_plot->replot(QCustomPlot::rpQueuedReplot);
     }
 }
 
-void OscilloscopeWidget::updateYAxis() {
-    if (!m_yLocked) {
-        // 自动缩放 Y 轴（只缩放，不改变 X 轴范围）
-        m_plot->rescaleAxes(false);
-        // 增加一点边距，避免曲线贴边
-        m_plot->yAxis->scaleRange(1.1, m_plot->yAxis->range().center());
+void OscilloscopeWidget::updateYAxis(double yMin, double yMax, bool hasData) {
+    if (m_yLocked || !hasData) {
+        return;
     }
-    // 如果锁定，不做任何操作，保留用户当前设置的 Y 轴范围
+
+    if (qFuzzyCompare(yMin, yMax)) {
+        const double padding = qAbs(yMin) * 0.05 + 1.0;
+        m_plot->yAxis->setRange(yMin - padding, yMax + padding);
+        return;
+    }
+
+    const double padding = (yMax - yMin) * 0.05;
+    m_plot->yAxis->setRange(yMin - padding, yMax + padding);
 }

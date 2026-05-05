@@ -173,6 +173,19 @@ private:
 
     // Pause scope
     bool m_plotPaused;
+    bool m_plotDirty;
+    QVector<double> m_pausedTimeStamps;
+    QHash<QString, QVector<double>> m_pausedWaveData;
+
+    // Fault-triggered auto capture tuning.
+    // Adjust these values to change which faults trigger a capture,
+    // how wide the display window becomes, and how many packets to keep after the trigger.
+    quint32 m_faultAutoCaptureTriggerMask;
+    int m_faultAutoCaptureDisplayPoints;
+    int m_faultAutoCapturePacketsAfterTrigger;
+    bool m_faultAutoCapturePending;
+    bool m_faultAutoCaptureSkipCurrentPacket;
+    int m_faultAutoCapturePacketsRemaining;
 
     // CSV telemetry logging
     bool m_isLogging;
@@ -234,6 +247,10 @@ private:
     void loadAvailableFields();         // 从 DataParser 加载字段列表到左侧
     void updateAllPlots();              // 刷新所有示波器
     void syncFieldCheckStates();
+    void capturePausedPlotSnapshot();
+    void setPlotPaused(bool paused);
+    void startFaultAutoCapture(quint32 triggeredMask);
+    void advanceFaultAutoCapture();
 
     void addTimeStamp(double offsetSec); // 添加时间戳
 

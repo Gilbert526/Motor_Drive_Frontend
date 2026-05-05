@@ -23,6 +23,13 @@ MainWindow::MainWindow(QWidget *parent):
     m_maxWavePoints(20000),     // 最多存储20000点
     m_currentMaxPoints(500),
     m_plotPaused(false),
+    m_plotDirty(false),
+    m_faultAutoCaptureTriggerMask(DataParser::ERROR_OVERCURRENT | DataParser::ERROR_UNDERVOLTAGE),
+    m_faultAutoCaptureDisplayPoints(5000),
+    m_faultAutoCapturePacketsAfterTrigger(50),
+    m_faultAutoCapturePending(false),
+    m_faultAutoCaptureSkipCurrentPacket(false),
+    m_faultAutoCapturePacketsRemaining(0),
     m_isLogging(false),
     m_syncingFromMask(false),
     m_lastSpeedValue(0.0),
@@ -792,19 +799,23 @@ void MainWindow::on_sampleSlider_valueChanged(int value) {
     // 3. Update your label and internal variables
     m_currentMaxPoints = snappedValue;
     m_sampleLabel->setText(QString::number(snappedValue));
+    m_plotDirty = true;
     updateAllPlots();
 }
 
 void MainWindow::updateAllPlots() {
+    const QHash<QString, QVector<double>> &plotData = m_plotPaused ? m_pausedWaveData : m_waveData;
+    const QVector<double> &plotTimeStamps = m_plotPaused ? m_pausedTimeStamps : m_timeStamps;
+
     for (OscilloscopeWidget *osc : m_oscilloscopes) {
-        osc->updatePlot(m_waveData, m_timeStamps, m_currentMaxPoints);
+        osc->updatePlot(plotData, plotTimeStamps, m_currentMaxPoints);
     }
+    m_plotDirty = false;
 }
 
 void MainWindow::updatePlot() {
-    if (!m_plotPaused) {
-        updateAllPlots();
-    }
+    if (m_plotPaused || !m_plotDirty) return;
+    updateAllPlots();
 }
 
 // ==================== 数据处理 ====================
@@ -823,12 +834,107 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
             vec.remove(0, vec.size() - m_maxWavePoints);
         }
     }
+    m_plotDirty = true;
+    advanceFaultAutoCapture();
     updateGauges(values);
     // 可选：在接收区显示关键数值（调试用，可注释）
     writeTelemetryLogRow(values);
     // if (values.contains("RPM")) {
     //     ui->plainTextEditReceive->appendPlainText(QString("RPM: %1").arg(values["RPM"], 0, 'f', 1));
     // }
+}
+
+void MainWindow::capturePausedPlotSnapshot()
+{
+    m_pausedTimeStamps.clear();
+    m_pausedWaveData.clear();
+
+    if (m_timeStamps.isEmpty()) {
+        return;
+    }
+
+    const int totalPoints = m_timeStamps.size();
+    const int startIdx = qMax(0, totalPoints - m_currentMaxPoints);
+    const int pointsToShow = totalPoints - startIdx;
+    if (pointsToShow <= 0) {
+        return;
+    }
+
+    m_pausedTimeStamps = m_timeStamps.mid(startIdx, pointsToShow);
+
+    for (auto it = m_waveData.cbegin(); it != m_waveData.cend(); ++it) {
+        const QVector<double> &series = it.value();
+        if (series.size() < totalPoints) {
+            continue;
+        }
+
+        m_pausedWaveData.insert(it.key(), series.mid(startIdx, pointsToShow));
+    }
+}
+
+void MainWindow::setPlotPaused(bool paused)
+{
+    if (m_plotPaused == paused) {
+        return;
+    }
+
+    m_plotPaused = paused;
+    ui->pushButtonPause->setText(m_plotPaused ? "▶️" : "⏸️");
+
+    if (m_plotPaused) {
+        capturePausedPlotSnapshot();
+    } else {
+        m_pausedTimeStamps.clear();
+        m_pausedWaveData.clear();
+    }
+
+    updateAllPlots();
+}
+
+void MainWindow::startFaultAutoCapture(quint32 triggeredMask)
+{
+    Q_UNUSED(triggeredMask);
+
+    if (m_plotPaused) {
+        return;
+    }
+
+    const int sliderMinimum = m_sampleSlider->minimum();
+    const int sliderMaximum = m_sampleSlider->maximum();
+    const int requestedPoints = qBound(sliderMinimum, m_faultAutoCaptureDisplayPoints, sliderMaximum);
+
+    m_faultAutoCapturePending = true;
+    m_faultAutoCaptureSkipCurrentPacket = true;
+    m_faultAutoCapturePacketsRemaining = qMax(0, m_faultAutoCapturePacketsAfterTrigger);
+
+    if (m_currentMaxPoints != requestedPoints) {
+        m_sampleSlider->setValue(requestedPoints);
+    } else {
+        m_plotDirty = true;
+        updateAllPlots();
+    }
+}
+
+void MainWindow::advanceFaultAutoCapture()
+{
+    if (!m_faultAutoCapturePending || m_plotPaused) {
+        return;
+    }
+
+    if (m_faultAutoCaptureSkipCurrentPacket) {
+        m_faultAutoCaptureSkipCurrentPacket = false;
+        return;
+    }
+
+    if (m_faultAutoCapturePacketsRemaining > 0) {
+        --m_faultAutoCapturePacketsRemaining;
+    }
+
+    if (m_faultAutoCapturePacketsRemaining <= 0) {
+        m_faultAutoCapturePending = false;
+        m_faultAutoCaptureSkipCurrentPacket = false;
+        setPlotPaused(true);
+    }
 }
 
 void MainWindow::handlePacketStatus(quint32 errorCode,
@@ -856,6 +962,11 @@ void MainWindow::handlePacketStatus(quint32 errorCode,
 
     if (statusChanged) {
         updateStatusIndicators();
+    }
+
+    const quint32 newlyTriggeredErrors = (~previousErrorCode) & errorCode & m_faultAutoCaptureTriggerMask;
+    if (newlyTriggeredErrors != 0) {
+        startFaultAutoCapture(newlyTriggeredErrors);
     }
 
     if (errorCode == 0) {
@@ -1245,12 +1356,13 @@ void MainWindow::on_comboBoxTuneParameter_currentIndexChanged(int index) {
 }
 
 void MainWindow::on_pushButtonPause_clicked() {
-    m_plotPaused = !m_plotPaused;
-    ui->pushButtonPause->setText(m_plotPaused ? "▶️" : "⏸️");
     if (!m_plotPaused) {
-        // 如果从暂停恢复，立即刷新一次
-        updateAllPlots();
+        m_faultAutoCapturePending = false;
+        m_faultAutoCaptureSkipCurrentPacket = false;
+        m_faultAutoCapturePacketsRemaining = 0;
     }
+
+    setPlotPaused(!m_plotPaused);
 }
 
 void MainWindow::on_pushButtonSave_clicked() {
