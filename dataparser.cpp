@@ -12,7 +12,8 @@ DataParser::DataParser(QObject *parent): QObject{parent} {
         {"ERROR_TIM_CONFIG",     ERROR_TIM_CONFIG},
         {"ERROR_ENCODER_CONFIG", ERROR_ENCODER_CONFIG},
         {"ERROR_FOC_CONFIG",     ERROR_FOC_CONFIG},
-        {"ERROR_OVERCURRENT",    ERROR_OVERCURRENT}
+        {"ERROR_OVERCURRENT",    ERROR_OVERCURRENT},
+        {"ERROR_UNDERVOLTAGE",   ERROR_UNDERVOLTAGE}
     };
 
     m_modes = {

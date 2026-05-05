@@ -1,14 +1,17 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "audiolevelmeter.h"
 #include "SerialManager.h"
 #include "DataParser.h"
 #include <QMessageBox>
 #include <QSerialPortInfo>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QHBoxLayout>
 #include <QListWidgetItem>
 #include <QDateTime>
 #include <QDir>
+#include <utility>
 
 MainWindow::MainWindow(QWidget *parent):
     QMainWindow(parent),
@@ -117,6 +120,7 @@ MainWindow::MainWindow(QWidget *parent):
 
         // 初始化示波器区域
         setupPlottingArea();
+        setupGaugeArea();
 
         // 加载字段列表到左侧
         loadAvailableFields();
@@ -291,6 +295,59 @@ void MainWindow::setupPlottingArea() {
     // Add a scope by default
     addOscilloscope("Scope 1");
     updateAllMoveButtons();
+}
+
+void MainWindow::setupGaugeArea()
+{
+    QLayout *existingLayout = ui->gaugeArea->layout();
+    QHBoxLayout *gaugeLayout = qobject_cast<QHBoxLayout*>(existingLayout);
+    if (!gaugeLayout) {
+        delete existingLayout;
+        gaugeLayout = new QHBoxLayout(ui->gaugeArea);
+        gaugeLayout->setContentsMargins(0, 0, 0, 0);
+        gaugeLayout->setSpacing(8);
+        ui->gaugeArea->setLayout(gaugeLayout);
+    }
+
+    gaugeLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    m_gaugeBindings.clear();
+
+    addGauge("VBATT", "Battery", "V", 0.0, 25.0, 16.0, 22.0);
+    addGauge("RPM", "Speed", "rpm", -7000.0, 7000.0, 5000.0, 6500.0);
+}
+
+void MainWindow::addGauge(const QString &fieldName,
+                          const QString &title,
+                          const QString &unit,
+                          double minimum,
+                          double maximum,
+                          double warningThreshold,
+                          double criticalThreshold)
+{
+    QHBoxLayout *gaugeLayout = qobject_cast<QHBoxLayout*>(ui->gaugeArea->layout());
+    if (!gaugeLayout) {
+        return;
+    }
+
+    AudioLevelMeter *meter = new AudioLevelMeter(ui->gaugeArea);
+    meter->setTitle(title);
+    meter->setUnit(unit);
+    meter->setRange(minimum, maximum);
+    meter->setThresholds(warningThreshold, criticalThreshold);
+    meter->setMajorTickCount(6);
+    meter->setPeakHoldMs(1000);
+
+    gaugeLayout->addWidget(meter);
+    m_gaugeBindings.append({fieldName, meter});
+}
+
+void MainWindow::updateGauges(const QHash<QString, double> &values)
+{
+    for (const GaugeBinding &binding : std::as_const(m_gaugeBindings)) {
+        if (binding.meter && values.contains(binding.fieldName)) {
+            binding.meter->setValue(values.value(binding.fieldName));
+        }
+    }
 }
 
 void MainWindow::addOscilloscope(const QString &title, int index) {
@@ -683,6 +740,7 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
             vec.remove(0, vec.size() - m_maxWavePoints);
         }
     }
+    updateGauges(values);
     // 可选：在接收区显示关键数值（调试用，可注释）
     writeTelemetryLogRow(values);
     // if (values.contains("RPM")) {

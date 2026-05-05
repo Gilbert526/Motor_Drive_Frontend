@@ -30,9 +30,10 @@ qt_add_executable(Motor_Drive_Frontend
     qcustomplot.h
     oscilloscopewidget.cpp
     oscilloscopewidget.h
+    audiolevelmeter.cpp
+    audiolevelmeter.h
     draglistwidget.cpp
     draglistwidget.h
-    app_icon.rc
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -57,6 +58,20 @@ install(TARGETS ${PROJECT_NAME}
 )
 
 target_include_directories(Motor_Drive_Frontend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+if(MINGW)
+    set(APP_ICON_RC "${CMAKE_CURRENT_SOURCE_DIR}/app_icon.rc")
+    set(APP_ICON_OBJ "${CMAKE_CURRENT_BINARY_DIR}/app_icon.rc.obj")
+    add_custom_command(
+        OUTPUT "${APP_ICON_OBJ}"
+        COMMAND "${CMAKE_RC_COMPILER}" -O coff "${APP_ICON_RC}" "${APP_ICON_OBJ}"
+        DEPENDS "${APP_ICON_RC}" "${CMAKE_CURRENT_SOURCE_DIR}/tuning_master.ico"
+        VERBATIM
+    )
+    target_sources(${PROJECT_NAME} PRIVATE "${APP_ICON_OBJ}")
+elseif(WIN32)
+    target_sources(${PROJECT_NAME} PRIVATE app_icon.rc)
+endif()
 
 if(WIN32)
     # 1. Search for windeployqt executable using Qt's qmake location

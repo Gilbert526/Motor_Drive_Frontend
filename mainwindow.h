@@ -20,6 +20,7 @@
 
 #define DEFAULT_PACKET_FREQ_HZ 5000
 
+class AudioLevelMeter;
 class SerialManager;
 class DataParser;
 
@@ -151,6 +152,12 @@ private:
     QLabel      *m_sampleLabel;
     QList<OscilloscopeWidget*> m_oscilloscopes;
 
+    struct GaugeBinding {
+        QString fieldName;
+        AudioLevelMeter *meter = nullptr;
+    };
+    QList<GaugeBinding> m_gaugeBindings;
+
     int m_currentMaxPoints;   // 当前显示的点数（滑动条值）
 
     // 定时器
@@ -206,6 +213,15 @@ private:
     void updateUiForSerialState(bool isOpen);
     void sendCommand(const QString &cmd);
     void setupPlottingArea();           // 初始化动态示波器区域
+    void setupGaugeArea();
+    void addGauge(const QString &fieldName,
+                  const QString &title,
+                  const QString &unit,
+                  double minimum,
+                  double maximum,
+                  double warningThreshold,
+                  double criticalThreshold);
+    void updateGauges(const QHash<QString, double> &values);
     void addOscilloscope(const QString &title = QString(), int index = -1);
     void removeOscilloscope(OscilloscopeWidget *osc);
     void updateAllMoveButtons();        // Update state of move up/down buttons for oscilloscopes
