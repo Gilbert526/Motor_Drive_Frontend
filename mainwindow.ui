@@ -811,13 +811,13 @@
         </property>
         <property name="minimumSize">
          <size>
-          <width>220</width>
+          <width>240</width>
           <height>0</height>
          </size>
         </property>
         <property name="maximumSize">
          <size>
-          <width>200</width>
+          <width>240</width>
           <height>16777215</height>
          </size>
         </property>
@@ -843,7 +843,7 @@
                <property name="minimumSize">
                 <size>
                  <width>0</width>
-                 <height>30</height>
+                 <height>40</height>
                 </size>
                </property>
                <property name="maximumSize">
@@ -871,7 +871,7 @@
                <property name="minimumSize">
                 <size>
                  <width>0</width>
-                 <height>30</height>
+                 <height>40</height>
                 </size>
                </property>
                <property name="maximumSize">
@@ -899,7 +899,7 @@
                <property name="minimumSize">
                 <size>
                  <width>0</width>
-                 <height>30</height>
+                 <height>40</height>
                 </size>
                </property>
                <property name="maximumSize">
@@ -927,7 +927,7 @@
                <property name="minimumSize">
                 <size>
                  <width>0</width>
-                 <height>30</height>
+                 <height>40</height>
                 </size>
                </property>
                <property name="maximumSize">
@@ -955,7 +955,7 @@
                <property name="minimumSize">
                 <size>
                  <width>0</width>
-                 <height>30</height>
+                 <height>40</height>
                 </size>
                </property>
                <property name="maximumSize">
@@ -983,7 +983,7 @@
                <property name="minimumSize">
                 <size>
                  <width>0</width>
-                 <height>30</height>
+                 <height>40</height>
                 </size>
                </property>
                <property name="maximumSize">
@@ -1050,8 +1050,8 @@
                  <rect>
                   <x>0</x>
                   <y>0</y>
-                  <width>410</width>
-                  <height>610</height>
+                  <width>402</width>
+                  <height>618</height>
                  </rect>
                 </property>
                 <layout class="QVBoxLayout" name="verticalLayout_OscContainer">
@@ -1205,7 +1205,7 @@
      <x>0</x>
      <y>0</y>
      <width>1432</width>
-     <height>20</height>
+     <height>21</height>
     </rect>
    </property>
   </widget>
