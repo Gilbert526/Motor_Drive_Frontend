@@ -11,6 +11,7 @@
 #include <QListWidgetItem>
 #include <QDateTime>
 #include <QDir>
+#include <QWheelEvent>
 #include <utility>
 
 MainWindow::MainWindow(QWidget *parent):
@@ -175,6 +176,9 @@ MainWindow::MainWindow(QWidget *parent):
 
         // Command line features
         ui->lineEditSend->installEventFilter(this);
+        ui->targetSlider->installEventFilter(this);
+        ui->timeSlider->installEventFilter(this);
+        ui->incrementSlider->installEventFilter(this);
 
         updateUiForSerialState(false);
 
@@ -189,6 +193,8 @@ MainWindow::MainWindow(QWidget *parent):
         ui->lineEditTarget->setToolTip("Manually enter target value (overrides slider)");
         ui->lineEditTime->setToolTip("Manually enter time duration in seconds (overrides time slider)");
         ui->pushButtonTargetSend->setToolTip("Send target command");
+        connect(ui->lineEditTarget, &QLineEdit::returnPressed,
+                this, &MainWindow::on_pushButtonTargetSend_clicked);
 
         // Initialize target slider
         updateTargetSliderLimits();
@@ -784,6 +790,27 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
             return true;
         }
     }
+
+    QSlider *slider = qobject_cast<QSlider*>(obj);
+    if (slider &&
+        (slider == ui->targetSlider || slider == ui->timeSlider || slider == ui->incrementSlider) &&
+        event->type() == QEvent::Wheel) {
+        QWheelEvent *wheelEvent = static_cast<QWheelEvent*>(event);
+        const int deltaY = wheelEvent->angleDelta().y();
+        if (deltaY == 0) {
+            return true;
+        }
+
+        const int direction = (deltaY > 0) ? 1 : -1;
+        const int step = qMax(1, slider->singleStep());
+        const int nextValue = qBound(slider->minimum(),
+                                     slider->value() + direction * step,
+                                     slider->maximum());
+        slider->setValue(nextValue);
+        wheelEvent->accept();
+        return true;
+    }
+
     return QMainWindow::eventFilter(obj, event);
 }
 
@@ -1108,7 +1135,7 @@ void MainWindow::on_comboBoxTargetSelection_currentIndexChanged(int) {
         if (oldType == "Speed") {
             oldValue = ui->targetSlider->value();
         } else {
-            oldValue = ui->targetSlider->value() / 10.0;
+            oldValue = ui->targetSlider->value() / 1000.0;
         }
     }
     if (oldType == "Speed") {
@@ -1145,8 +1172,8 @@ void MainWindow::on_targetSlider_valueChanged(int value) {
         double realValue = value;
         ui->lineEditTarget->setText(QString::number(realValue, 'f', 0));
     } else {
-        double realValue = value / 10.0;
-        ui->lineEditTarget->setText(QString::number(realValue, 'f', 1));
+        double realValue = value / 1000.0;
+        ui->lineEditTarget->setText(QString::number(realValue, 'f', 3));
     }
 }
 
@@ -1158,17 +1185,17 @@ void MainWindow::on_lineEditTarget_editingFinished() {
     // Only limit the range, do not round
     bool isSpeed = (ui->comboBoxTargetSelection->currentText() == "Speed");
     if (isSpeed) {
-        val = qBound(-5000.0, val, 5000.0);
+        val = qBound(-8000.0, val, 8000.0);
     } else {
-        val = qBound(-10.0, val, 10.0);
+        val = qBound(-0.1, val, 0.1);
     }
 
-    // Move the slider to the nearest step value (speed in tens, torque in 0.1 increments)
+    // Move the slider to the nearest step value (speed in hundreds, torque in 0.001 increments)
     int sliderValue;
     if (isSpeed) {
         sliderValue = static_cast<int>(qRound(val / 100.0) * 100); // Round to nearest 100
     } else {
-        sliderValue = static_cast<int>(qRound(val * 10.0));
+        sliderValue = static_cast<int>(qRound(val * 1000.0));
     }
     ui->targetSlider->blockSignals(true);
     ui->targetSlider->setValue(sliderValue);
@@ -1211,16 +1238,16 @@ void MainWindow::on_pushButtonTargetSend_clicked() {
         if (!ok) return;
         // Clamp again to ensure the range
         if (mode == "speed") {
-            target = qBound(-5000.0, target, 5000.0);
+            target = qBound(-8000.0, target, 8000.0);
         } else {
-            target = qBound(-10.0, target, 10.0);
+            target = qBound(-0.1, target, 0.1);
         }
     } else {
         // Use the value from the slider
         if (mode == "speed") {
             target = ui->targetSlider->value();
         } else {
-            target = ui->targetSlider->value() / 10.0;
+            target = ui->targetSlider->value() / 1000.0;
         }
     }
     if (m_timeManuallyEdited) {
@@ -1515,11 +1542,11 @@ void MainWindow::addTimeStamp(double offsetSec)
 void MainWindow::updateTargetSliderLimits() {
     bool isSpeed = (ui->comboBoxTargetSelection->currentText() == "Speed");
     if (isSpeed) {
-        ui->targetSlider->setRange(-5000, 5000);
+        ui->targetSlider->setRange(-8000, 8000);
         ui->targetSlider->setSingleStep(100);
         ui->targetLabelPrefix->setText("Speed");
     } else {
-        ui->targetSlider->setRange(-100, 100);   // -100 → -10.0, 100 → 10.0
+        ui->targetSlider->setRange(-100, 100);   // -100 -> -0.100, 100 -> 0.100
         ui->targetSlider->setSingleStep(1);
         ui->targetLabelPrefix->setText("Torque");
     }
@@ -1539,7 +1566,7 @@ double MainWindow::getCurrentTargetValue() const {
     if (isSpeed) {
         return ui->targetSlider->value();
     } else {
-        return ui->targetSlider->value() / 10.0;
+        return ui->targetSlider->value() / 1000.0;
     }
 }
 
@@ -1548,12 +1575,12 @@ void MainWindow::setTargetValue(double val, bool markAsEdited) {
 
     bool isSpeed = (ui->comboBoxTargetSelection->currentText() == "Speed");
     if (isSpeed) {
-        val = qBound(-5000.0, val, 5000.0);
+        val = qBound(-8000.0, val, 8000.0);
         int sliderVal = static_cast<int>(qRound(val / 100.0) * 100);
         ui->targetSlider->setValue(sliderVal);
     } else {
-        val = qBound(-10.0, val, 10.0);
-        int sliderVal = static_cast<int>(qRound(val * 10.0));
+        val = qBound(-0.1, val, 0.1);
+        int sliderVal = static_cast<int>(qRound(val * 1000.0));
         ui->targetSlider->setValue(sliderVal);
     }
     // Format display: remove trailing zeros, keep sufficient precision (up to 6 decimal places)
