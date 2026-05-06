@@ -64,24 +64,28 @@ public:
 
     quint32 getMaskForField(const QString &fieldName) const;
 
+    bool isFieldEnabled(const QString &fieldName, quint32 mask1, quint32 mask2) const;
+
     QStringList getErrorNames(quint32 errorCode) const;
 
     QString getControlModeName(quint8 mode) const;
 
     bool isControlModeKnown(quint8 mode) const;
+    int minimumFrameSize() const;
+    bool hasValidFrameMetadata(const QByteArray &data, int startIdx = 0) const;
 
     /**
      * @brief Parse the length of a complete binary frame from the given data
      * @param data Raw data containing the frame header (0xAA 0x55)
      * @param startIdx Start index of the frame header (default is 0)
-     * @return Total number of bytes in the frame (including header, error, mode and mask), or -1 if data is insufficient or format is incorrect
+     * @return Total number of bytes in the frame (including header, error, mode, mask1 and mask2), or -1 if data is insufficient or format is incorrect
      */
     int getFrameLength(const QByteArray &data, int startIdx = 0) const;
 
 signals:
     void parsedData(const QHash<QString, double> &values);
 
-    void maskReceived(quint32 mask);
+    void maskReceived(quint32 mask1, quint32 mask2);
 
     void errorReceived(quint32 errorCode, const QStringList &errorNames);
 
@@ -96,6 +100,7 @@ private:
     static const int MAX_FRAME_SIZE = 256;
 
     QList<FieldDef> m_fields;
+    QList<FieldDef> m_fields2;
     QList<ErrorDef> m_errors;
     QList<ModeDef> m_modes;
 
@@ -104,6 +109,7 @@ private:
     QHash<QString, double> tryParsePacket(int startIdx, int &nextStartIdx);
 
     double unpackValue(const QByteArray &data, const FieldDef &field);
+    void addCommandMapping(const QString &displayName, const QString &commandName);
 
     QHash<QString, QString> m_displayToCmd;
     void initCommandMapping();

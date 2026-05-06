@@ -108,7 +108,7 @@ private slots:
                             bool controlModeKnown);
 
     // Update Field List on Mask Received
-    void onMaskReceived(quint32 mask);
+    void onMaskReceived(quint32 mask1, quint32 mask2);
 
     // 定时刷新波形
     void updatePlot();
@@ -252,6 +252,10 @@ private:
     void setPlotPaused(bool paused);
     void startFaultAutoCapture(quint32 triggeredMask);
     void advanceFaultAutoCapture();
+    bool isReceiveTextByte(char byte) const;
+    void processReceiveTextChunk(const QByteArray &chunk, QByteArray &lineBuffer);
+    void flushReceiveTextLines(QByteArray &lineBuffer);
+    bool isLikelyReceiveTextLine(const QByteArray &line) const;
 
     void addTimeStamp(double offsetSec); // 添加时间戳
 

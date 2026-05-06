@@ -65,6 +65,7 @@ MainWindow::MainWindow(QWidget *parent):
 
         // Display received message in text box
         connect(m_serialManager, &SerialManager::rawDataReceived, this, [this](const QByteArray &data) {
+            const QByteArray syncBytes = QByteArray::fromHex("AA55");
             static QByteArray buffer;           // Buffer for original data
             static QByteArray lineBuffer;       // Accumulated incomplete text lines
             buffer.append(data);
@@ -72,35 +73,33 @@ MainWindow::MainWindow(QWidget *parent):
             int idx = 0;
             while (idx < buffer.size()) {
                 // Look for the next frame header (0xAA 0x55)
-                int headerPos = buffer.indexOf(QByteArray::fromHex("AA55"), idx);
+                int headerPos = buffer.indexOf(syncBytes, idx);
                 if (headerPos == -1) {
-                    // Check for a split header: if the last byte is 0xAA, stop here
+                    // Preserve a partial sync header so the next chunk can complete a binary frame.
                     int endOfText = buffer.size();
-                    if (buffer.endsWith(char(0xAA))) {
-                        endOfText -= 1;
+                    const int partialHeaderLen = syncBytes.size() - 1;
+                    if (partialHeaderLen > 0 &&
+                        buffer.size() >= partialHeaderLen &&
+                        buffer.right(partialHeaderLen) == syncBytes.left(partialHeaderLen)) {
+                        endOfText -= partialHeaderLen;
                     }
                     if (endOfText > idx) {
-                        lineBuffer.append(buffer.mid(idx, endOfText - idx));
-                        idx = endOfText; 
+                        processReceiveTextChunk(buffer.mid(idx, endOfText - idx), lineBuffer);
+                        idx = endOfText;
                     }
                     break;
                 }
 
                 // Text data before the frame header (possibly incomplete line)
                 if (headerPos > idx) {
-                    lineBuffer.append(buffer.mid(idx, headerPos - idx));
+                    processReceiveTextChunk(buffer.mid(idx, headerPos - idx), lineBuffer);
                 }
 
-                // Process complete lines in lineBuffer (separated by newline characters)
-                int newlinePos;
-                while ((newlinePos = lineBuffer.indexOf('\n')) != -1) {
-                    QByteArray line = lineBuffer.left(newlinePos + 1); // Include newline character
-                    QString text = QString::fromUtf8(line).trimmed();
-                    if (!text.isEmpty()) {
-                        ui->plainTextEditReceive->appendPlainText(text);
-                        parseTuneResponse(text);   // Parse tuning response
-                    }
-                    lineBuffer.remove(0, newlinePos + 1);
+                if (buffer.size() >= headerPos + m_dataParser->minimumFrameSize() &&
+                    !m_dataParser->hasValidFrameMetadata(buffer, headerPos)) {
+                    processReceiveTextChunk(syncBytes.left(1), lineBuffer);
+                    idx = headerPos + 1;
+                    continue;
                 }
 
                 // Try to get the binary frame length
@@ -1012,16 +1011,18 @@ void MainWindow::handlePacketStatus(quint32 errorCode,
     statusBar()->showMessage(message, 5000);
 }
 
-void MainWindow::onMaskReceived(quint32 mask) {
+void MainWindow::onMaskReceived(quint32 mask1, quint32 mask2) {
     if (m_syncingFromMask) return;
     m_syncingFromMask = true;
 
-    static quint32 lastMask = 0;
-    if (mask == lastMask) {
+    static quint32 lastMask1 = 0;
+    static quint32 lastMask2 = 0;
+    if (mask1 == lastMask1 && mask2 == lastMask2) {
         m_syncingFromMask = false;   // 关键：必须重置标志
         return;
     }
-    lastMask = mask;
+    lastMask1 = mask1;
+    lastMask2 = mask2;
 
     // 遍历字段列表中的每个项
     for (int i = 0; i < m_fieldList->count(); ++i) {
@@ -1029,8 +1030,7 @@ void MainWindow::onMaskReceived(quint32 mask) {
         if (!item) continue;
         // 获取字段名对应的掩码位（需要字段定义信息）
         QString fieldName = item->text();
-        quint32 bitMask = m_dataParser->getMaskForField(fieldName);
-        bool shouldCheck = (mask & bitMask) != 0;
+        bool shouldCheck = m_dataParser->isFieldEnabled(fieldName, mask1, mask2);
         if (shouldCheck != (item->checkState() == Qt::Checked)) {
             item->setCheckState(shouldCheck ? Qt::Checked : Qt::Unchecked);
         }
@@ -1040,6 +1040,69 @@ void MainWindow::onMaskReceived(quint32 mask) {
 }
 
 // ==================== 串口处理 ====================
+bool MainWindow::isReceiveTextByte(char byte) const {
+    const uchar value = static_cast<uchar>(byte);
+    return byte == '\r' || byte == '\n' || byte == '\t' || (value >= 0x20 && value <= 0x7E);
+}
+
+void MainWindow::processReceiveTextChunk(const QByteArray &chunk, QByteArray &lineBuffer) {
+    for (char byte : chunk) {
+        if (isReceiveTextByte(byte)) {
+            lineBuffer.append(byte);
+            if (byte == '\n') {
+                flushReceiveTextLines(lineBuffer);
+            }
+            continue;
+        }
+
+        flushReceiveTextLines(lineBuffer);
+        lineBuffer.clear();
+    }
+
+    if (lineBuffer.size() > 1024 && lineBuffer.indexOf('\n') == -1) {
+        lineBuffer.clear();
+    }
+}
+
+void MainWindow::flushReceiveTextLines(QByteArray &lineBuffer) {
+    int newlinePos = -1;
+    while ((newlinePos = lineBuffer.indexOf('\n')) != -1) {
+        const QByteArray line = lineBuffer.left(newlinePos + 1);
+        const QString text = QString::fromLatin1(line).trimmed();
+        if (!text.isEmpty() && isLikelyReceiveTextLine(line)) {
+            ui->plainTextEditReceive->appendPlainText(text);
+            parseTuneResponse(text);
+        }
+        lineBuffer.remove(0, newlinePos + 1);
+    }
+}
+
+bool MainWindow::isLikelyReceiveTextLine(const QByteArray &line) const {
+    int letterCount = 0;
+    int digitCount = 0;
+    int whitespaceCount = 0;
+    int punctuationCount = 0;
+
+    for (char byte : line) {
+        if (byte == '\r' || byte == '\n' || byte == '\t' || byte == ' ') {
+            ++whitespaceCount;
+        } else if ((byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z')) {
+            ++letterCount;
+        } else if (byte >= '0' && byte <= '9') {
+            ++digitCount;
+        } else {
+            ++punctuationCount;
+        }
+    }
+
+    const int contentCount = letterCount + digitCount + punctuationCount;
+    if (contentCount == 0 || letterCount == 0) {
+        return false;
+    }
+
+    return punctuationCount <= letterCount + digitCount + whitespaceCount;
+}
+
 void MainWindow::refreshSerialPorts() {
     ui->comboPort->clear();
     foreach (const QSerialPortInfo &info, QSerialPortInfo::availablePorts()) {

@@ -62,6 +62,11 @@ DataParser::DataParser(QObject *parent): QObject{parent} {
         {"FOC_VD",     4, 'f', 1 << 29},
         {"FOC_VQ",     4, 'f', 1 << 30}
     };
+    m_fields2 = {
+        {"OM",         1, 'B', 1 << 0},
+        {"FW",         1, 'B', 1 << 1},
+        {"FFT",        4, 'f', 1 << 2}
+    };
     initCommandMapping();
 }
 
@@ -72,6 +77,10 @@ void DataParser::parseData(const QByteArray &newData) {
         int nextIdx;
         QHash<QString, double> values = tryParsePacket(idx, nextIdx);
         if (nextIdx > idx) {
+            if (nextIdx == idx + 1 && values.isEmpty()) {
+                idx = nextIdx;
+                continue;
+            }
             emit parsedData(values);   // Inform MainWindow of new parsed data
             idx = nextIdx;
         } else {
@@ -100,23 +109,30 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
     }
 
     // 帧头位置确定了，检查是否有足够空间读取 mask (4字节)
-    if (m_buffer.size() < headerPos + 2 + 4 + 1 + 4)
+    if (m_buffer.size() < headerPos + minimumFrameSize())
         return result;
 
     // 读取 mask（小端32位）
+    if (!hasValidFrameMetadata(m_buffer, headerPos)) {
+        nextStartIdx = headerPos + 1;
+        return result;
+    }
+
     const int errorPos = headerPos + 2;
     const int modePos = errorPos + 4;
-    const int maskPos = modePos + 1;
+    const int mask1Pos = modePos + 1;
+    const int mask2Pos = mask1Pos + 4;
     const quint32 errorCode = qFromLittleEndian<quint32>(m_buffer.constData() + errorPos);
     const quint8 controlMode = static_cast<quint8>(m_buffer.at(modePos));
-    const quint32 mask = qFromLittleEndian<quint32>(m_buffer.constData() + maskPos);
+    const quint32 mask1 = qFromLittleEndian<quint32>(m_buffer.constData() + mask1Pos);
+    const quint32 mask2 = qFromLittleEndian<quint32>(m_buffer.constData() + mask2Pos);
 
-    int payloadPos = maskPos + 4;
+    int payloadPos = mask2Pos + 4;
     int currentPos = payloadPos;
 
     // 按字段定义顺序解析
     for (const FieldDef &field : m_fields) {
-        if (mask & field.maskBit) {
+        if (mask1 & field.maskBit) {
             // 该字段存在，检查缓冲区长度是否足够
             if (m_buffer.size() < currentPos + field.size)
                 return result;  // 数据不足
@@ -129,6 +145,17 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
     }
 
     // 成功解析一个完整包
+    for (const FieldDef &field : m_fields2) {
+        if (mask2 & field.maskBit) {
+            if (m_buffer.size() < currentPos + field.size)
+                return result;
+            QByteArray raw = m_buffer.mid(currentPos, field.size);
+            double value = unpackValue(raw, field);
+            result[field.name] = value;
+            currentPos += field.size;
+        }
+    }
+
     nextStartIdx = currentPos;
     const QStringList errorNames = getErrorNames(errorCode);
     emit errorReceived(errorCode, errorNames);
@@ -137,7 +164,7 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
                               controlMode,
                               getControlModeName(controlMode),
                               isControlModeKnown(controlMode));
-    emit maskReceived(mask);
+    emit maskReceived(mask1, mask2);
     return result;
 }
 
@@ -164,6 +191,8 @@ QStringList DataParser::getFieldNames() const {
     QStringList names;
     for (const auto &f : m_fields)
         names << f.name;
+    for (const auto &f : m_fields2)
+        names << f.name;
     return names;
 }
 
@@ -178,6 +207,20 @@ quint32 DataParser::getMaskForField(const QString &fieldName) const {
         }
     }
     return 0;   // 未找到
+}
+
+bool DataParser::isFieldEnabled(const QString &fieldName, quint32 mask1, quint32 mask2) const {
+    for (const FieldDef &field : m_fields) {
+        if (field.name == fieldName) {
+            return (mask1 & field.maskBit) != 0;
+        }
+    }
+    for (const FieldDef &field : m_fields2) {
+        if (field.name == fieldName) {
+            return (mask2 & field.maskBit) != 0;
+        }
+    }
+    return false;
 }
 
 QStringList DataParser::getErrorNames(quint32 errorCode) const {
@@ -208,66 +251,115 @@ bool DataParser::isControlModeKnown(quint8 mode) const {
     return false;
 }
 
+int DataParser::minimumFrameSize() const {
+    return 2 + 4 + 1 + 4 + 4;
+}
+
+bool DataParser::hasValidFrameMetadata(const QByteArray &data, int startIdx) const {
+    if (data.size() < startIdx + minimumFrameSize())
+        return false;
+
+    if (data.at(startIdx) != char(0xAA) || data.at(startIdx + 1) != char(0x55))
+        return false;
+
+    const int modePos = startIdx + 2 + 4;
+    const int mask1Pos = modePos + 1;
+    const int mask2Pos = mask1Pos + 4;
+    const quint8 controlMode = static_cast<quint8>(data.at(modePos));
+    if (!isControlModeKnown(controlMode))
+        return false;
+
+    quint32 validMask1Bits = 0;
+    for (const FieldDef &field : m_fields) {
+        validMask1Bits |= field.maskBit;
+    }
+
+    quint32 validMask2Bits = 0;
+    for (const FieldDef &field : m_fields2) {
+        validMask2Bits |= field.maskBit;
+    }
+
+    const quint32 mask1 = qFromLittleEndian<quint32>(data.constData() + mask1Pos);
+    const quint32 mask2 = qFromLittleEndian<quint32>(data.constData() + mask2Pos);
+    return (mask1 & ~validMask1Bits) == 0 && (mask2 & ~validMask2Bits) == 0;
+}
+
 int DataParser::getFrameLength(const QByteArray &data, int startIdx) const
 {
     // Check if the data is sufficient to contain the frame header (2 bytes) + mask (4 bytes)
-    if (data.size() < startIdx + 2 + 4 + 1 + 4)
+    if (data.size() < startIdx + minimumFrameSize())
         return -1;
 
-    // Check if the frame header is 0xAA 0x55
-    if (data.at(startIdx) != char(0xAA) || data.at(startIdx + 1) != char(0x55))
+    if (!hasValidFrameMetadata(data, startIdx))
         return -1;
 
     // Read the mask (little-endian 32-bit) after the error code and mode byte.
-    const int maskPos = startIdx + 2 + 4 + 1;
-    const quint32 mask = qFromLittleEndian<quint32>(data.constData() + maskPos);
+    const int mask1Pos = startIdx + 2 + 4 + 1;
+    const int mask2Pos = mask1Pos + 4;
+    const quint32 mask1 = qFromLittleEndian<quint32>(data.constData() + mask1Pos);
+    const quint32 mask2 = qFromLittleEndian<quint32>(data.constData() + mask2Pos);
 
     // Calculate the total length of the payload area
     int payloadLen = 0;
     for (const FieldDef &field : m_fields) {
-        if (mask & field.maskBit) {
+        if (mask1 & field.maskBit) {
+            payloadLen += field.size;
+        }
+    }
+    for (const FieldDef &field : m_fields2) {
+        if (mask2 & field.maskBit) {
             payloadLen += field.size;
         }
     }
 
     // Total length = frame header(2) + mask(4) + payload length
-    int totalLen = 2 + 4 + 1 + 4 + payloadLen;
+    int totalLen = 2 + 4 + 1 + 4 + 4 + payloadLen;
     if (data.size() < startIdx + totalLen)
         return -1;   // Insufficient data
 
     return totalLen;
 }
 
+void DataParser::addCommandMapping(const QString &displayName, const QString &commandName) {
+    m_displayToCmd[displayName] = commandName;
+}
+
 void DataParser::initCommandMapping() {
-    m_displayToCmd["RPM"]       = "rpm";
-    m_displayToCmd["RPMSP"]     = "rpmsp";
-    m_displayToCmd["POS"]       = "pos";
-    m_displayToCmd["ELPOS"]     = "elpos";
-    m_displayToCmd["DUTY_A"]    = "duty_a";
-    m_displayToCmd["DUTY_B"]    = "duty_b";
-    m_displayToCmd["DUTY_C"]    = "duty_c";
-    m_displayToCmd["IA"]        = "ia";
-    m_displayToCmd["IB"]        = "ib";
-    m_displayToCmd["IC"]        = "ic";
-    m_displayToCmd["VA"]        = "va";
-    m_displayToCmd["VB"]        = "vb";
-    m_displayToCmd["VBATT"]     = "vbatt";
-    m_displayToCmd["IBATT"]     = "ibatt";
-    m_displayToCmd["IA_RAW"]    = "ia_raw";
-    m_displayToCmd["IB_RAW"]    = "ib_raw";
-    m_displayToCmd["IC_RAW"]    = "ic_raw";
-    m_displayToCmd["VA_RAW"]    = "va_raw";
-    m_displayToCmd["VB_RAW"]    = "vb_raw";
-    m_displayToCmd["VBATT_RAW"] = "vbatt_raw";
-    m_displayToCmd["IBATT_RAW"] = "ibatt_raw";
-    m_displayToCmd["IA_MAX"]    = "ia_max";
-    m_displayToCmd["IB_MAX"]    = "ib_max";
-    m_displayToCmd["IC_MAX"]    = "ic_max";
-    m_displayToCmd["IBATT_MAX"] = "ibatt_max";
-    m_displayToCmd["FOC_ID"]    = "id";
-    m_displayToCmd["FOC_IQ"]    = "iq";
-    m_displayToCmd["FOC_IDSP"]  = "idsp";
-    m_displayToCmd["FOC_IQSP"]  = "iqsp";
-    m_displayToCmd["FOC_VD"]    = "vd";
-    m_displayToCmd["FOC_VQ"]    = "vq";
+    m_displayToCmd.clear();
+
+    addCommandMapping("RPM", "rpm");
+    addCommandMapping("RPMSP", "rpmsp");
+    addCommandMapping("POS", "pos");
+    addCommandMapping("ELPOS", "elpos");
+    addCommandMapping("DUTY_A", "duty_a");
+    addCommandMapping("DUTY_B", "duty_b");
+    addCommandMapping("DUTY_C", "duty_c");
+    addCommandMapping("IA", "ia");
+    addCommandMapping("IB", "ib");
+    addCommandMapping("IC", "ic");
+    addCommandMapping("VA", "va");
+    addCommandMapping("VB", "vb");
+    addCommandMapping("VBATT", "vbatt");
+    addCommandMapping("IBATT", "ibatt");
+    addCommandMapping("IA_RAW", "ia_raw");
+    addCommandMapping("IB_RAW", "ib_raw");
+    addCommandMapping("IC_RAW", "ic_raw");
+    addCommandMapping("VA_RAW", "va_raw");
+    addCommandMapping("VB_RAW", "vb_raw");
+    addCommandMapping("VBATT_RAW", "vbatt_raw");
+    addCommandMapping("IBATT_RAW", "ibatt_raw");
+    addCommandMapping("IA_MAX", "ia_max");
+    addCommandMapping("IB_MAX", "ib_max");
+    addCommandMapping("IC_MAX", "ic_max");
+    addCommandMapping("IBATT_MAX", "ibatt_max");
+    addCommandMapping("FOC_ID", "id");
+    addCommandMapping("FOC_IQ", "iq");
+    addCommandMapping("FOC_IDSP", "idsp");
+    addCommandMapping("FOC_IQSP", "iqsp");
+    addCommandMapping("FOC_VD", "vd");
+    addCommandMapping("FOC_VQ", "vq");
+
+    addCommandMapping("OM", "om");
+    addCommandMapping("FW", "fw");
+    addCommandMapping("FFT", "fft");
 }

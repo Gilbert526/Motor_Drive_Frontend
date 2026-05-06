@@ -832,8 +832,8 @@
              <property name="rightMargin">
               <number>0</number>
              </property>
-             <item row="1" column="1">
-              <widget class="QLabel" name="labelUndervolt">
+             <item row="2" column="2">
+              <widget class="QLabel" name="labelConfig">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
                  <horstretch>0</horstretch>
@@ -853,14 +853,14 @@
                 </size>
                </property>
                <property name="text">
-                <string>UV</string>
+                <string>Config</string>
                </property>
                <property name="alignment">
                 <set>Qt::AlignmentFlag::AlignCenter</set>
                </property>
               </widget>
              </item>
-             <item row="1" column="0">
+             <item row="2" column="0">
               <widget class="QLabel" name="labelOvercurrent">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
@@ -882,34 +882,6 @@
                </property>
                <property name="text">
                 <string>OC</string>
-               </property>
-               <property name="alignment">
-                <set>Qt::AlignmentFlag::AlignCenter</set>
-               </property>
-              </widget>
-             </item>
-             <item row="0" column="1">
-              <widget class="QLabel" name="labelVvvf">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="minimumSize">
-                <size>
-                 <width>0</width>
-                 <height>40</height>
-                </size>
-               </property>
-               <property name="maximumSize">
-                <size>
-                 <width>16777215</width>
-                 <height>30</height>
-                </size>
-               </property>
-               <property name="text">
-                <string>VVVF</string>
                </property>
                <property name="alignment">
                 <set>Qt::AlignmentFlag::AlignCenter</set>
@@ -944,6 +916,62 @@
                </property>
               </widget>
              </item>
+             <item row="2" column="1">
+              <widget class="QLabel" name="labelUndervolt">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>0</width>
+                 <height>40</height>
+                </size>
+               </property>
+               <property name="maximumSize">
+                <size>
+                 <width>16777215</width>
+                 <height>30</height>
+                </size>
+               </property>
+               <property name="text">
+                <string>UV</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignmentFlag::AlignCenter</set>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="1">
+              <widget class="QLabel" name="labelVvvf">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>0</width>
+                 <height>40</height>
+                </size>
+               </property>
+               <property name="maximumSize">
+                <size>
+                 <width>16777215</width>
+                 <height>30</height>
+                </size>
+               </property>
+               <property name="text">
+                <string>VVVF</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignmentFlag::AlignCenter</set>
+               </property>
+              </widget>
+             </item>
              <item row="0" column="2">
               <widget class="QLabel" name="labelProtect">
                <property name="sizePolicy">
@@ -972,8 +1000,8 @@
                </property>
               </widget>
              </item>
-             <item row="1" column="2">
-              <widget class="QLabel" name="labelConfig">
+             <item row="1" column="0">
+              <widget class="QLabel" name="labelOm">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
                  <horstretch>0</horstretch>
@@ -993,7 +1021,63 @@
                 </size>
                </property>
                <property name="text">
-                <string>Config</string>
+                <string>OM</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignmentFlag::AlignCenter</set>
+               </property>
+              </widget>
+             </item>
+             <item row="1" column="1">
+              <widget class="QLabel" name="labelFw">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>0</width>
+                 <height>40</height>
+                </size>
+               </property>
+               <property name="maximumSize">
+                <size>
+                 <width>16777215</width>
+                 <height>30</height>
+                </size>
+               </property>
+               <property name="text">
+                <string>FW</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignmentFlag::AlignCenter</set>
+               </property>
+              </widget>
+             </item>
+             <item row="1" column="2">
+              <widget class="QLabel" name="labelFoc_4">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>0</width>
+                 <height>40</height>
+                </size>
+               </property>
+               <property name="maximumSize">
+                <size>
+                 <width>16777215</width>
+                 <height>30</height>
+                </size>
+               </property>
+               <property name="text">
+                <string>FOC</string>
                </property>
                <property name="alignment">
                 <set>Qt::AlignmentFlag::AlignCenter</set>
