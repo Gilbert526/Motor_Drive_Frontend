@@ -37,10 +37,13 @@ AudioLevelMeter::AudioLevelMeter(QWidget *parent)
 
         const double decayStep = (m_maximum - m_minimum) * 0.015;
         if (m_minimum < 0.0 && m_maximum > 0.0) {
-            const double peakSign = (m_peakValue < 0.0) ? -1.0 : 1.0;
-            const double decayedLevel = qMax(levelForThreshold(m_value),
-                                             levelForThreshold(m_peakValue) - decayStep);
-            m_peakValue = peakSign * decayedLevel;
+            const double currentLevel = levelForThreshold(m_value);
+            const double peakLevel = levelForThreshold(m_peakValue);
+            const double decayedLevel = qMax(currentLevel, peakLevel - decayStep);
+            const double sign = (currentLevel >= decayedLevel)
+                ? ((m_value < 0.0) ? -1.0 : 1.0)
+                : ((m_peakValue < 0.0) ? -1.0 : 1.0);
+            m_peakValue = sign * decayedLevel;
         } else {
             m_peakValue = qMax(m_value, m_peakValue - decayStep);
         }
@@ -90,7 +93,9 @@ void AudioLevelMeter::setRange(double minimum, double maximum)
     m_maximum = maximum;
     m_value = clampedValue(m_value);
     m_displayValue = clampedValue(m_displayValue);
-    m_peakValue = clampedValue(m_peakValue);
+    m_peakValue = (m_minimum < 0.0 && m_maximum > 0.0)
+        ? qBound(m_minimum, m_peakValue, m_maximum)
+        : clampedValue(m_peakValue);
     m_warningThreshold = m_minimum + (m_maximum - m_minimum) * 0.65;
     m_criticalThreshold = m_minimum + (m_maximum - m_minimum) * 0.85;
     updateColorState(m_value);
@@ -133,11 +138,15 @@ void AudioLevelMeter::setValue(double value)
     m_value = clampedValue(value);
     updateColorState(m_value);
 
-    if (levelForThreshold(m_value) >= levelForThreshold(m_peakValue)) {
+    if (m_minimum < 0.0 && m_maximum > 0.0) {
+        if (levelForThreshold(m_value) >= m_peakValue) {
+            m_peakValue = m_value;
+            m_peakHoldRemainingMs = m_peakHoldMs;
+        }
+    } else if (levelForThreshold(m_value) >= levelForThreshold(m_peakValue)) {
         m_peakValue = m_value;
         m_peakHoldRemainingMs = m_peakHoldMs;
     }
-
     if (!m_peakDecayTimer.isActive()) {
         m_peakDecayTimer.start();
     }
@@ -168,7 +177,9 @@ void AudioLevelMeter::paintEvent(QPaintEvent *event)
     const QColor secondaryText = primaryText.darker(150);
     const QColor gridColor = primaryText.darker(220);
     const QColor zeroLineColor = primaryText.lighter(135);
-    const QColor peakLineColor = primaryText.lighter(160);
+    const QColor peakLineColor = (primaryText.lightness() < 128)
+        ? QColor(245, 245, 245)
+        : primaryText.lighter(160);
     const QColor frameColor = primaryText.darker(170);
 
     QFont titleFont = painter.font();
