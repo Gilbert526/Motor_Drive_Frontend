@@ -19,7 +19,9 @@ AudioLevelMeter::AudioLevelMeter(QWidget *parent)
       m_peakValue(0.0),
       m_warningThreshold(65.0),
       m_criticalThreshold(85.0),
+      m_thresholdHysteresisPercent(0.0),
       m_divisionCount(5),
+      m_colorState(ColorState::Normal),
       m_peakHoldMs(1000),
       m_peakHoldRemainingMs(0)
 {
@@ -91,6 +93,7 @@ void AudioLevelMeter::setRange(double minimum, double maximum)
     m_peakValue = clampedValue(m_peakValue);
     m_warningThreshold = m_minimum + (m_maximum - m_minimum) * 0.65;
     m_criticalThreshold = m_minimum + (m_maximum - m_minimum) * 0.85;
+    updateColorState(m_value);
     update();
 }
 
@@ -98,6 +101,14 @@ void AudioLevelMeter::setThresholds(double warningThreshold, double criticalThre
 {
     m_warningThreshold = warningThreshold;
     m_criticalThreshold = criticalThreshold;
+    updateColorState(m_value);
+    update();
+}
+
+void AudioLevelMeter::setThresholdHysteresisPercent(double percent)
+{
+    m_thresholdHysteresisPercent = qMax(0.0, percent);
+    updateColorState(m_value);
     update();
 }
 
@@ -120,6 +131,7 @@ void AudioLevelMeter::setPeakHoldMs(int holdMs)
 void AudioLevelMeter::setValue(double value)
 {
     m_value = clampedValue(value);
+    updateColorState(m_value);
 
     if (levelForThreshold(m_value) >= levelForThreshold(m_peakValue)) {
         m_peakValue = m_value;
@@ -293,17 +305,51 @@ double AudioLevelMeter::levelForThreshold(double value) const
     return value;
 }
 
-QColor AudioLevelMeter::fillColorForValue(double value) const
+double AudioLevelMeter::hysteresisAmount() const
+{
+    const double maxMagnitude = qMax(qAbs(m_minimum), qAbs(m_maximum));
+    return maxMagnitude * (m_thresholdHysteresisPercent / 100.0);
+}
+
+void AudioLevelMeter::updateColorState(double value)
 {
     const double level = levelForThreshold(value);
     const double warning = qMin(m_warningThreshold, m_criticalThreshold);
     const double critical = qMax(m_warningThreshold, m_criticalThreshold);
+    const double hysteresis = hysteresisAmount();
 
-    if (level >= critical) {
+    switch (m_colorState) {
+    case ColorState::Normal:
+        if (level >= critical) {
+            m_colorState = ColorState::Critical;
+        } else if (level >= warning) {
+            m_colorState = ColorState::Warning;
+        }
+        break;
+    case ColorState::Warning:
+        if (level >= critical) {
+            m_colorState = ColorState::Critical;
+        } else if (level < warning - hysteresis) {
+            m_colorState = ColorState::Normal;
+        }
+        break;
+    case ColorState::Critical:
+        if (level < critical - hysteresis) {
+            m_colorState = (level >= warning) ? ColorState::Warning : ColorState::Normal;
+        }
+        break;
+    }
+}
+
+QColor AudioLevelMeter::fillColorForValue(double value) const
+{
+    Q_UNUSED(value);
+
+    if (m_colorState == ColorState::Critical) {
         return QColor(218, 74, 64);
     }
 
-    if (level >= warning) {
+    if (m_colorState == ColorState::Warning) {
         return QColor(228, 171, 48);
     }
 

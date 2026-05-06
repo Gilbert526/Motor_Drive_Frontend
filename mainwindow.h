@@ -237,7 +237,8 @@ private:
                   double maximum,
                   double warningThreshold,
                   double criticalThreshold,
-                  int divisionCount);
+                  int divisionCount,
+                  double hysteresisPercent);
     void updateGauges(const QHash<QString, double> &values);
     void flushGaugeUpdates();
     void updateStatusIndicators();

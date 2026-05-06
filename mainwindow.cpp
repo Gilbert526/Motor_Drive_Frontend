@@ -329,8 +329,8 @@ void MainWindow::setupGaugeArea()
 
     gaugeLayout->setAlignment(Qt::AlignCenter);
     gaugeLayout->addStretch(1);
-    addGauge("VBATT", "Battery", "V", 0.0, 30.0, 14.0, 26.0, 6);
-    addGauge("RPM", "Speed", "RPM", -7000.0, 7000.0, 4000.0, 6000.0, 14);
+    addGauge("VBATT", "Battery", "V", 0.0, 30.0, 14.0, 26.0, 6, 2.0);
+    addGauge("RPM", "Speed", "RPM", -8000.0, 8000.0, 4000.0, 6000.0, 16, 2.0);
     gaugeLayout->addStretch(1);
 
     if (!m_gaugeTimer) {
@@ -347,7 +347,8 @@ void MainWindow::addGauge(const QString &fieldName,
                           double maximum,
                           double warningThreshold,
                           double criticalThreshold,
-                          int divisionCount)
+                          int divisionCount,
+                          double hysteresisPercent)
 {
     QHBoxLayout *gaugeLayout = qobject_cast<QHBoxLayout*>(ui->gaugeArea->layout());
     if (!gaugeLayout) {
@@ -359,6 +360,7 @@ void MainWindow::addGauge(const QString &fieldName,
     meter->setUnit(unit);
     meter->setRange(minimum, maximum);
     meter->setThresholds(warningThreshold, criticalThreshold);
+    meter->setThresholdHysteresisPercent(hysteresisPercent);
     meter->setDivisionCount(divisionCount);
     meter->setPeakHoldMs(1000);
 
