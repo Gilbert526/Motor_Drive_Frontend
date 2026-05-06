@@ -41,6 +41,11 @@ MainWindow::MainWindow(QWidget *parent):
     m_recordHistory(true),
     m_packetCounter(0),
     m_gaugeTimer(nullptr),
+    m_pendingOm(0),
+    m_hasPendingOm(false),
+    m_pendingFw(0),
+    m_hasPendingFw(false),
+    m_indicatorHistoryWindowSize(11),
     m_packetIntervalSec(1.0 / DEFAULT_PACKET_FREQ_HZ) {
         ui->setupUi(this);
         setWindowTitle("Tuning Master");
@@ -328,8 +333,8 @@ void MainWindow::setupGaugeArea()
 
     gaugeLayout->setAlignment(Qt::AlignCenter);
     gaugeLayout->addStretch(1);
-    addGauge("VBATT", "Battery", "V", 0.0, 30.0, 14.0, 26.0, 6, 2.0);
-    addGauge("RPM", "Speed", "RPM", -8000.0, 8000.0, 4000.0, 6000.0, 16, 2.0);
+    addGauge("VBATT", "Voltage", "V", 0.0, 30.0, 14.0, 26.0, 6, 2.0);
+    addGauge("RPM", "Speed", "RPM", -8000.0, 8000.0, 4100.0, 6100.0, 16, 2.0);
     gaugeLayout->addStretch(1);
 
     if (!m_gaugeTimer) {
@@ -385,38 +390,12 @@ void MainWindow::flushGaugeUpdates()
             binding.hasPendingValue = false;
         }
     }
+
+    updateOmFwIndicators();
 }
 
 void MainWindow::updateStatusIndicators()
 {
-    const auto setIndicator = [](QLabel *label, bool active, const QColor &activeColor) {
-        if (!label) {
-            return;
-        }
-
-        if (active) {
-            label->setStyleSheet(QString(
-                "QLabel {"
-                " background-color: %1;"
-                " color: white;"
-                " border: 1px solid %2;"
-                " border-radius: 4px;"
-                " font-weight: bold;"
-                "}"
-            ).arg(activeColor.name(), activeColor.darker(130).name()));
-        } else {
-            label->setStyleSheet(
-                "QLabel {"
-                " background-color: #d7d9dc;"
-                " color: #555;"
-                " border: 1px solid #aeb4ba;"
-                " border-radius: 4px;"
-                " font-weight: normal;"
-                "}"
-            );
-        }
-    };
-
     const quint8 focLinear = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_FOC_LINEAR);
     const quint8 focDpwm = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_FOC_DPWM);
     const quint8 vvvf = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_VVVF);
@@ -439,12 +418,94 @@ void MainWindow::updateStatusIndicators()
                                     DataParser::ERROR_FOC_CONFIG;
     const bool configErrorActive = (m_telemetryStatus.errorCode & configErrorMask) != 0;
 
-    setIndicator(ui->labelFoc, focActive, QColor(36, 166, 78));
-    setIndicator(ui->labelVvvf, vvvfActive, QColor(36, 166, 78));
-    setIndicator(ui->labelProtect, protectionActive, QColor(210, 64, 55));
-    setIndicator(ui->labelOvercurrent, overcurrentActive, QColor(210, 64, 55));
-    setIndicator(ui->labelUndervolt, undervoltageActive, QColor(210, 64, 55));
-    setIndicator(ui->labelConfig, configErrorActive, QColor(210, 64, 55));
+    setCustomIndicator(ui->labelFoc, "FOC", focActive, QColor(36, 166, 78));
+    setCustomIndicator(ui->labelVvvf, "VVVF", vvvfActive, QColor(36, 166, 78));
+    setCustomIndicator(ui->labelProtect, "Protect", protectionActive, QColor(210, 64, 55));
+    setCustomIndicator(ui->labelOvercurrent, "OC", overcurrentActive, QColor(210, 64, 55));
+    setCustomIndicator(ui->labelUndervolt, "UV", undervoltageActive, QColor(210, 64, 55));
+    setCustomIndicator(ui->labelConfig, "Config", configErrorActive, QColor(210, 64, 55));
+    updateOmFwIndicators();
+}
+
+void MainWindow::setCustomIndicator(QLabel *label,
+                                    const QString &text,
+                                    bool active,
+                                    const QColor &activeColor)
+{
+    if (!label) {
+        return;
+    }
+
+    label->setText(text);
+    if (active) {
+        const QColor textColor = activeColor.lightness() > 170 ? QColor(35, 35, 35) : QColor(Qt::white);
+        label->setStyleSheet(QString(
+            "QLabel {"
+            " background-color: %1;"
+            " color: %2;"
+            " border: 1px solid %3;"
+            " border-radius: 4px;"
+            " font-weight: bold;"
+            "}"
+        ).arg(activeColor.name(), textColor.name(), activeColor.darker(130).name()));
+    } else {
+        label->setStyleSheet(
+            "QLabel {"
+            " background-color: #d7d9dc;"
+            " color: #555;"
+            " border: 1px solid #aeb4ba;"
+            " border-radius: 4px;"
+            " font-weight: normal;"
+            "}"
+        );
+    }
+}
+
+void MainWindow::updateOmFwIndicators()
+{
+    const auto mostFrequentValue = [](const QVector<int> &history, int fallbackValue) {
+        if (history.isEmpty()) {
+            return fallbackValue;
+        }
+
+        QHash<int, int> counts;
+        int bestValue = fallbackValue;
+        int bestCount = -1;
+        for (int value : history) {
+            const int count = ++counts[value];
+            if (count > bestCount) {
+                bestCount = count;
+                bestValue = value;
+            }
+        }
+        return bestValue;
+    };
+
+    const quint8 focLinear = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_FOC_LINEAR);
+    const quint8 focDpwm = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_FOC_DPWM);
+    const quint8 vvvf = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_VVVF);
+    const bool omModeActive = m_telemetryStatus.controlModeKnown &&
+                              (m_telemetryStatus.controlMode == vvvf ||
+                               m_telemetryStatus.controlMode == focLinear ||
+                               m_telemetryStatus.controlMode == focDpwm);
+    const int omDisplayValue = mostFrequentValue(m_omHistory, m_pendingOm);
+    const int fwDisplayValue = mostFrequentValue(m_fwHistory, m_pendingFw);
+
+    if (!omModeActive || !m_hasPendingOm) {
+        setCustomIndicator(ui->labelOm, "OM", false, QColor(36, 166, 78));
+    } else if (omDisplayValue <= 0) {
+        setCustomIndicator(ui->labelOm, "Linear", true, QColor(36, 166, 78));
+    } else if (omDisplayValue == 1) {
+        setCustomIndicator(ui->labelOm, "OM 1", true, QColor(228, 171, 48));
+    } else {
+        setCustomIndicator(ui->labelOm, "OM 2", true, QColor(210, 64, 55));
+    }
+
+    if (!m_hasPendingFw) {
+        setCustomIndicator(ui->labelFw, "FW", false, QColor(228, 171, 48));
+    } else {
+        setCustomIndicator(ui->labelFw, "FW", fwDisplayValue == 1, QColor(228, 171, 48));
+    }
 }
 
 void MainWindow::addOscilloscope(const QString &title, int index) {
@@ -862,6 +923,22 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
             vec.remove(0, vec.size() - m_maxWavePoints);
         }
     }
+    if (values.contains("OM")) {
+        m_pendingOm = qRound(values.value("OM"));
+        m_hasPendingOm = true;
+        m_omHistory.append(m_pendingOm);
+        if (m_omHistory.size() > m_indicatorHistoryWindowSize) {
+            m_omHistory.remove(0, m_omHistory.size() - m_indicatorHistoryWindowSize);
+        }
+    }
+    if (values.contains("FW")) {
+        m_pendingFw = qRound(values.value("FW"));
+        m_hasPendingFw = true;
+        m_fwHistory.append(m_pendingFw);
+        if (m_fwHistory.size() > m_indicatorHistoryWindowSize) {
+            m_fwHistory.remove(0, m_fwHistory.size() - m_indicatorHistoryWindowSize);
+        }
+    }
     m_plotDirty = true;
     advanceFaultAutoCapture();
     updateGauges(values);
@@ -1252,7 +1329,7 @@ void MainWindow::on_lineEditTarget_editingFinished() {
     if (isSpeed) {
         val = qBound(-8000.0, val, 8000.0);
     } else {
-        val = qBound(-0.1, val, 0.1);
+        val = qBound(0.0, val, 0.1);
     }
 
     // Move the slider to the nearest step value (speed in hundreds, torque in 0.001 increments)
@@ -1305,7 +1382,7 @@ void MainWindow::on_pushButtonTargetSend_clicked() {
         if (mode == "speed") {
             target = qBound(-8000.0, target, 8000.0);
         } else {
-            target = qBound(-0.1, target, 0.1);
+            target = qBound(0.0, target, 0.1);
         }
     } else {
         // Use the value from the slider
@@ -1611,7 +1688,7 @@ void MainWindow::updateTargetSliderLimits() {
         ui->targetSlider->setSingleStep(100);
         ui->targetLabelPrefix->setText("Speed");
     } else {
-        ui->targetSlider->setRange(-100, 100);   // -100 -> -0.100, 100 -> 0.100
+        ui->targetSlider->setRange(0, 100);   // 0 -> 0.0, 100 -> 0.100
         ui->targetSlider->setSingleStep(1);
         ui->targetLabelPrefix->setText("Torque");
     }
@@ -1644,7 +1721,7 @@ void MainWindow::setTargetValue(double val, bool markAsEdited) {
         int sliderVal = static_cast<int>(qRound(val / 100.0) * 100);
         ui->targetSlider->setValue(sliderVal);
     } else {
-        val = qBound(-0.1, val, 0.1);
+        val = qBound(0.0, val, 0.1);
         int sliderVal = static_cast<int>(qRound(val * 1000.0));
         ui->targetSlider->setValue(sliderVal);
     }

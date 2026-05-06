@@ -64,8 +64,10 @@ DataParser::DataParser(QObject *parent): QObject{parent} {
     };
     m_fields2 = {
         {"OM",         1, 'B', 1 << 0},
-        {"FW",         1, 'B', 1 << 1},
-        {"FFT",        4, 'f', 1 << 2}
+        {"M_INDEX",    4, 'f', 1 << 1},
+        {"FW",         1, 'B', 1 << 2},
+        {"UMAG",       4, 'f', 1 << 3},
+        {"FFT",        4, 'f', 1 << 4}
     };
     initCommandMapping();
 }
@@ -265,8 +267,16 @@ bool DataParser::hasValidFrameMetadata(const QByteArray &data, int startIdx) con
     const int modePos = startIdx + 2 + 4;
     const int mask1Pos = modePos + 1;
     const int mask2Pos = mask1Pos + 4;
+    const quint32 errorCode = qFromLittleEndian<quint32>(data.constData() + startIdx + 2);
     const quint8 controlMode = static_cast<quint8>(data.at(modePos));
     if (!isControlModeKnown(controlMode))
+        return false;
+
+    quint32 validErrorBits = 0;
+    for (const ErrorDef &error : m_errors) {
+        validErrorBits |= error.maskBit;
+    }
+    if ((errorCode & ~validErrorBits) != 0)
         return false;
 
     quint32 validMask1Bits = 0;
@@ -360,6 +370,8 @@ void DataParser::initCommandMapping() {
     addCommandMapping("FOC_VQ", "vq");
 
     addCommandMapping("OM", "om");
+    addCommandMapping("M_INDEX", "m_index");
     addCommandMapping("FW", "fw");
+    addCommandMapping("UMAG", "umag");
     addCommandMapping("FFT", "fft");
 }

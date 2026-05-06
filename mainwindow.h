@@ -159,6 +159,13 @@ private:
         bool hasPendingValue = false;
     };
     QList<GaugeBinding> m_gaugeBindings;
+    int m_pendingOm;
+    bool m_hasPendingOm;
+    int m_pendingFw;
+    bool m_hasPendingFw;
+    QVector<int> m_omHistory;
+    QVector<int> m_fwHistory;
+    int m_indicatorHistoryWindowSize;
 
     int m_currentMaxPoints;   // 当前显示的点数（滑动条值）
 
@@ -242,6 +249,11 @@ private:
     void updateGauges(const QHash<QString, double> &values);
     void flushGaugeUpdates();
     void updateStatusIndicators();
+    void updateOmFwIndicators();
+    void setCustomIndicator(QLabel *label,
+                            const QString &text,
+                            bool active,
+                            const QColor &activeColor);
     void addOscilloscope(const QString &title = QString(), int index = -1);
     void removeOscilloscope(OscilloscopeWidget *osc);
     void updateAllMoveButtons();        // Update state of move up/down buttons for oscilloscopes
