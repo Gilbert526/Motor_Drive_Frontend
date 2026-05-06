@@ -319,8 +319,8 @@ void MainWindow::setupGaugeArea()
     if (!gaugeLayout) {
         delete existingLayout;
         gaugeLayout = new QHBoxLayout(ui->gaugeArea);
-        gaugeLayout->setContentsMargins(0, 0, 0, 0);
-        gaugeLayout->setSpacing(8);
+        gaugeLayout->setContentsMargins(6, 0, 6, 0);
+        gaugeLayout->setSpacing(18);
         ui->gaugeArea->setLayout(gaugeLayout);
     }
 

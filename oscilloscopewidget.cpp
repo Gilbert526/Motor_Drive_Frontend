@@ -4,6 +4,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QMimeData>
+#include <QPalette>
 #include <limits>
 
 OscilloscopeWidget::OscilloscopeWidget(QWidget *parent):
@@ -20,7 +21,6 @@ void OscilloscopeWidget::setupUi() {
     // 标题栏
     m_titleLabel = new QLabel("Oscilloscope", this);
     m_titleLabel->setAlignment(Qt::AlignCenter);
-    m_titleLabel->setStyleSheet("font-weight: bold; background-color: #f0f0f0;");
     
     // Config button
     m_configBtn = new QPushButton("⚙️", this);
@@ -82,6 +82,7 @@ void OscilloscopeWidget::setupUi() {
     m_plot->setOpenGl(true);
     m_plot->setNoAntialiasingOnDrag(true);
     m_plot->setPlottingHint(QCP::phFastPolylines, true);
+    applyTheme();
     
     // 主布局
     QVBoxLayout *layout = new QVBoxLayout(this);
@@ -92,6 +93,14 @@ void OscilloscopeWidget::setupUi() {
 void OscilloscopeWidget::setMoveButtonsEnabled(bool upEnabled, bool downEnabled) {
     m_moveUpBtn->setEnabled(upEnabled);
     m_moveDownBtn->setEnabled(downEnabled);
+}
+
+void OscilloscopeWidget::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::PaletteChange || event->type() == QEvent::ApplicationPaletteChange) {
+        applyTheme();
+    }
+    QWidget::changeEvent(event);
 }
 
 void OscilloscopeWidget::setTitle(const QString &title) {
@@ -290,6 +299,53 @@ void OscilloscopeWidget::dropEvent(QDropEvent *event) {
 void OscilloscopeWidget::onConfigure() {
     // 通知主窗口弹出配置对话框
     emit fieldsChanged();
+}
+
+void OscilloscopeWidget::applyTheme()
+{
+    const QPalette pal = palette();
+    const QColor windowColor = pal.color(QPalette::Window);
+    const QColor baseColor = pal.color(QPalette::Base);
+    const QColor textColor = pal.color(QPalette::WindowText);
+    const QColor buttonColor = pal.color(QPalette::Button);
+    const QColor buttonTextColor = pal.color(QPalette::ButtonText);
+    const QColor midColor = pal.color(QPalette::Mid);
+    const QColor gridColor = midColor;
+    const QColor subGridColor = midColor.lighter(115);
+
+    m_titleLabel->setStyleSheet(QString(
+        "font-weight: bold; background-color: %1; color: %2;"
+    ).arg(buttonColor.name(), buttonTextColor.name()));
+
+    const QList<QPushButton*> buttons = findChildren<QPushButton*>();
+    for (QPushButton *button : buttons) {
+        button->setStyleSheet(QString(
+            "QPushButton { background-color: %1; color: %2; border: 1px solid %3; }"
+            "QPushButton:checked { background-color: %4; }"
+        ).arg(buttonColor.name(),
+              buttonTextColor.name(),
+              midColor.name(),
+              buttonColor.darker(115).name()));
+    }
+
+    m_plot->setBackground(baseColor);
+    m_plot->axisRect()->setBackground(windowColor);
+    m_plot->legend->setBrush(QBrush(windowColor));
+    m_plot->legend->setBorderPen(QPen(midColor));
+    m_plot->legend->setTextColor(textColor);
+
+    for (QCPAxis *axis : {m_plot->xAxis, m_plot->yAxis}) {
+        axis->setBasePen(QPen(textColor));
+        axis->setTickPen(QPen(textColor));
+        axis->setSubTickPen(QPen(textColor));
+        axis->setTickLabelColor(textColor);
+        axis->setLabelColor(textColor);
+        axis->grid()->setPen(QPen(gridColor, 0, Qt::DotLine));
+        axis->grid()->setSubGridPen(QPen(subGridColor, 0, Qt::DotLine));
+        axis->grid()->setZeroLinePen(QPen(textColor, 0));
+    }
+
+    m_plot->replot(QCustomPlot::rpQueuedReplot);
 }
 
 void OscilloscopeWidget::onToggleYLock() {
