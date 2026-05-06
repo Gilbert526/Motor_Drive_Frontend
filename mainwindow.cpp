@@ -149,7 +149,7 @@ MainWindow::MainWindow(QWidget *parent):
         ui->comboBaud->addItems({"9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600"});
         ui->comboBaud->setCurrentText("115200");
 
-        ui->pushButtonRefresh->setText("Refresh");
+        ui->pushButtonRefresh->setText("⭮");
         ui->pushButtonRefresh->setToolTip("Refresh serial ports");
         ui->pushButtonSend->setText("➢");
         ui->pushButtonSend->setToolTip("Send command");
@@ -335,6 +335,7 @@ void MainWindow::setupGaugeArea()
     gaugeLayout->addStretch(1);
     addGauge("VBATT", "Voltage", "V", 0.0, 30.0, 14.0, 26.0, 6, 2.0);
     addGauge("RPM", "Speed", "RPM", -8000.0, 8000.0, 4100.0, 6100.0, 16, 2.0);
+    addGauge("M_INDEX", "Modulation", "", 0.0, 1.0, 0.907, 0.9514, 10, 2.0);
     gaugeLayout->addStretch(1);
 
     if (!m_gaugeTimer) {
@@ -1191,12 +1192,12 @@ void MainWindow::refreshSerialPorts() {
 
 void MainWindow::updateUiForSerialState(bool isOpen) {
     if (isOpen) {
-        ui->pushButtonStartToggle->setText("Stop");
+        ui->pushButtonStartToggle->setText("⏹");
         ui->comboPort->setEnabled(false);
         ui->comboBaud->setEnabled(false);
         ui->pushButtonRefresh->setEnabled(false);
     } else {
-        ui->pushButtonStartToggle->setText("Start");
+        ui->pushButtonStartToggle->setText("▶");
         ui->comboPort->setEnabled(true);
         ui->comboBaud->setEnabled(true);
         ui->pushButtonRefresh->setEnabled(true);

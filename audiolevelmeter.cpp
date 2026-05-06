@@ -171,7 +171,10 @@ void AudioLevelMeter::paintEvent(QPaintEvent *event)
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
 
-    const QRect area = rect().adjusted(6, 6, -6, -6);
+    // Overall content margins for the whole widget drawing area.
+    // Adjust the first and third values to change the left/right margins
+    // for the entire gauges area. The current margins are optimized for 3 gauges layout.
+    const QRect area = rect().adjusted(2, 20, -2, -6);
     painter.fillRect(rect(), palette().window());
     const QColor primaryText = palette().color(QPalette::WindowText);
     const QColor secondaryText = primaryText.darker(150);
@@ -202,7 +205,14 @@ void AudioLevelMeter::paintEvent(QPaintEvent *event)
                      m_title);
 
     painter.setFont(valueFont);
-    const int scaleWidth = 40;
+    // Gauge/scale layout tuning:
+    // - scaleWidth controls how much horizontal space is reserved for the labels/ticks.
+    // - gap controls the spacing between the labels and the gauge body.
+    // - configuredMeterWidth is the preferred gauge width from sizeHint().
+    // - availableMeterWidth limits the gauge width to what actually fits in the widget.
+    // - meterWidth is the final gauge width that gets drawn.
+    // Change these values if you want to make the gauge body wider or narrower.
+    const int scaleWidth = 48;
     const int gap = 6;
     const int configuredMeterWidth = qMax(12, sizeHint().width() - scaleWidth - gap);
     const int availableMeterWidth = qMax(12, area.width() - scaleWidth - gap);
@@ -212,6 +222,11 @@ void AudioLevelMeter::paintEvent(QPaintEvent *event)
     const int horizontalOffset = meterWidth / 2;
     const int meterLeft = meterAreaLeft + qMax(0, (meterAreaWidth - meterWidth) / 2) - horizontalOffset;
     const int scaleLeft = area.left() - horizontalOffset;
+    // meterRect defines the actual gauge body rectangle:
+    // - the second argument controls the top position
+    // - the third argument is the gauge width
+    // - the fourth argument is the gauge height
+    // Increase/decrease these offsets if you want to manually tune the gauge size.
     const QRect meterRect(meterLeft,
                           area.top() + valueHeight + 4,
                           meterWidth,
