@@ -138,12 +138,7 @@ void AudioLevelMeter::setValue(double value)
     m_value = clampedValue(value);
     updateColorState(m_value);
 
-    if (m_minimum < 0.0 && m_maximum > 0.0) {
-        if (levelForThreshold(m_value) >= m_peakValue) {
-            m_peakValue = m_value;
-            m_peakHoldRemainingMs = m_peakHoldMs;
-        }
-    } else if (levelForThreshold(m_value) >= levelForThreshold(m_peakValue)) {
+    if (qAbs(m_value) > qAbs(m_peakValue)) {
         m_peakValue = m_value;
         m_peakHoldRemainingMs = m_peakHoldMs;
     }

@@ -1216,7 +1216,7 @@ void MainWindow::sendCommand(const QString &cmd) {
 void MainWindow::on_pushButtonStartToggle_clicked() {
     if (m_serialManager->thread() == nullptr) return;
 
-    if (ui->pushButtonStartToggle->text() == "Stop") {
+    if (ui->pushButtonStartToggle->text() == "⏹") {
         QMetaObject::invokeMethod(m_serialManager, "closeSerialPort", Qt::QueuedConnection);
     } else {
         QString portName = ui->comboPort->currentText();
