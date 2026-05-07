@@ -78,9 +78,11 @@ public:
      * @brief Parse the length of a complete binary frame from the given data
      * @param data Raw data containing the frame header (0xAA 0x55)
      * @param startIdx Start index of the frame header (default is 0)
-     * @return Total number of bytes in the frame (including header, error, mode, mask1 and mask2), or -1 if data is insufficient or format is incorrect
+     * @return Total number of bytes in the frame (including header, error, mode, timestamp, mask1 and mask2), or -1 if data is insufficient or format is incorrect
      */
     int getFrameLength(const QByteArray &data, int startIdx = 0) const;
+
+    static constexpr const char *TIMESTAMP_FIELD = "__mcu_timestamp_ticks";
 
 signals:
     void parsedData(const QHash<QString, double> &values);

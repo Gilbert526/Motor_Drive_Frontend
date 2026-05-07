@@ -18,8 +18,6 @@
 #include <QStack>
 #include <QMap>
 
-#define DEFAULT_PACKET_FREQ_HZ 5000
-
 class AudioLevelMeter;
 class SerialManager;
 class DataParser;
@@ -175,8 +173,8 @@ private:
 
     // Timer
     QVector<double> m_timeStamps;        // 每个采样点的时间（秒，相对）
-    qint64 m_packetCounter;          // 累计接收的包数（从0开始）
-    double m_packetIntervalSec;      // 包间隔秒数 = 1.0 / FREQ
+    quint64 m_lastTimestampTicks;
+    bool m_hasLastTimestamp;
 
     // Pause scope
     bool m_plotPaused;

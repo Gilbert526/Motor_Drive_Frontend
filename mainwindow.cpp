@@ -39,14 +39,14 @@ MainWindow::MainWindow(QWidget *parent):
     m_timeManuallyEdited(false),
     m_updatingTargetType(false),
     m_recordHistory(true),
-    m_packetCounter(0),
     m_gaugeTimer(nullptr),
     m_pendingOm(0),
     m_hasPendingOm(false),
     m_pendingFw(0),
     m_hasPendingFw(false),
     m_indicatorHistoryWindowSize(11),
-    m_packetIntervalSec(1.0 / DEFAULT_PACKET_FREQ_HZ) {
+    m_lastTimestampTicks(0),
+    m_hasLastTimestamp(false) {
         ui->setupUi(this);
         setWindowTitle("Tuning Master");
 
@@ -334,8 +334,8 @@ void MainWindow::setupGaugeArea()
     gaugeLayout->setAlignment(Qt::AlignCenter);
     gaugeLayout->addStretch(1);
     addGauge("VBATT", "Voltage", "V", 0.0, 30.0, 14.0, 26.0, 6, 2.0);
-    addGauge("RPM", "Speed", "RPM", -8000.0, 8000.0, 4100.0, 6100.0, 16, 2.0);
-    addGauge("M_INDEX", "Modulation", "", 0.0, 1.0, 0.907, 0.9514, 10, 2.0);
+    addGauge("RPM", "Speed", "RPM", -10000.0, 10000.0, 4100.0, 8100.0, 20, 2.0);
+    addGauge("M_INDEX", "Modulation", "", 0.0, 1.2, 0.907, 0.9514, 12, 2.0);
     gaugeLayout->addStretch(1);
 
     if (!m_gaugeTimer) {
@@ -910,13 +910,28 @@ void MainWindow::updatePlot() {
 
 // ==================== 数据处理 ====================
 void MainWindow::handleNewData(const QHash<QString, double> &values) {
-    // Calculate current time
-    double currentTime = m_packetCounter * m_packetIntervalSec;
-    m_packetCounter++;
+    const quint64 timestampTicks = static_cast<quint64>(values.value(DataParser::TIMESTAMP_FIELD, 0.0));
+
+    if (m_hasLastTimestamp && timestampTicks < m_lastTimestampTicks) {
+        m_timeStamps.clear();
+        m_waveData.clear();
+        m_pausedTimeStamps.clear();
+        m_pausedWaveData.clear();
+        m_omHistory.clear();
+        m_fwHistory.clear();
+    }
+
+    m_lastTimestampTicks = timestampTicks;
+    m_hasLastTimestamp = true;
+
+    const double currentTime = static_cast<double>(timestampTicks) / 275000000.0;
     addTimeStamp(currentTime);
     // 追加到波形缓冲区
     for (auto it = values.begin(); it != values.end(); ++it) {
         const QString &field = it.key();
+        if (field == DataParser::TIMESTAMP_FIELD) {
+            continue;
+        }
         double val = it.value();
         QVector<double> &vec = m_waveData[field];
         vec.append(val);
@@ -1328,7 +1343,7 @@ void MainWindow::on_lineEditTarget_editingFinished() {
     // Only limit the range, do not round
     bool isSpeed = (ui->comboBoxTargetSelection->currentText() == "Speed");
     if (isSpeed) {
-        val = qBound(-8000.0, val, 8000.0);
+        val = qBound(-9000.0, val, 9000.0);
     } else {
         val = qBound(0.0, val, 0.1);
     }
@@ -1381,7 +1396,7 @@ void MainWindow::on_pushButtonTargetSend_clicked() {
         if (!ok) return;
         // Clamp again to ensure the range
         if (mode == "speed") {
-            target = qBound(-8000.0, target, 8000.0);
+            target = qBound(-9000.0, target, 9000.0);
         } else {
             target = qBound(0.0, target, 0.1);
         }
@@ -1560,7 +1575,7 @@ bool MainWindow::startTelemetryLogging() {
 
     m_logFields = m_dataParser->getFieldNames();
     m_logStream.setDevice(&m_logFile);
-    m_logStream << "timestamp,error_code,error_flags,control_mode,control_mode_name";
+    m_logStream << "mcu_timestamp,error_code,error_flags,control_mode,control_mode_name";
     for (const QString &field : m_logFields) {
         m_logStream << "," << field;
     }
@@ -1594,7 +1609,9 @@ void MainWindow::writeTelemetryLogRow(const QHash<QString, double> &values) {
         return;
     }
 
-    m_logStream << QDateTime::currentDateTime().toString(Qt::ISODateWithMs)
+    const quint64 timestampTicks = static_cast<quint64>(values.value(DataParser::TIMESTAMP_FIELD, 0.0));
+
+    m_logStream << QString::number(timestampTicks)
                 << "," << m_telemetryStatus.errorCode
                 << "," << m_telemetryStatus.errorNames.join("|")
                 << "," << static_cast<int>(m_telemetryStatus.controlMode)
@@ -1685,7 +1702,7 @@ void MainWindow::addTimeStamp(double offsetSec)
 void MainWindow::updateTargetSliderLimits() {
     bool isSpeed = (ui->comboBoxTargetSelection->currentText() == "Speed");
     if (isSpeed) {
-        ui->targetSlider->setRange(-8000, 8000);
+        ui->targetSlider->setRange(-9000, 9000);
         ui->targetSlider->setSingleStep(100);
         ui->targetLabelPrefix->setText("Speed");
     } else {
@@ -1718,7 +1735,7 @@ void MainWindow::setTargetValue(double val, bool markAsEdited) {
 
     bool isSpeed = (ui->comboBoxTargetSelection->currentText() == "Speed");
     if (isSpeed) {
-        val = qBound(-8000.0, val, 8000.0);
+        val = qBound(-9000.0, val, 9000.0);
         int sliderVal = static_cast<int>(qRound(val / 100.0) * 100);
         ui->targetSlider->setValue(sliderVal);
     } else {

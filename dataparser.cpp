@@ -67,7 +67,8 @@ DataParser::DataParser(QObject *parent): QObject{parent} {
         {"M_INDEX",    4, 'f', 1 << 1},
         {"FW",         1, 'B', 1 << 2},
         {"UMAG",       4, 'f', 1 << 3},
-        {"FFT",        4, 'f', 1 << 4}
+        {"IMAG",       4, 'f', 1 << 4},
+        {"FFT",        4, 'f', 1 << 5}
     };
     initCommandMapping();
 }
@@ -110,11 +111,10 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
         return result;
     }
 
-    // 帧头位置确定了，检查是否有足够空间读取 mask (4字节)
+    // 帧头位置确定了，检查是否有足够空间读取固定帧元数据
     if (m_buffer.size() < headerPos + minimumFrameSize())
         return result;
 
-    // 读取 mask（小端32位）
     if (!hasValidFrameMetadata(m_buffer, headerPos)) {
         nextStartIdx = headerPos + 1;
         return result;
@@ -122,15 +122,21 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
 
     const int errorPos = headerPos + 2;
     const int modePos = errorPos + 4;
-    const int mask1Pos = modePos + 1;
+    const int timeHighPos = modePos + 1;
+    const int timeLowPos = timeHighPos + 2;
+    const int mask1Pos = timeLowPos + 4;
     const int mask2Pos = mask1Pos + 4;
     const quint32 errorCode = qFromLittleEndian<quint32>(m_buffer.constData() + errorPos);
     const quint8 controlMode = static_cast<quint8>(m_buffer.at(modePos));
+    const quint16 timeHigh = qFromLittleEndian<quint16>(m_buffer.constData() + timeHighPos);
+    const quint32 timeLow = qFromLittleEndian<quint32>(m_buffer.constData() + timeLowPos);
+    const quint64 timestampTicks = (static_cast<quint64>(timeHigh) << 32) | timeLow;
     const quint32 mask1 = qFromLittleEndian<quint32>(m_buffer.constData() + mask1Pos);
     const quint32 mask2 = qFromLittleEndian<quint32>(m_buffer.constData() + mask2Pos);
 
     int payloadPos = mask2Pos + 4;
     int currentPos = payloadPos;
+    result[TIMESTAMP_FIELD] = static_cast<double>(timestampTicks);
 
     // 按字段定义顺序解析
     for (const FieldDef &field : m_fields) {
@@ -254,7 +260,7 @@ bool DataParser::isControlModeKnown(quint8 mode) const {
 }
 
 int DataParser::minimumFrameSize() const {
-    return 2 + 4 + 1 + 4 + 4;
+    return 2 + 4 + 1 + 2 + 4 + 4 + 4;
 }
 
 bool DataParser::hasValidFrameMetadata(const QByteArray &data, int startIdx) const {
@@ -265,7 +271,9 @@ bool DataParser::hasValidFrameMetadata(const QByteArray &data, int startIdx) con
         return false;
 
     const int modePos = startIdx + 2 + 4;
-    const int mask1Pos = modePos + 1;
+    const int timeHighPos = modePos + 1;
+    const int timeLowPos = timeHighPos + 2;
+    const int mask1Pos = timeLowPos + 4;
     const int mask2Pos = mask1Pos + 4;
     const quint32 errorCode = qFromLittleEndian<quint32>(data.constData() + startIdx + 2);
     const quint8 controlMode = static_cast<quint8>(data.at(modePos));
@@ -303,8 +311,8 @@ int DataParser::getFrameLength(const QByteArray &data, int startIdx) const
     if (!hasValidFrameMetadata(data, startIdx))
         return -1;
 
-    // Read the mask (little-endian 32-bit) after the error code and mode byte.
-    const int mask1Pos = startIdx + 2 + 4 + 1;
+    // Read the masks after the error code, mode byte, and MCU timestamp.
+    const int mask1Pos = startIdx + 2 + 4 + 1 + 2 + 4;
     const int mask2Pos = mask1Pos + 4;
     const quint32 mask1 = qFromLittleEndian<quint32>(data.constData() + mask1Pos);
     const quint32 mask2 = qFromLittleEndian<quint32>(data.constData() + mask2Pos);
@@ -322,8 +330,8 @@ int DataParser::getFrameLength(const QByteArray &data, int startIdx) const
         }
     }
 
-    // Total length = frame header(2) + mask(4) + payload length
-    int totalLen = 2 + 4 + 1 + 4 + 4 + payloadLen;
+    // Total length = frame header(2) + error(4) + mode(1) + timestamp(6) + masks(8) + payload length
+    int totalLen = 2 + 4 + 1 + 2 + 4 + 4 + 4 + payloadLen;
     if (data.size() < startIdx + totalLen)
         return -1;   // Insufficient data
 
@@ -373,5 +381,6 @@ void DataParser::initCommandMapping() {
     addCommandMapping("M_INDEX", "m_index");
     addCommandMapping("FW", "fw");
     addCommandMapping("UMAG", "umag");
+    addCommandMapping("IMAG", "imag");
     addCommandMapping("FFT", "fft");
 }
