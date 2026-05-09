@@ -1,13 +1,14 @@
 {
   "errors": [
-    { "name": "ERROR_PWM_CONFIG", "bit": 0 },
-    { "name": "ERROR_ADC_CONFIG", "bit": 1 },
-    { "name": "ERROR_DMA_CONFIG", "bit": 2 },
-    { "name": "ERROR_TIM_CONFIG", "bit": 3 },
-    { "name": "ERROR_ENCODER_CONFIG", "bit": 4 },
-    { "name": "ERROR_FOC_CONFIG", "bit": 5 },
-    { "name": "ERROR_OVERCURRENT", "bit": 6 },
-    { "name": "ERROR_UNDERVOLTAGE", "bit": 7 }
+    { "name": "ERROR_PWM_CONFIG", "type": "config", "bit": 0 },
+    { "name": "ERROR_ADC_CONFIG", "type": "config", "bit": 1 },
+    { "name": "ERROR_DMA_CONFIG", "type": "config", "bit": 2 },
+    { "name": "ERROR_TIM_CONFIG", "type": "config", "bit": 3 },
+    { "name": "ERROR_ENCODER_CONFIG", "type": "config", "bit": 4 },
+    { "name": "ERROR_FOC_CONFIG", "type": "config", "bit": 5 },
+    { "name": "ERROR_COMM_CONFIG", "type": "config", "bit": 6 },
+    { "name": "ERROR_OVERCURRENT", "type": "overcurrent", "bit": 7 },
+    { "name": "ERROR_UNDERVOLTAGE", "type": "undervoltage", "bit": 8 }
   ],
   "modes": [
     { "name": "MOTOR_PROTECTION", "value": 0 },
@@ -63,17 +64,8 @@
     { "name": "FFT", "size": 4, "format": "f", "bit": 5, "command": "fft" }
   ],
   "custom_fields": [
-    {
-      "name": "VA",
-      "expression": "VBATT / 3 * (2 * DUTY_A - DUTY_B - DUTY_C)"
-    },
-    {
-      "name": "VB",
-      "expression": "VBATT / 3 * (2 * DUTY_B - DUTY_C - DUTY_A)"
-    },
-    {
-      "name": "VC",
-      "expression": "VBATT / 3 * (2 * DUTY_C - DUTY_A - DUTY_B)"
-    }
+    { "name": "VA", "expression": "VBATT / 3 * (2 * DUTY_A - DUTY_B - DUTY_C)" },
+    { "name": "VB", "expression": "VBATT / 3 * (2 * DUTY_B - DUTY_C - DUTY_A)" },
+    { "name": "VC", "expression": "VBATT / 3 * (2 * DUTY_C - DUTY_A - DUTY_B)" }
   ]
 }

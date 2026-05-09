@@ -103,15 +103,23 @@ bool parseErrors(const QJsonArray &array, QList<ErrorDef> *errors, QString *erro
         }
         const QJsonObject object = array[i].toObject();
         QString name;
+        QString type;
         quint32 maskBit = 0;
         if (!readRequiredString(object, "name", &name, errorMessage) ||
+            !readRequiredString(object, "type", &type, errorMessage) ||
             !readMaskBit(object, &maskBit, errorMessage)) {
             if (errorMessage) {
                 *errorMessage = QString("errors[%1]: %2").arg(i).arg(*errorMessage);
             }
             return false;
         }
-        parsed.append({name, maskBit});
+        if (type != "config" && type != "undervoltage" && type != "overcurrent") {
+            if (errorMessage) {
+                *errorMessage = QString("errors[%1]: type must be config, undervoltage, or overcurrent").arg(i);
+            }
+            return false;
+        }
+        parsed.append({name, type, maskBit});
     }
     *errors = parsed;
     return true;
@@ -811,6 +819,16 @@ quint32 DataParser::getErrorMaskForName(const QString &errorName) const {
         }
     }
     return 0;
+}
+
+quint32 DataParser::getErrorMaskForType(const QString &errorType) const {
+    quint32 mask = 0;
+    for (const ErrorDef &error : m_errors) {
+        if (error.type == errorType) {
+            mask |= error.maskBit;
+        }
+    }
+    return mask;
 }
 
 std::optional<quint8> DataParser::getControlModeValueForName(const QString &modeName) const {

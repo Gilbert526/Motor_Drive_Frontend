@@ -409,14 +409,9 @@ void MainWindow::updateStatusIndicators()
     const bool focActive = isControlModeActive({"MOTOR_FOC_LINEAR", "MOTOR_FOC_DPWM"});
     const bool vvvfActive = isControlModeActive({"MOTOR_VVVF"});
     const bool protectionActive = isControlModeActive({"MOTOR_PROTECTION"});
-    const bool overcurrentActive = (m_telemetryStatus.errorCode & m_dataParser->getErrorMaskForName("ERROR_OVERCURRENT")) != 0;
-    const bool undervoltageActive = (m_telemetryStatus.errorCode & m_dataParser->getErrorMaskForName("ERROR_UNDERVOLTAGE")) != 0;
-    const quint32 configErrorMask = m_dataParser->getErrorMaskForName("ERROR_PWM_CONFIG") |
-                                    m_dataParser->getErrorMaskForName("ERROR_ADC_CONFIG") |
-                                    m_dataParser->getErrorMaskForName("ERROR_DMA_CONFIG") |
-                                    m_dataParser->getErrorMaskForName("ERROR_TIM_CONFIG") |
-                                    m_dataParser->getErrorMaskForName("ERROR_ENCODER_CONFIG") |
-                                    m_dataParser->getErrorMaskForName("ERROR_FOC_CONFIG");
+    const bool overcurrentActive = (m_telemetryStatus.errorCode & m_dataParser->getErrorMaskForType("overcurrent")) != 0;
+    const bool undervoltageActive = (m_telemetryStatus.errorCode & m_dataParser->getErrorMaskForType("undervoltage")) != 0;
+    const quint32 configErrorMask = m_dataParser->getErrorMaskForType("config");
     const bool configErrorActive = (m_telemetryStatus.errorCode & configErrorMask) != 0;
 
     setCustomIndicator(ui->labelFoc, "FOC", focActive, QColor(36, 166, 78));
@@ -435,8 +430,8 @@ void MainWindow::updateFaultAutoCaptureMask()
         return;
     }
 
-    m_faultAutoCaptureTriggerMask = m_dataParser->getErrorMaskForName("ERROR_OVERCURRENT") |
-                                    m_dataParser->getErrorMaskForName("ERROR_UNDERVOLTAGE");
+    m_faultAutoCaptureTriggerMask = m_dataParser->getErrorMaskForType("overcurrent") |
+                                    m_dataParser->getErrorMaskForType("undervoltage");
 }
 
 bool MainWindow::isControlModeActive(const QStringList &modeNames) const

@@ -17,6 +17,7 @@ struct FieldDef {
 
 struct ErrorDef {
     QString name;
+    QString type;
     quint32 maskBit;
 };
 
@@ -57,6 +58,7 @@ public:
 
     bool isControlModeKnown(quint8 mode) const;
     quint32 getErrorMaskForName(const QString &errorName) const;
+    quint32 getErrorMaskForType(const QString &errorType) const;
     std::optional<quint8> getControlModeValueForName(const QString &modeName) const;
     int minimumFrameSize() const;
     bool hasValidFrameMetadata(const QByteArray &data, int startIdx = 0) const;
