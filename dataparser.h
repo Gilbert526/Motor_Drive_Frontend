@@ -6,6 +6,7 @@
 #include <QHash>
 #include <QStringList>
 #include <QVector>
+#include <optional>
 
 struct FieldDef {
     QString name;
@@ -24,37 +25,21 @@ struct ModeDef {
     quint8 value;
 };
 
+struct CustomFieldDef {
+    QString name;
+    QString expression;
+};
+
 class DataParser : public QObject {
     Q_OBJECT
 
 public:
-    enum ErrorFlag : quint32 {
-        ERROR_PWM_CONFIG     = 1 << 0,
-        ERROR_ADC_CONFIG     = 1 << 1,
-        ERROR_DMA_CONFIG     = 1 << 2,
-        ERROR_TIM_CONFIG     = 1 << 3,
-        ERROR_ENCODER_CONFIG = 1 << 4,
-        ERROR_FOC_CONFIG     = 1 << 5,
-        ERROR_OVERCURRENT    = 1 << 6,
-        ERROR_UNDERVOLTAGE   = 1 << 7
-    };
-
-    enum class MotorControlMode : quint8 {
-        MOTOR_PROTECTION,
-        MOTOR_STOP,
-        MOTOR_MANUAL,
-        MOTOR_ALIGN,
-        MOTOR_STARTUP,
-        MOTOR_VVVF,
-        MOTOR_SIX_STEP,
-        MOTOR_FOC_MANUAL,
-        MOTOR_FOC_LINEAR,
-        MOTOR_FOC_DPWM
-    };
-
     explicit DataParser(QObject *parent = nullptr);
 
     void parseData(const QByteArray &newData);
+
+    bool loadConfiguration(const QString &filePath, QString *errorMessage = nullptr);
+    QString configurationPath() const { return m_configurationPath; }
     
     QVector<double> getWaveform(const QString &fieldName) const;
 
@@ -71,6 +56,8 @@ public:
     QString getControlModeName(quint8 mode) const;
 
     bool isControlModeKnown(quint8 mode) const;
+    quint32 getErrorMaskForName(const QString &errorName) const;
+    std::optional<quint8> getControlModeValueForName(const QString &modeName) const;
     int minimumFrameSize() const;
     bool hasValidFrameMetadata(const QByteArray &data, int startIdx = 0) const;
 
@@ -96,6 +83,7 @@ signals:
                               quint8 controlMode,
                               const QString &controlModeName,
                               bool controlModeKnown);
+    void configurationChanged();
 
 private:
     static const QByteArray SYNC_BYTES;   // 0xAA 0x55
@@ -105,16 +93,19 @@ private:
     QList<FieldDef> m_fields2;
     QList<ErrorDef> m_errors;
     QList<ModeDef> m_modes;
+    QList<CustomFieldDef> m_customFields;
 
     QByteArray m_buffer;
+    QString m_configurationPath;
 
     QHash<QString, double> tryParsePacket(int startIdx, int &nextStartIdx);
 
     double unpackValue(const QByteArray &data, const FieldDef &field);
     void addCommandMapping(const QString &displayName, const QString &commandName);
+    bool loadDefaultConfiguration(QString *errorMessage = nullptr);
+    static QStringList configurationSearchPaths();
 
     QHash<QString, QString> m_displayToCmd;
-    void initCommandMapping();
 };
 
 #endif // DATAPARSER_H

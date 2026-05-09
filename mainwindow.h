@@ -90,6 +90,7 @@ private slots:
     // Scope control
     void on_pushButtonPause_clicked();
     void on_pushButtonSave_clicked();
+    void on_pushButtonSelectConfig_clicked();
 
     void onFieldCheckStateChanged(QListWidgetItem *item);
 
@@ -247,6 +248,8 @@ private:
     void updateGauges(const QHash<QString, double> &values);
     void flushGaugeUpdates();
     void updateStatusIndicators();
+    void updateFaultAutoCaptureMask();
+    bool isControlModeActive(const QStringList &modeNames) const;
     void updateOmFwIndicators();
     void setCustomIndicator(QLabel *label,
                             const QString &text,

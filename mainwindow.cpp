@@ -11,6 +11,8 @@
 #include <QListWidgetItem>
 #include <QDateTime>
 #include <QDir>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QWheelEvent>
 #include <utility>
 
@@ -25,7 +27,7 @@ MainWindow::MainWindow(QWidget *parent):
     m_currentMaxPoints(500),
     m_plotPaused(false),
     m_plotDirty(false),
-    m_faultAutoCaptureTriggerMask(DataParser::ERROR_OVERCURRENT | DataParser::ERROR_UNDERVOLTAGE),
+    m_faultAutoCaptureTriggerMask(0),
     m_faultAutoCaptureDisplayPoints(5000),
     m_faultAutoCapturePacketsAfterTrigger(50),
     m_faultAutoCapturePending(false),
@@ -58,6 +60,7 @@ MainWindow::MainWindow(QWidget *parent):
 
         // 创建数据解析器（主线程）
         m_dataParser = new DataParser(this);
+        updateFaultAutoCaptureMask();
 
         // 信号连接
         connect(m_serialManager, &SerialManager::portOpened, this, &MainWindow::handleSerialPortOpened);
@@ -65,6 +68,12 @@ MainWindow::MainWindow(QWidget *parent):
         connect(m_serialManager, &SerialManager::rawDataReceived, m_dataParser, &DataParser::parseData);
         connect(m_dataParser, &DataParser::parsedData, this, &MainWindow::handleNewData);
         connect(m_dataParser, &DataParser::packetStatusReceived, this, &MainWindow::handlePacketStatus);
+        connect(m_dataParser, &DataParser::configurationChanged, this, [this]() {
+            updateFaultAutoCaptureMask();
+            loadAvailableFields();
+            syncFieldCheckStates();
+            updateStatusIndicators();
+        });
 
         connect(m_dataParser, &DataParser::maskReceived, this, &MainWindow::onMaskReceived);
 
@@ -397,26 +406,17 @@ void MainWindow::flushGaugeUpdates()
 
 void MainWindow::updateStatusIndicators()
 {
-    const quint8 focLinear = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_FOC_LINEAR);
-    const quint8 focDpwm = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_FOC_DPWM);
-    const quint8 vvvf = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_VVVF);
-    const quint8 protection = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_PROTECTION);
-
-    const bool focActive = m_telemetryStatus.controlModeKnown &&
-                           (m_telemetryStatus.controlMode == focLinear ||
-                            m_telemetryStatus.controlMode == focDpwm);
-    const bool vvvfActive = m_telemetryStatus.controlModeKnown &&
-                            m_telemetryStatus.controlMode == vvvf;
-    const bool protectionActive = m_telemetryStatus.controlModeKnown &&
-                                  m_telemetryStatus.controlMode == protection;
-    const bool overcurrentActive = (m_telemetryStatus.errorCode & DataParser::ERROR_OVERCURRENT) != 0;
-    const bool undervoltageActive = (m_telemetryStatus.errorCode & DataParser::ERROR_UNDERVOLTAGE) != 0;
-    const quint32 configErrorMask = DataParser::ERROR_PWM_CONFIG |
-                                    DataParser::ERROR_ADC_CONFIG |
-                                    DataParser::ERROR_DMA_CONFIG |
-                                    DataParser::ERROR_TIM_CONFIG |
-                                    DataParser::ERROR_ENCODER_CONFIG |
-                                    DataParser::ERROR_FOC_CONFIG;
+    const bool focActive = isControlModeActive({"MOTOR_FOC_LINEAR", "MOTOR_FOC_DPWM"});
+    const bool vvvfActive = isControlModeActive({"MOTOR_VVVF"});
+    const bool protectionActive = isControlModeActive({"MOTOR_PROTECTION"});
+    const bool overcurrentActive = (m_telemetryStatus.errorCode & m_dataParser->getErrorMaskForName("ERROR_OVERCURRENT")) != 0;
+    const bool undervoltageActive = (m_telemetryStatus.errorCode & m_dataParser->getErrorMaskForName("ERROR_UNDERVOLTAGE")) != 0;
+    const quint32 configErrorMask = m_dataParser->getErrorMaskForName("ERROR_PWM_CONFIG") |
+                                    m_dataParser->getErrorMaskForName("ERROR_ADC_CONFIG") |
+                                    m_dataParser->getErrorMaskForName("ERROR_DMA_CONFIG") |
+                                    m_dataParser->getErrorMaskForName("ERROR_TIM_CONFIG") |
+                                    m_dataParser->getErrorMaskForName("ERROR_ENCODER_CONFIG") |
+                                    m_dataParser->getErrorMaskForName("ERROR_FOC_CONFIG");
     const bool configErrorActive = (m_telemetryStatus.errorCode & configErrorMask) != 0;
 
     setCustomIndicator(ui->labelFoc, "FOC", focActive, QColor(36, 166, 78));
@@ -426,6 +426,32 @@ void MainWindow::updateStatusIndicators()
     setCustomIndicator(ui->labelUndervolt, "UV", undervoltageActive, QColor(210, 64, 55));
     setCustomIndicator(ui->labelConfig, "Config", configErrorActive, QColor(210, 64, 55));
     updateOmFwIndicators();
+}
+
+void MainWindow::updateFaultAutoCaptureMask()
+{
+    if (!m_dataParser) {
+        m_faultAutoCaptureTriggerMask = 0;
+        return;
+    }
+
+    m_faultAutoCaptureTriggerMask = m_dataParser->getErrorMaskForName("ERROR_OVERCURRENT") |
+                                    m_dataParser->getErrorMaskForName("ERROR_UNDERVOLTAGE");
+}
+
+bool MainWindow::isControlModeActive(const QStringList &modeNames) const
+{
+    if (!m_dataParser || !m_telemetryStatus.controlModeKnown) {
+        return false;
+    }
+
+    for (const QString &modeName : modeNames) {
+        const std::optional<quint8> modeValue = m_dataParser->getControlModeValueForName(modeName);
+        if (modeValue.has_value() && m_telemetryStatus.controlMode == modeValue.value()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void MainWindow::setCustomIndicator(QLabel *label,
@@ -482,13 +508,7 @@ void MainWindow::updateOmFwIndicators()
         return bestValue;
     };
 
-    const quint8 focLinear = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_FOC_LINEAR);
-    const quint8 focDpwm = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_FOC_DPWM);
-    const quint8 vvvf = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_VVVF);
-    const bool omModeActive = m_telemetryStatus.controlModeKnown &&
-                              (m_telemetryStatus.controlMode == vvvf ||
-                               m_telemetryStatus.controlMode == focLinear ||
-                               m_telemetryStatus.controlMode == focDpwm);
+    const bool omModeActive = isControlModeActive({"MOTOR_VVVF", "MOTOR_FOC_LINEAR", "MOTOR_FOC_DPWM"});
     const int omDisplayValue = mostFrequentValue(m_omHistory, m_pendingOm);
     const int fwDisplayValue = mostFrequentValue(m_fwHistory, m_pendingFw);
 
@@ -1561,6 +1581,45 @@ void MainWindow::on_pushButtonSave_clicked() {
     }
 }
 
+void MainWindow::on_pushButtonSelectConfig_clicked() {
+    const QString startDir = m_dataParser && !m_dataParser->configurationPath().isEmpty()
+                                 ? QFileInfo(m_dataParser->configurationPath()).absolutePath()
+                                 : QDir::currentPath();
+    const QString filePath = QFileDialog::getOpenFileName(this,
+                                                          "Select Telemetry Configuration",
+                                                          startDir,
+                                                          "JSON configuration (*.json);;All files (*)");
+    if (filePath.isEmpty()) {
+        return;
+    }
+
+    const bool restartLogging = m_isLogging;
+    if (restartLogging) {
+        stopTelemetryLogging();
+    }
+
+    QString errorMessage;
+    if (!m_dataParser->loadConfiguration(filePath, &errorMessage)) {
+        QMessageBox::critical(this, "Configuration Error", errorMessage);
+        return;
+    }
+
+    m_timeStamps.clear();
+    m_waveData.clear();
+    m_pausedTimeStamps.clear();
+    m_pausedWaveData.clear();
+    m_omHistory.clear();
+    m_fwHistory.clear();
+    m_hasPendingOm = false;
+    m_hasPendingFw = false;
+    m_hasLastTimestamp = false;
+    updateAllPlots();
+    if (restartLogging && !startTelemetryLogging()) {
+        ui->pushButtonSave->setChecked(false);
+    }
+    statusBar()->showMessage("Loaded telemetry configuration: " + filePath, 5000);
+}
+
 bool MainWindow::startTelemetryLogging() {
     if (m_isLogging) {
         return true;
@@ -1659,6 +1718,9 @@ void MainWindow::onFieldCheckStateChanged(QListWidgetItem *item) {
     
     // 构造命令字符串
     QString cmdName = m_dataParser->getCommandNameForField(fieldName);
+    if (cmdName.isEmpty()) {
+        return;
+    }
     QString cmd = checked ? QString("log add %1\r\n").arg(cmdName)
                           : QString("log rm %1\r\n").arg(cmdName);
     sendCommand(cmd);   // 复用已有的 sendCommand
@@ -1686,7 +1748,10 @@ void MainWindow::syncFieldCheckStates()
     for (int i = 0; i < m_fieldList->count(); ++i) {
         QListWidgetItem *item = m_fieldList->item(i);
         if (item->checkState() == Qt::Checked) {
-            sendCommand(QString("log add %1\r\n").arg(m_dataParser->getCommandNameForField(item->text())));
+            const QString cmdName = m_dataParser->getCommandNameForField(item->text());
+            if (!cmdName.isEmpty()) {
+                sendCommand(QString("log add %1\r\n").arg(cmdName));
+            }
         }
     }
 }

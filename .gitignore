@@ -91,4 +91,5 @@ out/build/qt-x86/cmake_install.cmake
 out/build/qt-x86/CMakeCache.txt
 out/build/qt-x86/compile_commands.json
 out/build/qt-x86/Makefile
+out/build/codex/**
 !out/build/qt-x86/Motor_Drive_Frontend.exe
