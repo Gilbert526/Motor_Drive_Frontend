@@ -23,6 +23,7 @@ class SerialManager;
 class DataParser;
 struct IndicatorDef;
 struct IndicatorStatusDef;
+struct GaugeDef;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -232,15 +233,10 @@ private:
     void sendCommand(const QString &cmd);
     void setupPlottingArea();           // 初始化动态示波器区域
     void setupGaugeArea();
-    void addGauge(const QString &fieldName,
-                  const QString &title,
-                  const QString &unit,
-                  double minimum,
-                  double maximum,
-                  double warningThreshold,
-                  double criticalThreshold,
-                  int divisionCount,
-                  double hysteresisPercent);
+    void addGauge(const GaugeDef &gauge);
+    void deriveGaugeThresholds(const GaugeDef &gauge,
+                               double *warningThreshold,
+                               double *criticalThreshold) const;
     void updateGauges(const QHash<QString, double> &values);
     void flushGaugeUpdates();
     void updateStatusIndicators();

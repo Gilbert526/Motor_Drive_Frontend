@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <qendian.h>
@@ -335,6 +336,120 @@ bool parseIndicators(const QJsonArray &array, QList<IndicatorDef> *indicators, Q
     }
 
     *indicators = parsed;
+    return true;
+}
+
+bool parseGaugeThreshold(const QJsonObject &object, GaugeThresholdDef *threshold, QString *errorMessage)
+{
+    if (object.contains("lowerBound")) {
+        const QJsonValue lower = object.value("lowerBound");
+        if (!lower.isDouble()) {
+            if (errorMessage) {
+                *errorMessage = "lowerBound must be numeric";
+            }
+            return false;
+        }
+        threshold->hasLowerBound = true;
+        threshold->lowerBound = lower.toDouble();
+    }
+
+    if (object.contains("upperBound")) {
+        const QJsonValue upper = object.value("upperBound");
+        if (!upper.isDouble()) {
+            if (errorMessage) {
+                *errorMessage = "upperBound must be numeric";
+            }
+            return false;
+        }
+        threshold->hasUpperBound = true;
+        threshold->upperBound = upper.toDouble();
+    }
+
+    if (!readRequiredString(object, "color", &threshold->color, errorMessage)) {
+        return false;
+    }
+
+    return true;
+}
+
+bool parseGauges(const QJsonArray &array, QList<GaugeDef> *gauges, QString *errorMessage)
+{
+    QList<GaugeDef> parsed;
+    for (int i = 0; i < array.size(); ++i) {
+        if (!array[i].isObject()) {
+            if (errorMessage) {
+                *errorMessage = QString("gauges[%1] must be an object").arg(i);
+            }
+            return false;
+        }
+
+        const QJsonObject object = array[i].toObject();
+        GaugeDef gauge;
+        if (!readRequiredString(object, "name", &gauge.name, errorMessage) ||
+            !readIntRange(object, "gauge", 0, 16, &gauge.gauge, errorMessage) ||
+            !readRequiredString(object, "dataSource", &gauge.dataSource, errorMessage)) {
+            if (errorMessage) {
+                *errorMessage = QString("gauges[%1]: %2").arg(i).arg(*errorMessage);
+            }
+            return false;
+        }
+
+        gauge.topDisplayUnit = object.value("topDisplayUnit").toString();
+        const QJsonValue minValue = object.value("min");
+        const QJsonValue maxValue = object.value("max");
+        if (!minValue.isDouble() || !maxValue.isDouble()) {
+            if (errorMessage) {
+                *errorMessage = QString("gauges[%1]: min and max must be numeric").arg(i);
+            }
+            return false;
+        }
+        gauge.minimum = minValue.toDouble();
+        gauge.maximum = maxValue.toDouble();
+        if (gauge.maximum <= gauge.minimum) {
+            if (errorMessage) {
+                *errorMessage = QString("gauges[%1]: max must be greater than min").arg(i);
+            }
+            return false;
+        }
+        if (!readIntRange(object, "divisions", 1, 100, &gauge.divisions, errorMessage)) {
+            if (errorMessage) {
+                *errorMessage = QString("gauges[%1]: %2").arg(i).arg(*errorMessage);
+            }
+            return false;
+        }
+        gauge.hysteresis = qMax(0.0, object.value("hysteresis").toDouble(0.0));
+
+        QJsonArray thresholdsJson;
+        if (!readObjectArray(object, "thresholds", &thresholdsJson, errorMessage)) {
+            if (errorMessage) {
+                *errorMessage = QString("gauges[%1]: %2").arg(i).arg(*errorMessage);
+            }
+            return false;
+        }
+        for (int j = 0; j < thresholdsJson.size(); ++j) {
+            if (!thresholdsJson[j].isObject()) {
+                if (errorMessage) {
+                    *errorMessage = QString("gauges[%1].thresholds[%2] must be an object").arg(i).arg(j);
+                }
+                return false;
+            }
+            GaugeThresholdDef threshold;
+            if (!parseGaugeThreshold(thresholdsJson[j].toObject(), &threshold, errorMessage)) {
+                if (errorMessage) {
+                    *errorMessage = QString("gauges[%1].thresholds[%2]: %3").arg(i).arg(j).arg(*errorMessage);
+                }
+                return false;
+            }
+            gauge.thresholds.append(threshold);
+        }
+
+        parsed.append(gauge);
+    }
+
+    std::sort(parsed.begin(), parsed.end(), [](const GaugeDef &a, const GaugeDef &b) {
+        return a.gauge < b.gauge;
+    });
+    *gauges = parsed;
     return true;
 }
 
@@ -692,12 +807,14 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
     QJsonArray fields2Json;
     QJsonArray customFieldsJson;
     QJsonArray indicatorsJson;
+    QJsonArray gaugesJson;
     if (!readObjectArray(root, "errors", &errorsJson, errorMessage) ||
         !readObjectArray(root, "modes", &modesJson, errorMessage) ||
         !readObjectArray(root, "fields", &fieldsJson, errorMessage) ||
         !readObjectArray(root, "fields2", &fields2Json, errorMessage) ||
         !readOptionalObjectArray(root, "custom_fields", &customFieldsJson, errorMessage) ||
-        !readOptionalObjectArray(root, "indicators", &indicatorsJson, errorMessage)) {
+        !readOptionalObjectArray(root, "indicators", &indicatorsJson, errorMessage) ||
+        !readOptionalObjectArray(root, "gauges", &gaugesJson, errorMessage)) {
         return false;
     }
 
@@ -707,13 +824,15 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
     QList<FieldDef> fields2;
     QList<CustomFieldDef> customFields;
     QList<IndicatorDef> indicators;
+    QList<GaugeDef> gauges;
     QHash<QString, QString> commandMap;
     if (!parseErrors(errorsJson, &errors, errorMessage) ||
         !parseModes(modesJson, &modes, errorMessage) ||
         !parseFields(fieldsJson, &fields, &commandMap, errorMessage) ||
         !parseFields(fields2Json, &fields2, &commandMap, errorMessage) ||
         !parseCustomFields(customFieldsJson, &customFields, errorMessage) ||
-        !parseIndicators(indicatorsJson, &indicators, errorMessage)) {
+        !parseIndicators(indicatorsJson, &indicators, errorMessage) ||
+        !parseGauges(gaugesJson, &gauges, errorMessage)) {
         return false;
     }
 
@@ -723,6 +842,7 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
     m_fields2 = fields2;
     m_customFields = customFields;
     m_indicators = indicators;
+    m_gauges = gauges;
     m_displayToCmd = commandMap;
     m_configurationPath = QFileInfo(filePath).absoluteFilePath();
     m_buffer.clear();

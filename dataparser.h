@@ -54,6 +54,26 @@ struct IndicatorDef {
     QList<IndicatorStatusDef> statuses;
 };
 
+struct GaugeThresholdDef {
+    bool hasLowerBound = false;
+    double lowerBound = 0.0;
+    bool hasUpperBound = false;
+    double upperBound = 0.0;
+    QString color;
+};
+
+struct GaugeDef {
+    QString name;
+    int gauge = 0;
+    QString dataSource;
+    QString topDisplayUnit;
+    double minimum = 0.0;
+    double maximum = 100.0;
+    int divisions = 5;
+    QList<GaugeThresholdDef> thresholds;
+    double hysteresis = 0.0;
+};
+
 class DataParser : public QObject {
     Q_OBJECT
 
@@ -71,6 +91,7 @@ public:
 
     QString getCommandNameForField(const QString &displayName) const;
     const QList<IndicatorDef>& getIndicators() const { return m_indicators; }
+    const QList<GaugeDef>& getGauges() const { return m_gauges; }
 
     quint32 getMaskForField(const QString &fieldName) const;
 
@@ -121,6 +142,7 @@ private:
     QList<ModeDef> m_modes;
     QList<CustomFieldDef> m_customFields;
     QList<IndicatorDef> m_indicators;
+    QList<GaugeDef> m_gauges;
 
     QByteArray m_buffer;
     QString m_configurationPath;

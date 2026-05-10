@@ -68,6 +68,7 @@ MainWindow::MainWindow(QWidget *parent):
         connect(m_dataParser, &DataParser::configurationChanged, this, [this]() {
             updateFaultAutoCaptureMask();
             loadAvailableFields();
+            setupGaugeArea();
             syncFieldCheckStates();
             updateStatusIndicators();
         });
@@ -336,12 +337,18 @@ void MainWindow::setupGaugeArea()
 
     gaugeLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
     m_gaugeBindings.clear();
+    while (QLayoutItem *item = gaugeLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget()) {
+            widget->deleteLater();
+        }
+        delete item;
+    }
 
     gaugeLayout->setAlignment(Qt::AlignCenter);
     gaugeLayout->addStretch(1);
-    addGauge("VBATT", "Voltage", "V", 0.0, 30.0, 14.0, 26.0, 6, 2.0);
-    addGauge("RPM", "Speed", "RPM", -10000.0, 10000.0, 4100.0, 8100.0, 20, 2.0);
-    addGauge("M_INDEX", "Modulation", "", 0.0, 1.2, 0.907, 0.9514, 12, 2.0);
+    for (const GaugeDef &gauge : m_dataParser->getGauges()) {
+        addGauge(gauge);
+    }
     gaugeLayout->addStretch(1);
 
     if (!m_gaugeTimer) {
@@ -351,32 +358,56 @@ void MainWindow::setupGaugeArea()
     }
 }
 
-void MainWindow::addGauge(const QString &fieldName,
-                          const QString &title,
-                          const QString &unit,
-                          double minimum,
-                          double maximum,
-                          double warningThreshold,
-                          double criticalThreshold,
-                          int divisionCount,
-                          double hysteresisPercent)
+void MainWindow::addGauge(const GaugeDef &gauge)
 {
     QHBoxLayout *gaugeLayout = qobject_cast<QHBoxLayout*>(ui->gaugeArea->layout());
     if (!gaugeLayout) {
         return;
     }
 
+    double warningThreshold = gauge.minimum + (gauge.maximum - gauge.minimum) * 0.65;
+    double criticalThreshold = gauge.minimum + (gauge.maximum - gauge.minimum) * 0.85;
+    deriveGaugeThresholds(gauge, &warningThreshold, &criticalThreshold);
+
     AudioLevelMeter *meter = new AudioLevelMeter(ui->gaugeArea);
-    meter->setTitle(title);
-    meter->setUnit(unit);
-    meter->setRange(minimum, maximum);
+    meter->setTitle(gauge.name);
+    meter->setUnit(gauge.topDisplayUnit);
+    meter->setRange(gauge.minimum, gauge.maximum);
     meter->setThresholds(warningThreshold, criticalThreshold);
-    meter->setThresholdHysteresisPercent(hysteresisPercent);
-    meter->setDivisionCount(divisionCount);
+    meter->setThresholdHysteresisPercent(gauge.hysteresis);
+    meter->setDivisionCount(gauge.divisions);
     meter->setPeakHoldMs(1000);
 
     gaugeLayout->addWidget(meter, 0);
-    m_gaugeBindings.append({fieldName, meter});
+    m_gaugeBindings.append({gauge.dataSource, meter});
+}
+
+void MainWindow::deriveGaugeThresholds(const GaugeDef &gauge,
+                                       double *warningThreshold,
+                                       double *criticalThreshold) const
+{
+    auto lowerBoundMagnitudeForColor = [&gauge](const QString &color) -> std::optional<double> {
+        std::optional<double> best;
+        for (const GaugeThresholdDef &threshold : gauge.thresholds) {
+            if (threshold.color.compare(color, Qt::CaseInsensitive) != 0 || !threshold.hasLowerBound) {
+                continue;
+            }
+            const double magnitude = qAbs(threshold.lowerBound);
+            if (!best.has_value() || magnitude < best.value()) {
+                best = magnitude;
+            }
+        }
+        return best;
+    };
+
+    const std::optional<double> warning = lowerBoundMagnitudeForColor("yellow");
+    const std::optional<double> critical = lowerBoundMagnitudeForColor("red");
+    if (warning.has_value()) {
+        *warningThreshold = warning.value();
+    }
+    if (critical.has_value()) {
+        *criticalThreshold = critical.value();
+    }
 }
 
 void MainWindow::updateGauges(const QHash<QString, double> &values)
