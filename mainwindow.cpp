@@ -13,7 +13,9 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QSet>
 #include <QWheelEvent>
+#include <cmath>
 #include <utility>
 
 MainWindow::MainWindow(QWidget *parent):
@@ -42,11 +44,6 @@ MainWindow::MainWindow(QWidget *parent):
     m_updatingTargetType(false),
     m_recordHistory(true),
     m_gaugeTimer(nullptr),
-    m_pendingOm(0),
-    m_hasPendingOm(false),
-    m_pendingFw(0),
-    m_hasPendingFw(false),
-    m_indicatorHistoryWindowSize(11),
     m_lastTimestampTicks(0),
     m_hasLastTimestamp(false) {
         ui->setupUi(this);
@@ -401,26 +398,41 @@ void MainWindow::flushGaugeUpdates()
         }
     }
 
-    updateOmFwIndicators();
+    updateStatusIndicators();
 }
 
 void MainWindow::updateStatusIndicators()
 {
-    const bool focActive = isControlModeActive({"MOTOR_FOC_LINEAR", "MOTOR_FOC_DPWM"});
-    const bool vvvfActive = isControlModeActive({"MOTOR_VVVF"});
-    const bool protectionActive = isControlModeActive({"MOTOR_PROTECTION"});
-    const bool overcurrentActive = (m_telemetryStatus.errorCode & m_dataParser->getErrorMaskForType("overcurrent")) != 0;
-    const bool undervoltageActive = (m_telemetryStatus.errorCode & m_dataParser->getErrorMaskForType("undervoltage")) != 0;
-    const quint32 configErrorMask = m_dataParser->getErrorMaskForType("config");
-    const bool configErrorActive = (m_telemetryStatus.errorCode & configErrorMask) != 0;
+    if (!m_dataParser) {
+        return;
+    }
 
-    setCustomIndicator(ui->labelFoc, "FOC", focActive, QColor(36, 166, 78));
-    setCustomIndicator(ui->labelVvvf, "VVVF", vvvfActive, QColor(36, 166, 78));
-    setCustomIndicator(ui->labelProtect, "Protect", protectionActive, QColor(210, 64, 55));
-    setCustomIndicator(ui->labelOvercurrent, "OC", overcurrentActive, QColor(210, 64, 55));
-    setCustomIndicator(ui->labelUndervolt, "UV", undervoltageActive, QColor(210, 64, 55));
-    setCustomIndicator(ui->labelConfig, "Config", configErrorActive, QColor(210, 64, 55));
-    updateOmFwIndicators();
+    QSet<int> configuredIndicators;
+    for (const IndicatorDef &indicator : m_dataParser->getIndicators()) {
+        configuredIndicators.insert(indicator.indicator);
+        QLabel *label = findChild<QLabel*>(QString("statusLed%1").arg(indicator.indicator));
+        if (!label) {
+            continue;
+        }
+
+        const IndicatorStatusDef *status = resolveIndicatorStatus(indicator);
+        if (!status) {
+            status = defaultIndicatorStatus(indicator);
+        }
+
+        if (status) {
+            applyIndicatorStatus(label, status->displayText, status->color);
+        } else {
+            applyIndicatorStatus(label, indicator.name, "off");
+        }
+    }
+
+    for (int i = 0; i <= 8; ++i) {
+        if (!configuredIndicators.contains(i)) {
+            QLabel *label = findChild<QLabel*>(QString("statusLed%1").arg(i));
+            applyIndicatorStatus(label, "Reserve", "off");
+        }
+    }
 }
 
 void MainWindow::updateFaultAutoCaptureMask()
@@ -434,43 +446,27 @@ void MainWindow::updateFaultAutoCaptureMask()
                                     m_dataParser->getErrorMaskForType("undervoltage");
 }
 
-bool MainWindow::isControlModeActive(const QStringList &modeNames) const
-{
-    if (!m_dataParser || !m_telemetryStatus.controlModeKnown) {
-        return false;
-    }
-
-    for (const QString &modeName : modeNames) {
-        const std::optional<quint8> modeValue = m_dataParser->getControlModeValueForName(modeName);
-        if (modeValue.has_value() && m_telemetryStatus.controlMode == modeValue.value()) {
-            return true;
-        }
-    }
-    return false;
-}
-
-void MainWindow::setCustomIndicator(QLabel *label,
-                                    const QString &text,
-                                    bool active,
-                                    const QColor &activeColor)
+void MainWindow::applyIndicatorStatus(QLabel *label, const QString &text, const QString &colorName)
 {
     if (!label) {
         return;
     }
 
     label->setText(text);
-    if (active) {
-        const QColor textColor = activeColor.lightness() > 170 ? QColor(35, 35, 35) : QColor(Qt::white);
-        label->setStyleSheet(QString(
-            "QLabel {"
-            " background-color: %1;"
-            " color: %2;"
-            " border: 1px solid %3;"
-            " border-radius: 4px;"
-            " font-weight: bold;"
-            "}"
-        ).arg(activeColor.name(), textColor.name(), activeColor.darker(130).name()));
-    } else {
+
+    QColor activeColor;
+    const QString normalizedColor = colorName.trimmed().toLower();
+    if (normalizedColor == "green") {
+        activeColor = QColor(36, 166, 78);
+    } else if (normalizedColor == "yellow") {
+        activeColor = QColor(228, 171, 48);
+    } else if (normalizedColor == "red") {
+        activeColor = QColor(210, 64, 55);
+    } else if (normalizedColor != "off") {
+        activeColor = QColor(colorName);
+    }
+
+    if (!activeColor.isValid()) {
         label->setStyleSheet(
             "QLabel {"
             " background-color: #d7d9dc;"
@@ -480,48 +476,146 @@ void MainWindow::setCustomIndicator(QLabel *label,
             " font-weight: normal;"
             "}"
         );
+        return;
     }
+
+    const QColor textColor = activeColor.lightness() > 170 ? QColor(35, 35, 35) : QColor(Qt::white);
+    label->setStyleSheet(QString(
+        "QLabel {"
+        " background-color: %1;"
+        " color: %2;"
+        " border: 1px solid %3;"
+        " border-radius: 4px;"
+        " font-weight: bold;"
+        "}"
+    ).arg(activeColor.name(), textColor.name(), activeColor.darker(130).name()));
 }
 
-void MainWindow::updateOmFwIndicators()
+const IndicatorStatusDef* MainWindow::resolveIndicatorStatus(const IndicatorDef &indicator) const
 {
-    const auto mostFrequentValue = [](const QVector<int> &history, int fallbackValue) {
-        if (history.isEmpty()) {
-            return fallbackValue;
+    if (indicator.type == "mode") {
+        return resolveModeIndicatorStatus(indicator);
+    }
+    if (indicator.type == "condition") {
+        return resolveConditionIndicatorStatus(indicator);
+    }
+    if (indicator.type == "bitwise") {
+        return resolveBitwiseIndicatorStatus(indicator);
+    }
+    return defaultIndicatorStatus(indicator);
+}
+
+const IndicatorStatusDef* MainWindow::resolveModeIndicatorStatus(const IndicatorDef &indicator) const
+{
+    if (!m_dataParser || !m_telemetryStatus.controlModeKnown) {
+        return defaultIndicatorStatus(indicator);
+    }
+
+    for (const IndicatorStatusDef &status : indicator.statuses) {
+        if (!status.hasValue) {
+            continue;
         }
 
-        QHash<int, int> counts;
-        int bestValue = fallbackValue;
-        int bestCount = -1;
-        for (int value : history) {
-            const int count = ++counts[value];
-            if (count > bestCount) {
-                bestCount = count;
-                bestValue = value;
+        if (status.numericValue.has_value()) {
+            if (m_telemetryStatus.controlMode == static_cast<quint8>(status.numericValue.value())) {
+                return &status;
             }
+            continue;
         }
-        return bestValue;
-    };
 
-    const bool omModeActive = isControlModeActive({"MOTOR_VVVF", "MOTOR_FOC_LINEAR", "MOTOR_FOC_DPWM"});
-    const int omDisplayValue = mostFrequentValue(m_omHistory, m_pendingOm);
-    const int fwDisplayValue = mostFrequentValue(m_fwHistory, m_pendingFw);
-
-    if (!omModeActive || !m_hasPendingOm) {
-        setCustomIndicator(ui->labelOm, "OM", false, QColor(36, 166, 78));
-    } else if (omDisplayValue <= 0) {
-        setCustomIndicator(ui->labelOm, "Linear", true, QColor(36, 166, 78));
-    } else if (omDisplayValue == 1) {
-        setCustomIndicator(ui->labelOm, "OM 1", true, QColor(228, 171, 48));
-    } else {
-        setCustomIndicator(ui->labelOm, "OM 2", true, QColor(210, 64, 55));
+        const std::optional<quint8> modeValue = m_dataParser->getControlModeValueForName(status.valueName);
+        if (modeValue.has_value() && m_telemetryStatus.controlMode == modeValue.value()) {
+            return &status;
+        }
     }
 
-    if (!m_hasPendingFw) {
-        setCustomIndicator(ui->labelFw, "FW", false, QColor(228, 171, 48));
-    } else {
-        setCustomIndicator(ui->labelFw, "FW", fwDisplayValue == 1, QColor(228, 171, 48));
+    return defaultIndicatorStatus(indicator);
+}
+
+const IndicatorStatusDef* MainWindow::resolveConditionIndicatorStatus(const IndicatorDef &indicator) const
+{
+    if (indicator.dataSource.compare("Null", Qt::CaseInsensitive) == 0 ||
+        !m_latestTelemetryValues.contains(indicator.dataSource)) {
+        return defaultIndicatorStatus(indicator);
     }
+
+    const double value = m_latestTelemetryValues.value(indicator.dataSource);
+
+    for (const IndicatorStatusDef &status : indicator.statuses) {
+        if (status.hasLowerBound && status.hasUpperBound &&
+            qFuzzyCompare(status.lowerBound + 1.0, status.upperBound + 1.0) &&
+            qFuzzyCompare(value + 1.0, status.lowerBound + 1.0)) {
+            return &status;
+        }
+    }
+
+    for (const IndicatorStatusDef &status : indicator.statuses) {
+        if (!status.hasLowerBound && !status.hasUpperBound) {
+            continue;
+        }
+        const bool aboveLower = !status.hasLowerBound || value >= status.lowerBound;
+        const bool belowUpper = !status.hasUpperBound || value < status.upperBound;
+        if (aboveLower && belowUpper) {
+            return &status;
+        }
+    }
+
+    return defaultIndicatorStatus(indicator);
+}
+
+const IndicatorStatusDef* MainWindow::resolveBitwiseIndicatorStatus(const IndicatorDef &indicator) const
+{
+    quint64 sourceValue = 0;
+    if (indicator.dataSource == "errors") {
+        sourceValue = m_telemetryStatus.errorCode;
+    } else if (m_latestTelemetryValues.contains(indicator.dataSource)) {
+        sourceValue = static_cast<quint64>(m_latestTelemetryValues.value(indicator.dataSource));
+    } else {
+        return defaultIndicatorStatus(indicator);
+    }
+
+    QList<const IndicatorStatusDef*> matches;
+    for (const IndicatorStatusDef &status : indicator.statuses) {
+        if (status.hasBit && (sourceValue & (1ULL << status.bit))) {
+            matches.append(&status);
+        }
+    }
+
+    if (matches.isEmpty()) {
+        return defaultIndicatorStatus(indicator);
+    }
+    if (matches.size() == 1) {
+        return matches.first();
+    }
+
+    double totalDuration = 0.0;
+    for (const IndicatorStatusDef *status : matches) {
+        totalDuration += qMax(0.05, status->timeSec);
+    }
+    if (totalDuration <= 0.0) {
+        return matches.first();
+    }
+
+    const double cycleTime = std::fmod(QDateTime::currentMSecsSinceEpoch() / 1000.0, totalDuration);
+    double accumulator = 0.0;
+    for (const IndicatorStatusDef *status : matches) {
+        accumulator += qMax(0.05, status->timeSec);
+        if (cycleTime < accumulator) {
+            return status;
+        }
+    }
+
+    return matches.first();
+}
+
+const IndicatorStatusDef* MainWindow::defaultIndicatorStatus(const IndicatorDef &indicator) const
+{
+    for (const IndicatorStatusDef &status : indicator.statuses) {
+        if (!status.hasValue && !status.hasBit && !status.hasLowerBound && !status.hasUpperBound) {
+            return &status;
+        }
+    }
+    return nullptr;
 }
 
 void MainWindow::addOscilloscope(const QString &title, int index) {
@@ -932,8 +1026,7 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
         m_waveData.clear();
         m_pausedTimeStamps.clear();
         m_pausedWaveData.clear();
-        m_omHistory.clear();
-        m_fwHistory.clear();
+        m_latestTelemetryValues.clear();
     }
 
     m_lastTimestampTicks = timestampTicks;
@@ -941,6 +1034,11 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
 
     const double currentTime = static_cast<double>(timestampTicks) / 275000000.0;
     addTimeStamp(currentTime);
+    for (auto it = values.cbegin(); it != values.cend(); ++it) {
+        if (it.key() != DataParser::TIMESTAMP_FIELD) {
+            m_latestTelemetryValues[it.key()] = it.value();
+        }
+    }
     // 追加到波形缓冲区
     for (auto it = values.begin(); it != values.end(); ++it) {
         const QString &field = it.key();
@@ -954,25 +1052,10 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
             vec.remove(0, vec.size() - m_maxWavePoints);
         }
     }
-    if (values.contains("OM")) {
-        m_pendingOm = qRound(values.value("OM"));
-        m_hasPendingOm = true;
-        m_omHistory.append(m_pendingOm);
-        if (m_omHistory.size() > m_indicatorHistoryWindowSize) {
-            m_omHistory.remove(0, m_omHistory.size() - m_indicatorHistoryWindowSize);
-        }
-    }
-    if (values.contains("FW")) {
-        m_pendingFw = qRound(values.value("FW"));
-        m_hasPendingFw = true;
-        m_fwHistory.append(m_pendingFw);
-        if (m_fwHistory.size() > m_indicatorHistoryWindowSize) {
-            m_fwHistory.remove(0, m_fwHistory.size() - m_indicatorHistoryWindowSize);
-        }
-    }
     m_plotDirty = true;
     advanceFaultAutoCapture();
     updateGauges(values);
+    updateStatusIndicators();
     // 可选：在接收区显示关键数值（调试用，可注释）
     writeTelemetryLogRow(values);
     // if (values.contains("RPM")) {
@@ -1603,10 +1686,7 @@ void MainWindow::on_pushButtonSelectConfig_clicked() {
     m_waveData.clear();
     m_pausedTimeStamps.clear();
     m_pausedWaveData.clear();
-    m_omHistory.clear();
-    m_fwHistory.clear();
-    m_hasPendingOm = false;
-    m_hasPendingFw = false;
+    m_latestTelemetryValues.clear();
     m_hasLastTimestamp = false;
     updateAllPlots();
     if (restartLogging && !startTelemetryLogging()) {

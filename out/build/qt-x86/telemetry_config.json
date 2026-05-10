@@ -67,5 +67,107 @@
     { "name": "VA", "expression": "VBATT / 3 * (2 * DUTY_A - DUTY_B - DUTY_C)" },
     { "name": "VB", "expression": "VBATT / 3 * (2 * DUTY_B - DUTY_C - DUTY_A)" },
     { "name": "VC", "expression": "VBATT / 3 * (2 * DUTY_C - DUTY_A - DUTY_B)" }
+  ],
+  "indicators": [
+    {
+      "name": "FOC",
+      "type": "mode",
+      "indicator": 0,
+      "dataSource": "modes",
+      "status": [
+        { "value": "MOTOR_FOC_LINEAR", "displayText": "FOC", "color": "green" },
+        { "value": "MOTOR_FOC_DPWM", "displayText": "FOC", "color": "green" },
+        { "displayText": "FOC", "color": "off" }
+      ]
+    },
+    {
+      "name": "VVVF",
+      "type": "mode",
+      "indicator": 1,
+      "dataSource": "modes",
+      "status": [
+        { "value": "MOTOR_VVVF", "displayText": "VVVF", "color": "green" },
+        { "displayText": "VVVF", "color": "off" }
+      ]
+    },
+    {
+      "name": "Protect",
+      "type": "mode",
+      "indicator": 2,
+      "dataSource": "modes",
+      "status": [
+        { "value": 0, "displayText": "Protection", "color": "red" },
+        { "displayText": "Protection", "color": "off" }
+      ]
+    },
+    {
+      "name": "OM",
+      "type": "condition",
+      "indicator": 3,
+      "dataSource": "M_INDEX",
+      "status": [
+        { "lowerBound": 0.0, "upperBound": 0.907, "displayText": "Linear", "color": "green" },
+        { "lowerBound": 0.907, "upperBound": 0.9514, "displayText": "OM 1", "color": "yellow" },
+        { "lowerBound": 0.9514, "displayText": "OM 2", "color": "red" },
+        { "lowerBound": 0.0, "upperBound": 0.0, "displayText": "OM", "color": "off" },
+        { "displayText": "OM", "color": "off" }
+      ]
+    },
+    {
+      "name": "FW",
+      "type": "condition",
+      "indicator": 4,
+      "dataSource": "FW",
+      "status": [
+        { "lowerBound": 0, "upperBound": 0, "displayText": "FW", "color": "off" },
+        { "lowerBound": 1, "upperBound": 1, "displayText": "FW", "color": "yellow" },
+        { "displayText": "FW", "color": "off" }
+      ]
+    },
+    {
+      "name": "Reserve",
+      "type": "condition",
+      "indicator": 5,
+      "dataSource": "Null",
+      "status": [
+        { "displayText": "Reserve", "color": "off" }
+      ]
+    },
+    {
+      "name": "Overcurrent",
+      "type": "bitwise",
+      "indicator": 6,
+      "dataSource": "errors",
+      "status": [
+        { "bit": 7, "displayText": "OC", "color": "red" },
+        { "displayText": "OC", "color": "off" }
+      ]
+    },
+    {
+      "name": "Undervoltage",
+      "type": "bitwise",
+      "indicator": 7,
+      "dataSource": "errors",
+      "status": [
+        { "bit": 8, "displayText": "UV", "color": "red" },
+        { "displayText": "UV", "color": "off" }
+      ]
+    },
+    {
+      "name": "Config",
+      "type": "bitwise",
+      "indicator": 8,
+      "dataSource": "errors",
+      "status": [
+        { "bit": 0, "displayText": "PWM", "color": "red", "time": 0.5 },
+        { "bit": 1, "displayText": "ADC", "color": "red", "time": 0.5 },
+        { "bit": 2, "displayText": "DMA", "color": "red", "time": 0.5 },
+        { "bit": 3, "displayText": "TIM", "color": "red", "time": 0.5 },
+        { "bit": 4, "displayText": "Encoder", "color": "red", "time": 0.5 },
+        { "bit": 5, "displayText": "FOC", "color": "red", "time": 0.5 },
+        { "bit": 6, "displayText": "Comm", "color": "red", "time": 0.5 },
+        { "displayText": "Config", "color": "off" }
+      ]
+    }
   ]
 }

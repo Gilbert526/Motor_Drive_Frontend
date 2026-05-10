@@ -1073,7 +1073,7 @@
               <number>0</number>
              </property>
              <item row="2" column="2">
-              <widget class="QLabel" name="labelConfig">
+              <widget class="QLabel" name="statusLed8">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
                  <horstretch>0</horstretch>
@@ -1101,7 +1101,7 @@
               </widget>
              </item>
              <item row="2" column="0">
-              <widget class="QLabel" name="labelOvercurrent">
+              <widget class="QLabel" name="statusLed6">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
                  <horstretch>0</horstretch>
@@ -1129,7 +1129,7 @@
               </widget>
              </item>
              <item row="0" column="0">
-              <widget class="QLabel" name="labelFoc">
+              <widget class="QLabel" name="statusLed0">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
                  <horstretch>0</horstretch>
@@ -1157,7 +1157,7 @@
               </widget>
              </item>
              <item row="2" column="1">
-              <widget class="QLabel" name="labelUndervolt">
+              <widget class="QLabel" name="statusLed7">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
                  <horstretch>0</horstretch>
@@ -1185,7 +1185,7 @@
               </widget>
              </item>
              <item row="0" column="1">
-              <widget class="QLabel" name="labelVvvf">
+              <widget class="QLabel" name="statusLed1">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
                  <horstretch>0</horstretch>
@@ -1213,7 +1213,7 @@
               </widget>
              </item>
              <item row="0" column="2">
-              <widget class="QLabel" name="labelProtect">
+              <widget class="QLabel" name="statusLed2">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
                  <horstretch>0</horstretch>
@@ -1241,7 +1241,7 @@
               </widget>
              </item>
              <item row="1" column="0">
-              <widget class="QLabel" name="labelOm">
+              <widget class="QLabel" name="statusLed3">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
                  <horstretch>0</horstretch>
@@ -1269,7 +1269,7 @@
               </widget>
              </item>
              <item row="1" column="1">
-              <widget class="QLabel" name="labelFw">
+              <widget class="QLabel" name="statusLed4">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
                  <horstretch>0</horstretch>
@@ -1297,7 +1297,7 @@
               </widget>
              </item>
              <item row="1" column="2">
-              <widget class="QLabel" name="labelFoc_4">
+              <widget class="QLabel" name="statusLed5">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
                  <horstretch>0</horstretch>

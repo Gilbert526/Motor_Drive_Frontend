@@ -1,4 +1,12 @@
+// Example telemetry configuration.
+// Copy this file to telemetry_config.json and remove comments if you want to use it directly.
+// The application loads strict JSON, so telemetry_config.json must not contain // comments.
+
 {
+  // Error definitions.
+  // bit is the bit index used in error_code, equivalent to (1u << bit).
+  // type controls grouped status LEDs and fault auto-capture behavior.
+  // Allowed type values: config, undervoltage, overcurrent.
   "errors": [
     { "name": "ERROR_PWM_CONFIG", "type": "config", "bit": 0 },
     { "name": "ERROR_ADC_CONFIG", "type": "config", "bit": 1 },
@@ -10,6 +18,9 @@
     { "name": "ERROR_OVERCURRENT", "type": "overcurrent", "bit": 7 },
     { "name": "ERROR_UNDERVOLTAGE", "type": "undervoltage", "bit": 8 }
   ],
+
+  // Control mode definitions.
+  // value is the numeric byte sent by the MCU.
   "modes": [
     { "name": "MOTOR_PROTECTION", "value": 0 },
     { "name": "MOTOR_STOP", "value": 1 },
@@ -22,6 +33,13 @@
     { "name": "MOTOR_FOC_LINEAR", "value": 8 },
     { "name": "MOTOR_FOC_DPWM", "value": 9 }
   ],
+
+  // Primary mask fields.
+  // format can be:
+  //   B = unsigned 8-bit
+  //   H = unsigned 16-bit little-endian
+  //   f = 32-bit float little-endian
+  // command is the MCU-side log name used for log add/rm.
   "fields": [
     { "name": "RPM", "size": 4, "format": "f", "bit": 0, "command": "rpm" },
     { "name": "RPMSP", "size": 4, "format": "f", "bit": 1, "command": "rpmsp" },
@@ -55,6 +73,8 @@
     { "name": "FOC_VD", "size": 4, "format": "f", "bit": 29, "command": "vd" },
     { "name": "FOC_VQ", "size": 4, "format": "f", "bit": 30, "command": "vq" }
   ],
+
+  // Secondary mask fields.
   "fields2": [
     { "name": "OM", "size": 1, "format": "B", "bit": 0, "command": "om" },
     { "name": "M_INDEX", "size": 4, "format": "f", "bit": 1, "command": "m_index" },
@@ -63,11 +83,23 @@
     { "name": "IMAG", "size": 4, "format": "f", "bit": 4, "command": "imag" },
     { "name": "FFT", "size": 4, "format": "f", "bit": 5, "command": "fft" }
   ],
+
+  // Custom fields are calculated locally after telemetry parsing.
+  // Supported expressions include field names, + - * /, parentheses, constants such as SQRT3 and M_PI,
+  // casts such as (float)x and static_cast<double>(x), and simple functions such as sqrt, sin, cos, abs, pow, min, max.
   "custom_fields": [
     { "name": "VA", "expression": "VBATT / 3 * (2 * DUTY_A - DUTY_B - DUTY_C)" },
     { "name": "VB", "expression": "VBATT / 3 * (2 * DUTY_B - DUTY_C - DUTY_A)" },
     { "name": "VC", "expression": "VBATT / 3 * (2 * DUTY_C - DUTY_A - DUTY_B)" }
   ],
+
+  // Indicator definitions map statusLed0 through statusLed8 to behavior.
+  // type:
+  //   mode      compares the current control mode against status.value
+  //   condition compares a telemetry field against lowerBound/upperBound
+  //   bitwise   checks bits in errors or another numeric data source
+  // color:
+  //   off, green, yellow, red, or any QColor-compatible color string such as #33aa66
   "indicators": [
     {
       "name": "FOC",

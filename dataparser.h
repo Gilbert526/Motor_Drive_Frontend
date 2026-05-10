@@ -31,6 +31,29 @@ struct CustomFieldDef {
     QString expression;
 };
 
+struct IndicatorStatusDef {
+    bool hasValue = false;
+    QString valueName;
+    std::optional<double> numericValue;
+    bool hasBit = false;
+    int bit = 0;
+    bool hasLowerBound = false;
+    double lowerBound = 0.0;
+    bool hasUpperBound = false;
+    double upperBound = 0.0;
+    QString displayText;
+    QString color = "off";
+    double timeSec = 0.5;
+};
+
+struct IndicatorDef {
+    QString name;
+    QString type;
+    int indicator = 0;
+    QString dataSource;
+    QList<IndicatorStatusDef> statuses;
+};
+
 class DataParser : public QObject {
     Q_OBJECT
 
@@ -47,6 +70,7 @@ public:
     QStringList getFieldNames() const;
 
     QString getCommandNameForField(const QString &displayName) const;
+    const QList<IndicatorDef>& getIndicators() const { return m_indicators; }
 
     quint32 getMaskForField(const QString &fieldName) const;
 
@@ -96,6 +120,7 @@ private:
     QList<ErrorDef> m_errors;
     QList<ModeDef> m_modes;
     QList<CustomFieldDef> m_customFields;
+    QList<IndicatorDef> m_indicators;
 
     QByteArray m_buffer;
     QString m_configurationPath;

@@ -21,6 +21,8 @@
 class AudioLevelMeter;
 class SerialManager;
 class DataParser;
+struct IndicatorDef;
+struct IndicatorStatusDef;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -158,13 +160,7 @@ private:
         bool hasPendingValue = false;
     };
     QList<GaugeBinding> m_gaugeBindings;
-    int m_pendingOm;
-    bool m_hasPendingOm;
-    int m_pendingFw;
-    bool m_hasPendingFw;
-    QVector<int> m_omHistory;
-    QVector<int> m_fwHistory;
-    int m_indicatorHistoryWindowSize;
+    QHash<QString, double> m_latestTelemetryValues;
 
     int m_currentMaxPoints;   // 当前显示的点数（滑动条值）
 
@@ -249,12 +245,12 @@ private:
     void flushGaugeUpdates();
     void updateStatusIndicators();
     void updateFaultAutoCaptureMask();
-    bool isControlModeActive(const QStringList &modeNames) const;
-    void updateOmFwIndicators();
-    void setCustomIndicator(QLabel *label,
-                            const QString &text,
-                            bool active,
-                            const QColor &activeColor);
+    void applyIndicatorStatus(QLabel *label, const QString &text, const QString &colorName);
+    const IndicatorStatusDef* resolveIndicatorStatus(const IndicatorDef &indicator) const;
+    const IndicatorStatusDef* resolveModeIndicatorStatus(const IndicatorDef &indicator) const;
+    const IndicatorStatusDef* resolveConditionIndicatorStatus(const IndicatorDef &indicator) const;
+    const IndicatorStatusDef* resolveBitwiseIndicatorStatus(const IndicatorDef &indicator) const;
+    const IndicatorStatusDef* defaultIndicatorStatus(const IndicatorDef &indicator) const;
     void addOscilloscope(const QString &title = QString(), int index = -1);
     void removeOscilloscope(OscilloscopeWidget *osc);
     void updateAllMoveButtons();        // Update state of move up/down buttons for oscilloscopes

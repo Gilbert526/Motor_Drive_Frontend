@@ -221,6 +221,123 @@ bool parseCustomFields(const QJsonArray &array, QList<CustomFieldDef> *customFie
     return true;
 }
 
+bool parseIndicatorStatus(const QJsonObject &object, IndicatorStatusDef *status, QString *errorMessage)
+{
+    status->displayText = object.value("displayText").toString();
+    status->color = object.value("color").toString("off");
+    status->timeSec = qMax(0.05, object.value("time").toDouble(0.5));
+
+    const QJsonValue value = object.value("value");
+    if (!value.isUndefined()) {
+        status->hasValue = true;
+        if (value.isString()) {
+            status->valueName = value.toString();
+        } else if (value.isDouble()) {
+            status->numericValue = value.toDouble();
+        } else {
+            if (errorMessage) {
+                *errorMessage = "value must be a string or number";
+            }
+            return false;
+        }
+    }
+
+    if (object.contains("bit")) {
+        if (!readIntRange(object, "bit", 0, 31, &status->bit, errorMessage)) {
+            return false;
+        }
+        status->hasBit = true;
+    }
+
+    if (object.contains("lowerBound")) {
+        const QJsonValue lower = object.value("lowerBound");
+        if (!lower.isDouble()) {
+            if (errorMessage) {
+                *errorMessage = "lowerBound must be numeric";
+            }
+            return false;
+        }
+        status->hasLowerBound = true;
+        status->lowerBound = lower.toDouble();
+    }
+
+    if (object.contains("upperBound")) {
+        const QJsonValue upper = object.value("upperBound");
+        if (!upper.isDouble()) {
+            if (errorMessage) {
+                *errorMessage = "upperBound must be numeric";
+            }
+            return false;
+        }
+        status->hasUpperBound = true;
+        status->upperBound = upper.toDouble();
+    }
+
+    return true;
+}
+
+bool parseIndicators(const QJsonArray &array, QList<IndicatorDef> *indicators, QString *errorMessage)
+{
+    QList<IndicatorDef> parsed;
+    for (int i = 0; i < array.size(); ++i) {
+        if (!array[i].isObject()) {
+            if (errorMessage) {
+                *errorMessage = QString("indicators[%1] must be an object").arg(i);
+            }
+            return false;
+        }
+
+        const QJsonObject object = array[i].toObject();
+        IndicatorDef indicator;
+        if (!readRequiredString(object, "name", &indicator.name, errorMessage) ||
+            !readRequiredString(object, "type", &indicator.type, errorMessage) ||
+            !readIntRange(object, "indicator", 0, 8, &indicator.indicator, errorMessage) ||
+            !readRequiredString(object, "dataSource", &indicator.dataSource, errorMessage)) {
+            if (errorMessage) {
+                *errorMessage = QString("indicators[%1]: %2").arg(i).arg(*errorMessage);
+            }
+            return false;
+        }
+        if (indicator.type != "mode" && indicator.type != "condition" && indicator.type != "bitwise") {
+            if (errorMessage) {
+                *errorMessage = QString("indicators[%1]: type must be mode, condition, or bitwise").arg(i);
+            }
+            return false;
+        }
+
+        QJsonArray statusesJson;
+        if (!readObjectArray(object, "status", &statusesJson, errorMessage)) {
+            if (errorMessage) {
+                *errorMessage = QString("indicators[%1]: %2").arg(i).arg(*errorMessage);
+            }
+            return false;
+        }
+        for (int j = 0; j < statusesJson.size(); ++j) {
+            if (!statusesJson[j].isObject()) {
+                if (errorMessage) {
+                    *errorMessage = QString("indicators[%1].status[%2] must be an object").arg(i).arg(j);
+                }
+                return false;
+            }
+            IndicatorStatusDef status;
+            if (!parseIndicatorStatus(statusesJson[j].toObject(), &status, errorMessage)) {
+                if (errorMessage) {
+                    *errorMessage = QString("indicators[%1].status[%2]: %3").arg(i).arg(j).arg(*errorMessage);
+                }
+                return false;
+            }
+            if (status.displayText.isEmpty()) {
+                status.displayText = indicator.name;
+            }
+            indicator.statuses.append(status);
+        }
+        parsed.append(indicator);
+    }
+
+    *indicators = parsed;
+    return true;
+}
+
 class ExpressionParser {
 public:
     ExpressionParser(const QString &expression, const QHash<QString, double> &values)
@@ -574,11 +691,13 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
     QJsonArray fieldsJson;
     QJsonArray fields2Json;
     QJsonArray customFieldsJson;
+    QJsonArray indicatorsJson;
     if (!readObjectArray(root, "errors", &errorsJson, errorMessage) ||
         !readObjectArray(root, "modes", &modesJson, errorMessage) ||
         !readObjectArray(root, "fields", &fieldsJson, errorMessage) ||
         !readObjectArray(root, "fields2", &fields2Json, errorMessage) ||
-        !readOptionalObjectArray(root, "custom_fields", &customFieldsJson, errorMessage)) {
+        !readOptionalObjectArray(root, "custom_fields", &customFieldsJson, errorMessage) ||
+        !readOptionalObjectArray(root, "indicators", &indicatorsJson, errorMessage)) {
         return false;
     }
 
@@ -587,12 +706,14 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
     QList<FieldDef> fields;
     QList<FieldDef> fields2;
     QList<CustomFieldDef> customFields;
+    QList<IndicatorDef> indicators;
     QHash<QString, QString> commandMap;
     if (!parseErrors(errorsJson, &errors, errorMessage) ||
         !parseModes(modesJson, &modes, errorMessage) ||
         !parseFields(fieldsJson, &fields, &commandMap, errorMessage) ||
         !parseFields(fields2Json, &fields2, &commandMap, errorMessage) ||
-        !parseCustomFields(customFieldsJson, &customFields, errorMessage)) {
+        !parseCustomFields(customFieldsJson, &customFields, errorMessage) ||
+        !parseIndicators(indicatorsJson, &indicators, errorMessage)) {
         return false;
     }
 
@@ -601,6 +722,7 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
     m_fields = fields;
     m_fields2 = fields2;
     m_customFields = customFields;
+    m_indicators = indicators;
     m_displayToCmd = commandMap;
     m_configurationPath = QFileInfo(filePath).absoluteFilePath();
     m_buffer.clear();

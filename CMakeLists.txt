@@ -60,14 +60,19 @@ install(TARGETS ${PROJECT_NAME}
 target_include_directories(Motor_Drive_Frontend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 set(TELEMETRY_CONFIG_FILE "${CMAKE_CURRENT_SOURCE_DIR}/telemetry_config.json")
+set(TELEMETRY_CONFIG_EXAMPLE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/config_example.txt")
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${TELEMETRY_CONFIG_FILE}"
         "$<TARGET_FILE_DIR:${PROJECT_NAME}>/telemetry_config.json"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${TELEMETRY_CONFIG_EXAMPLE_FILE}"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/config_example.txt"
     COMMENT "Copying telemetry parser configuration"
     VERBATIM
 )
 install(FILES "${TELEMETRY_CONFIG_FILE}" DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES "${TELEMETRY_CONFIG_EXAMPLE_FILE}" DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 if(MINGW)
     set(APP_ICON_RC "${CMAKE_CURRENT_SOURCE_DIR}/app_icon.rc")
@@ -125,6 +130,9 @@ if(WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${TELEMETRY_CONFIG_FILE}"
             "${PACKAGE_OUTPUT_DIR}/telemetry_config.json"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${TELEMETRY_CONFIG_EXAMPLE_FILE}"
+            "${PACKAGE_OUTPUT_DIR}/config_example.txt"
         COMMENT "打包完成：${PACKAGE_OUTPUT_DIR}"
         DEPENDS ${PROJECT_NAME}
         VERBATIM
