@@ -6,6 +6,7 @@
 #include <QHash>
 #include <QStringList>
 #include <QVector>
+#include <optional>
 
 struct FieldDef {
     QString name;
@@ -16,6 +17,7 @@ struct FieldDef {
 
 struct ErrorDef {
     QString name;
+    QString type;
     quint32 maskBit;
 };
 
@@ -24,64 +26,102 @@ struct ModeDef {
     quint8 value;
 };
 
+struct CustomFieldDef {
+    QString name;
+    QString expression;
+};
+
+struct IndicatorStatusDef {
+    bool hasValue = false;
+    QString valueName;
+    std::optional<double> numericValue;
+    bool hasBit = false;
+    int bit = 0;
+    bool hasLowerBound = false;
+    double lowerBound = 0.0;
+    bool hasUpperBound = false;
+    double upperBound = 0.0;
+    QString displayText;
+    QString color = "off";
+    double timeSec = 0.5;
+};
+
+struct IndicatorDef {
+    QString name;
+    QString type;
+    int indicator = 0;
+    QString dataSource;
+    QList<IndicatorStatusDef> statuses;
+};
+
+struct GaugeThresholdDef {
+    bool hasLowerBound = false;
+    double lowerBound = 0.0;
+    bool hasUpperBound = false;
+    double upperBound = 0.0;
+    QString color;
+};
+
+struct GaugeDef {
+    QString name;
+    int gauge = 0;
+    QString dataSource;
+    QString topDisplayUnit;
+    double minimum = 0.0;
+    double maximum = 100.0;
+    int divisions = 5;
+    QList<GaugeThresholdDef> thresholds;
+    double hysteresis = 0.0;
+};
+
 class DataParser : public QObject {
     Q_OBJECT
 
 public:
-    enum ErrorFlag : quint32 {
-        ERROR_PWM_CONFIG     = 1 << 0,
-        ERROR_ADC_CONFIG     = 1 << 1,
-        ERROR_DMA_CONFIG     = 1 << 2,
-        ERROR_TIM_CONFIG     = 1 << 3,
-        ERROR_ENCODER_CONFIG = 1 << 4,
-        ERROR_FOC_CONFIG     = 1 << 5,
-        ERROR_OVERCURRENT    = 1 << 6,
-        ERROR_UNDERVOLTAGE   = 1 << 7
-    };
-
-    enum class MotorControlMode : quint8 {
-        MOTOR_PROTECTION,
-        MOTOR_STOP,
-        MOTOR_MANUAL,
-        MOTOR_ALIGN,
-        MOTOR_STARTUP,
-        MOTOR_VVVF,
-        MOTOR_SIX_STEP,
-        MOTOR_FOC_MANUAL,
-        MOTOR_FOC_LINEAR,
-        MOTOR_FOC_DPWM
-    };
-
     explicit DataParser(QObject *parent = nullptr);
 
     void parseData(const QByteArray &newData);
+
+    bool loadConfiguration(const QString &filePath, QString *errorMessage = nullptr);
+    QString configurationPath() const { return m_configurationPath; }
     
     QVector<double> getWaveform(const QString &fieldName) const;
 
     QStringList getFieldNames() const;
 
     QString getCommandNameForField(const QString &displayName) const;
+    const QList<IndicatorDef>& getIndicators() const { return m_indicators; }
+    const QList<GaugeDef>& getGauges() const { return m_gauges; }
 
     quint32 getMaskForField(const QString &fieldName) const;
+
+    bool isFieldEnabled(const QString &fieldName, quint32 mask1, quint32 mask2) const;
 
     QStringList getErrorNames(quint32 errorCode) const;
 
     QString getControlModeName(quint8 mode) const;
 
     bool isControlModeKnown(quint8 mode) const;
+    quint32 getErrorMaskForName(const QString &errorName) const;
+    quint32 getErrorMaskForType(const QString &errorType) const;
+    std::optional<quint8> getControlModeValueForName(const QString &modeName) const;
+    int minimumFrameSize() const;
+    bool hasValidFrameMetadata(const QByteArray &data, int startIdx = 0) const;
 
     /**
      * @brief Parse the length of a complete binary frame from the given data
      * @param data Raw data containing the frame header (0xAA 0x55)
      * @param startIdx Start index of the frame header (default is 0)
-     * @return Total number of bytes in the frame (including header, error, mode and mask), or -1 if data is insufficient or format is incorrect
+     * @return Total number of bytes in the frame (including header, error, mode, timestamp, mask1 and mask2), or -1 if data is insufficient or format is incorrect
      */
     int getFrameLength(const QByteArray &data, int startIdx = 0) const;
+
+    static constexpr const char *TIMESTAMP_FIELD = "__mcu_timestamp_ticks";
 
 signals:
     void parsedData(const QHash<QString, double> &values);
 
-    void maskReceived(quint32 mask);
+    void maskReceived(quint32 mask1, quint32 mask2);
 
     void errorReceived(quint32 errorCode, const QStringList &errorNames);
 
@@ -90,23 +130,31 @@ signals:
                               quint8 controlMode,
                               const QString &controlModeName,
                               bool controlModeKnown);
+    void configurationChanged();
 
 private:
     static const QByteArray SYNC_BYTES;   // 0xAA 0x55
     static const int MAX_FRAME_SIZE = 256;
 
     QList<FieldDef> m_fields;
+    QList<FieldDef> m_fields2;
     QList<ErrorDef> m_errors;
     QList<ModeDef> m_modes;
+    QList<CustomFieldDef> m_customFields;
+    QList<IndicatorDef> m_indicators;
+    QList<GaugeDef> m_gauges;
 
     QByteArray m_buffer;
+    QString m_configurationPath;
 
     QHash<QString, double> tryParsePacket(int startIdx, int &nextStartIdx);
 
     double unpackValue(const QByteArray &data, const FieldDef &field);
+    void addCommandMapping(const QString &displayName, const QString &commandName);
+    bool loadDefaultConfiguration(QString *errorMessage = nullptr);
+    static QStringList configurationSearchPaths();
 
     QHash<QString, QString> m_displayToCmd;
-    void initCommandMapping();
 };
 
 #endif // DATAPARSER_H

@@ -10,12 +10,19 @@ class AudioLevelMeter : public QWidget
     Q_OBJECT
 
 public:
+    enum class ColorState {
+        Normal,
+        Warning,
+        Critical
+    };
+
     explicit AudioLevelMeter(QWidget *parent = nullptr);
 
     void setTitle(const QString &title);
     void setUnit(const QString &unit);
     void setRange(double minimum, double maximum);
     void setThresholds(double warningThreshold, double criticalThreshold);
+    void setThresholdHysteresisPercent(double percent);
     void setDivisionCount(int divisionCount);
     void setMajorTickCount(int tickCount);
     void setPeakHoldMs(int holdMs);
@@ -35,6 +42,8 @@ private:
     double normalizedValue(double value) const;
     int yForValue(const QRect &meterRect, double value) const;
     double levelForThreshold(double value) const;
+    double hysteresisAmount() const;
+    void updateColorState(double value);
     QString formattedValue(double value) const;
     QColor fillColorForValue(double value) const;
 
@@ -47,7 +56,9 @@ private:
     double m_peakValue;
     double m_warningThreshold;
     double m_criticalThreshold;
+    double m_thresholdHysteresisPercent;
     int m_divisionCount;
+    ColorState m_colorState;
     int m_peakHoldMs;
     int m_peakHoldRemainingMs;
     QTimer m_peakDecayTimer;

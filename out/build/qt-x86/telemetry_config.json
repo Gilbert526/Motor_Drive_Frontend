@@ -1,0 +1,222 @@
+{
+  "errors": [
+    { "name": "ERROR_PWM_CONFIG", "type": "config", "bit": 0 },
+    { "name": "ERROR_ADC_CONFIG", "type": "config", "bit": 1 },
+    { "name": "ERROR_DMA_CONFIG", "type": "config", "bit": 2 },
+    { "name": "ERROR_TIM_CONFIG", "type": "config", "bit": 3 },
+    { "name": "ERROR_ENCODER_CONFIG", "type": "config", "bit": 4 },
+    { "name": "ERROR_FOC_CONFIG", "type": "config", "bit": 5 },
+    { "name": "ERROR_COMM_CONFIG", "type": "config", "bit": 6 },
+    { "name": "ERROR_OVERCURRENT", "type": "overcurrent", "bit": 7 },
+    { "name": "ERROR_UNDERVOLTAGE", "type": "undervoltage", "bit": 8 }
+  ],
+  "modes": [
+    { "name": "MOTOR_PROTECTION", "value": 0 },
+    { "name": "MOTOR_STOP", "value": 1 },
+    { "name": "MOTOR_MANUAL", "value": 2 },
+    { "name": "MOTOR_ALIGN", "value": 3 },
+    { "name": "MOTOR_STARTUP", "value": 4 },
+    { "name": "MOTOR_VVVF", "value": 5 },
+    { "name": "MOTOR_SIX_STEP", "value": 6 },
+    { "name": "MOTOR_FOC_MANUAL", "value": 7 },
+    { "name": "MOTOR_FOC_LINEAR", "value": 8 },
+    { "name": "MOTOR_FOC_DPWM", "value": 9 }
+  ],
+  "fields": [
+    { "name": "RPM", "size": 4, "format": "f", "bit": 0, "command": "rpm" },
+    { "name": "RPMSP", "size": 4, "format": "f", "bit": 1, "command": "rpmsp" },
+    { "name": "POS", "size": 2, "format": "H", "bit": 2, "command": "pos" },
+    { "name": "ELPOS", "size": 2, "format": "H", "bit": 3, "command": "elpos" },
+    { "name": "DUTY_A", "size": 4, "format": "f", "bit": 4, "command": "duty_a" },
+    { "name": "DUTY_B", "size": 4, "format": "f", "bit": 5, "command": "duty_b" },
+    { "name": "DUTY_C", "size": 4, "format": "f", "bit": 6, "command": "duty_c" },
+    { "name": "IA", "size": 4, "format": "f", "bit": 7, "command": "ia" },
+    { "name": "IB", "size": 4, "format": "f", "bit": 8, "command": "ib" },
+    { "name": "IC", "size": 4, "format": "f", "bit": 9, "command": "ic" },
+    { "name": "VA", "size": 4, "format": "f", "bit": 10, "command": "va" },
+    { "name": "VB", "size": 4, "format": "f", "bit": 11, "command": "vb" },
+    { "name": "VBATT", "size": 4, "format": "f", "bit": 12, "command": "vbatt" },
+    { "name": "IBATT", "size": 4, "format": "f", "bit": 13, "command": "ibatt" },
+    { "name": "IA_RAW", "size": 2, "format": "H", "bit": 14, "command": "ia_raw" },
+    { "name": "IB_RAW", "size": 2, "format": "H", "bit": 15, "command": "ib_raw" },
+    { "name": "IC_RAW", "size": 2, "format": "H", "bit": 16, "command": "ic_raw" },
+    { "name": "VA_RAW", "size": 2, "format": "H", "bit": 17, "command": "va_raw" },
+    { "name": "VB_RAW", "size": 2, "format": "H", "bit": 18, "command": "vb_raw" },
+    { "name": "VBATT_RAW", "size": 2, "format": "H", "bit": 19, "command": "vbatt_raw" },
+    { "name": "IBATT_RAW", "size": 2, "format": "H", "bit": 20, "command": "ibatt_raw" },
+    { "name": "IA_MAX", "size": 4, "format": "f", "bit": 21, "command": "ia_max" },
+    { "name": "IB_MAX", "size": 4, "format": "f", "bit": 22, "command": "ib_max" },
+    { "name": "IC_MAX", "size": 4, "format": "f", "bit": 23, "command": "ic_max" },
+    { "name": "IBATT_MAX", "size": 4, "format": "f", "bit": 24, "command": "ibatt_max" },
+    { "name": "FOC_ID", "size": 4, "format": "f", "bit": 25, "command": "id" },
+    { "name": "FOC_IQ", "size": 4, "format": "f", "bit": 26, "command": "iq" },
+    { "name": "FOC_IDSP", "size": 4, "format": "f", "bit": 27, "command": "idsp" },
+    { "name": "FOC_IQSP", "size": 4, "format": "f", "bit": 28, "command": "iqsp" },
+    { "name": "FOC_VD", "size": 4, "format": "f", "bit": 29, "command": "vd" },
+    { "name": "FOC_VQ", "size": 4, "format": "f", "bit": 30, "command": "vq" }
+  ],
+  "fields2": [
+    { "name": "OM", "size": 1, "format": "B", "bit": 0, "command": "om" },
+    { "name": "M_INDEX", "size": 4, "format": "f", "bit": 1, "command": "m_index" },
+    { "name": "FW", "size": 1, "format": "B", "bit": 2, "command": "fw" },
+    { "name": "UMAG", "size": 4, "format": "f", "bit": 3, "command": "umag" },
+    { "name": "IMAG", "size": 4, "format": "f", "bit": 4, "command": "imag" },
+    { "name": "FFT", "size": 4, "format": "f", "bit": 5, "command": "fft" }
+  ],
+  "custom_fields": [
+    { "name": "VA", "expression": "VBATT / 3 * (2 * DUTY_A - DUTY_B - DUTY_C)" },
+    { "name": "VB", "expression": "VBATT / 3 * (2 * DUTY_B - DUTY_C - DUTY_A)" },
+    { "name": "VC", "expression": "VBATT / 3 * (2 * DUTY_C - DUTY_A - DUTY_B)" }
+  ],
+  "indicators": [
+    {
+      "name": "FOC",
+      "type": "mode",
+      "indicator": 0,
+      "dataSource": "modes",
+      "status": [
+        { "value": "MOTOR_FOC_LINEAR", "displayText": "FOC", "color": "green" },
+        { "value": "MOTOR_FOC_DPWM", "displayText": "FOC", "color": "green" },
+        { "displayText": "FOC", "color": "off" }
+      ]
+    },
+    {
+      "name": "VVVF",
+      "type": "mode",
+      "indicator": 1,
+      "dataSource": "modes",
+      "status": [
+        { "value": "MOTOR_VVVF", "displayText": "VVVF", "color": "green" },
+        { "displayText": "VVVF", "color": "off" }
+      ]
+    },
+    {
+      "name": "Protect",
+      "type": "mode",
+      "indicator": 2,
+      "dataSource": "modes",
+      "status": [
+        { "value": 0, "displayText": "Protection", "color": "red" },
+        { "displayText": "Protection", "color": "off" }
+      ]
+    },
+    {
+      "name": "OM",
+      "type": "condition",
+      "indicator": 3,
+      "dataSource": "M_INDEX",
+      "status": [
+        { "lowerBound": 0.0, "upperBound": 0.907, "displayText": "Linear", "color": "green" },
+        { "lowerBound": 0.907, "upperBound": 0.9514, "displayText": "OM 1", "color": "yellow" },
+        { "lowerBound": 0.9514, "displayText": "OM 2", "color": "red" },
+        { "lowerBound": 0.0, "upperBound": 0.0, "displayText": "OM", "color": "off" },
+        { "displayText": "OM", "color": "off" }
+      ]
+    },
+    {
+      "name": "FW",
+      "type": "condition",
+      "indicator": 4,
+      "dataSource": "FW",
+      "status": [
+        { "lowerBound": 0, "upperBound": 0, "displayText": "FW", "color": "off" },
+        { "lowerBound": 1, "upperBound": 1, "displayText": "FW", "color": "yellow" },
+        { "displayText": "FW", "color": "off" }
+      ]
+    },
+    {
+      "name": "Reserve",
+      "type": "condition",
+      "indicator": 5,
+      "dataSource": "Null",
+      "status": [
+        { "displayText": "Reserve", "color": "off" }
+      ]
+    },
+    {
+      "name": "Overcurrent",
+      "type": "bitwise",
+      "indicator": 6,
+      "dataSource": "errors",
+      "status": [
+        { "bit": 7, "displayText": "OC", "color": "red" },
+        { "displayText": "OC", "color": "off" }
+      ]
+    },
+    {
+      "name": "Undervoltage",
+      "type": "bitwise",
+      "indicator": 7,
+      "dataSource": "errors",
+      "status": [
+        { "bit": 8, "displayText": "UV", "color": "red" },
+        { "displayText": "UV", "color": "off" }
+      ]
+    },
+    {
+      "name": "Config",
+      "type": "bitwise",
+      "indicator": 8,
+      "dataSource": "errors",
+      "status": [
+        { "bit": 0, "displayText": "PWM", "color": "red", "time": 0.5 },
+        { "bit": 1, "displayText": "ADC", "color": "red", "time": 0.5 },
+        { "bit": 2, "displayText": "DMA", "color": "red", "time": 0.5 },
+        { "bit": 3, "displayText": "TIM", "color": "red", "time": 0.5 },
+        { "bit": 4, "displayText": "Encoder", "color": "red", "time": 0.5 },
+        { "bit": 5, "displayText": "FOC", "color": "red", "time": 0.5 },
+        { "bit": 6, "displayText": "Comm", "color": "red", "time": 0.5 },
+        { "displayText": "Config", "color": "off" }
+      ]
+    }
+  ],
+  "gauges": [
+    {
+      "name": "Voltage",
+      "gauge": 0,
+      "dataSource": "VBATT",
+      "topDisplayUnit": "V",
+      "min": 0.0,
+      "max": 30.0,
+      "divisions": 6,
+      "thresholds": [
+        { "upperBound": 14.0, "color": "green"},
+        { "lowerBound": 14.0, "upperBound": 26.0, "color": "yellow"},
+        { "lowerBound": 26.0, "color": "red"}
+      ],
+      "hysteresis": 2.0
+    },
+    {
+      "name": "Speed",
+      "gauge": 1,
+      "dataSource": "RPM",
+      "topDisplayUnit": "RPM",
+      "min": -10000.0,
+      "max": 10000.0,
+      "divisions": 20,
+      "thresholds": [
+        { "upperBound": -8100.0, "color": "red"},
+        { "lowerBound": -8100.0, "upperBound": -4100.0, "color": "yellow"},
+        { "lowerBound": -4100.0, "upperBound": 4100.0, "color": "green"},
+        { "lowerBound": 4100.0, "upperBound": 8100.0, "color": "yellow"},
+        { "lowerBound": 8100.0, "color": "red"}
+      ],
+      "hysteresis": 2.0
+    },
+    {
+      "name": "Modulation",
+      "gauge": 2,
+      "dataSource": "M_INDEX",
+      "topDisplayUnit": "",
+      "min": 0.0,
+      "max": 1.2,
+      "divisions": 12,
+      "thresholds": [
+        { "upperBound": 0.907, "color": "green"},
+        { "lowerBound": 0.907, "upperBound": 0.9514, "color": "yellow"},
+        { "lowerBound": 0.9514, "color": "red"}
+      ],
+      "hysteresis": 2.0
+    }
+  ]
+}

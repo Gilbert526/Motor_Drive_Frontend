@@ -19,12 +19,14 @@ AudioLevelMeter::AudioLevelMeter(QWidget *parent)
       m_peakValue(0.0),
       m_warningThreshold(65.0),
       m_criticalThreshold(85.0),
+      m_thresholdHysteresisPercent(0.0),
       m_divisionCount(5),
+      m_colorState(ColorState::Normal),
       m_peakHoldMs(1000),
       m_peakHoldRemainingMs(0)
 {
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    setMinimumSize(80, 180);
+    setMinimumSize(92, 180);
 
     m_peakDecayTimer.setInterval(40);
     connect(&m_peakDecayTimer, &QTimer::timeout, this, [this]() {
@@ -35,10 +37,13 @@ AudioLevelMeter::AudioLevelMeter(QWidget *parent)
 
         const double decayStep = (m_maximum - m_minimum) * 0.015;
         if (m_minimum < 0.0 && m_maximum > 0.0) {
-            const double peakSign = (m_peakValue < 0.0) ? -1.0 : 1.0;
-            const double decayedLevel = qMax(levelForThreshold(m_value),
-                                             levelForThreshold(m_peakValue) - decayStep);
-            m_peakValue = peakSign * decayedLevel;
+            const double currentLevel = levelForThreshold(m_value);
+            const double peakLevel = levelForThreshold(m_peakValue);
+            const double decayedLevel = qMax(currentLevel, peakLevel - decayStep);
+            const double sign = (currentLevel >= decayedLevel)
+                ? ((m_value < 0.0) ? -1.0 : 1.0)
+                : ((m_peakValue < 0.0) ? -1.0 : 1.0);
+            m_peakValue = sign * decayedLevel;
         } else {
             m_peakValue = qMax(m_value, m_peakValue - decayStep);
         }
@@ -88,9 +93,12 @@ void AudioLevelMeter::setRange(double minimum, double maximum)
     m_maximum = maximum;
     m_value = clampedValue(m_value);
     m_displayValue = clampedValue(m_displayValue);
-    m_peakValue = clampedValue(m_peakValue);
+    m_peakValue = (m_minimum < 0.0 && m_maximum > 0.0)
+        ? qBound(m_minimum, m_peakValue, m_maximum)
+        : clampedValue(m_peakValue);
     m_warningThreshold = m_minimum + (m_maximum - m_minimum) * 0.65;
     m_criticalThreshold = m_minimum + (m_maximum - m_minimum) * 0.85;
+    updateColorState(m_value);
     update();
 }
 
@@ -98,6 +106,14 @@ void AudioLevelMeter::setThresholds(double warningThreshold, double criticalThre
 {
     m_warningThreshold = warningThreshold;
     m_criticalThreshold = criticalThreshold;
+    updateColorState(m_value);
+    update();
+}
+
+void AudioLevelMeter::setThresholdHysteresisPercent(double percent)
+{
+    m_thresholdHysteresisPercent = qMax(0.0, percent);
+    updateColorState(m_value);
     update();
 }
 
@@ -120,12 +136,12 @@ void AudioLevelMeter::setPeakHoldMs(int holdMs)
 void AudioLevelMeter::setValue(double value)
 {
     m_value = clampedValue(value);
+    updateColorState(m_value);
 
-    if (levelForThreshold(m_value) >= levelForThreshold(m_peakValue)) {
+    if (qAbs(m_value) > qAbs(m_peakValue)) {
         m_peakValue = m_value;
         m_peakHoldRemainingMs = m_peakHoldMs;
     }
-
     if (!m_peakDecayTimer.isActive()) {
         m_peakDecayTimer.start();
     }
@@ -135,12 +151,12 @@ void AudioLevelMeter::setValue(double value)
 
 QSize AudioLevelMeter::sizeHint() const
 {
-    return QSize(80, 240);
+    return QSize(92, 240);
 }
 
 QSize AudioLevelMeter::minimumSizeHint() const
 {
-    return QSize(80, 160);
+    return QSize(92, 160);
 }
 
 void AudioLevelMeter::paintEvent(QPaintEvent *event)
@@ -150,13 +166,24 @@ void AudioLevelMeter::paintEvent(QPaintEvent *event)
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
 
-    const QRect area = rect().adjusted(6, 6, -6, -6);
+    // Overall content margins for the whole widget drawing area.
+    // Adjust the first and third values to change the left/right margins
+    // for the entire gauges area. The current margins are optimized for 3 gauges layout.
+    const QRect area = rect().adjusted(2, 20, -2, -6);
     painter.fillRect(rect(), palette().window());
+    const QColor primaryText = palette().color(QPalette::WindowText);
+    const QColor secondaryText = primaryText.darker(150);
+    const QColor gridColor = primaryText.darker(220);
+    const QColor zeroLineColor = primaryText.lighter(135);
+    const QColor peakLineColor = (primaryText.lightness() < 128)
+        ? QColor(245, 245, 245)
+        : primaryText.lighter(160);
+    const QColor frameColor = primaryText.darker(170);
 
     QFont titleFont = painter.font();
     titleFont.setBold(true);
     painter.setFont(titleFont);
-    painter.setPen(QColor(35, 35, 35));
+    painter.setPen(primaryText);
 
     QFont valueFont = painter.font();
     valueFont.setBold(false);
@@ -173,7 +200,14 @@ void AudioLevelMeter::paintEvent(QPaintEvent *event)
                      m_title);
 
     painter.setFont(valueFont);
-    const int scaleWidth = 34;
+    // Gauge/scale layout tuning:
+    // - scaleWidth controls how much horizontal space is reserved for the labels/ticks.
+    // - gap controls the spacing between the labels and the gauge body.
+    // - configuredMeterWidth is the preferred gauge width from sizeHint().
+    // - availableMeterWidth limits the gauge width to what actually fits in the widget.
+    // - meterWidth is the final gauge width that gets drawn.
+    // Change these values if you want to make the gauge body wider or narrower.
+    const int scaleWidth = 48;
     const int gap = 6;
     const int configuredMeterWidth = qMax(12, sizeHint().width() - scaleWidth - gap);
     const int availableMeterWidth = qMax(12, area.width() - scaleWidth - gap);
@@ -183,13 +217,18 @@ void AudioLevelMeter::paintEvent(QPaintEvent *event)
     const int horizontalOffset = meterWidth / 2;
     const int meterLeft = meterAreaLeft + qMax(0, (meterAreaWidth - meterWidth) / 2) - horizontalOffset;
     const int scaleLeft = area.left() - horizontalOffset;
+    // meterRect defines the actual gauge body rectangle:
+    // - the second argument controls the top position
+    // - the third argument is the gauge width
+    // - the fourth argument is the gauge height
+    // Increase/decrease these offsets if you want to manually tune the gauge size.
     const QRect meterRect(meterLeft,
                           area.top() + valueHeight + 4,
                           meterWidth,
                           area.height() - titleHeight - valueHeight - 10);
 
     const QRectF trackRect = QRectF(meterRect).adjusted(0.5, 0.5, -0.5, -0.5);
-    painter.setPen(QPen(QColor(95, 95, 95), 1));
+    painter.setPen(QPen(frameColor, 1));
     painter.setBrush(QColor(28, 30, 33));
     painter.drawRoundedRect(trackRect, 4, 4);
 
@@ -223,7 +262,7 @@ void AudioLevelMeter::paintEvent(QPaintEvent *event)
         std::sort(tickValues.begin(), tickValues.end(), std::greater<double>());
     }
 
-    painter.setPen(QPen(QColor(62, 64, 68), 1));
+    painter.setPen(QPen(gridColor, 1));
     for (double tickValue : std::as_const(tickValues)) {
         if (qFuzzyCompare(tickValue + 1.0, m_minimum + 1.0) ||
             qFuzzyCompare(tickValue + 1.0, m_maximum + 1.0)) {
@@ -233,14 +272,14 @@ void AudioLevelMeter::paintEvent(QPaintEvent *event)
         painter.drawLine(meterRect.left() + 3, y, meterRect.right() - 3, y);
     }
 
-    painter.setPen(QPen(QColor(140, 140, 140), 1));
+    painter.setPen(QPen(zeroLineColor, 1));
     painter.drawLine(meterRect.left() + 2, zeroY, meterRect.right() - 2, zeroY);
 
     const int peakY = yForValue(meterRect, m_peakValue);
-    painter.setPen(QPen(QColor(245, 245, 245), 2));
+    painter.setPen(QPen(peakLineColor, 2));
     painter.drawLine(meterRect.left() + 2, peakY, meterRect.right() - 2, peakY);
 
-    painter.setPen(QColor(65, 65, 65));
+    painter.setPen(secondaryText);
     const QFontMetrics fm(painter.font());
     for (double tickValue : std::as_const(tickValues)) {
         const int y = yForValue(meterRect, tickValue);
@@ -287,17 +326,51 @@ double AudioLevelMeter::levelForThreshold(double value) const
     return value;
 }
 
-QColor AudioLevelMeter::fillColorForValue(double value) const
+double AudioLevelMeter::hysteresisAmount() const
+{
+    const double maxMagnitude = qMax(qAbs(m_minimum), qAbs(m_maximum));
+    return maxMagnitude * (m_thresholdHysteresisPercent / 100.0);
+}
+
+void AudioLevelMeter::updateColorState(double value)
 {
     const double level = levelForThreshold(value);
     const double warning = qMin(m_warningThreshold, m_criticalThreshold);
     const double critical = qMax(m_warningThreshold, m_criticalThreshold);
+    const double hysteresis = hysteresisAmount();
 
-    if (level >= critical) {
+    switch (m_colorState) {
+    case ColorState::Normal:
+        if (level >= critical) {
+            m_colorState = ColorState::Critical;
+        } else if (level >= warning) {
+            m_colorState = ColorState::Warning;
+        }
+        break;
+    case ColorState::Warning:
+        if (level >= critical) {
+            m_colorState = ColorState::Critical;
+        } else if (level < warning - hysteresis) {
+            m_colorState = ColorState::Normal;
+        }
+        break;
+    case ColorState::Critical:
+        if (level < critical - hysteresis) {
+            m_colorState = (level >= warning) ? ColorState::Warning : ColorState::Normal;
+        }
+        break;
+    }
+}
+
+QColor AudioLevelMeter::fillColorForValue(double value) const
+{
+    Q_UNUSED(value);
+
+    if (m_colorState == ColorState::Critical) {
         return QColor(218, 74, 64);
     }
 
-    if (level >= warning) {
+    if (m_colorState == ColorState::Warning) {
         return QColor(228, 171, 48);
     }
 

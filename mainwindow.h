@@ -18,11 +18,12 @@
 #include <QStack>
 #include <QMap>
 
-#define DEFAULT_PACKET_FREQ_HZ 5000
-
 class AudioLevelMeter;
 class SerialManager;
 class DataParser;
+struct IndicatorDef;
+struct IndicatorStatusDef;
+struct GaugeDef;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -92,6 +93,7 @@ private slots:
     // Scope control
     void on_pushButtonPause_clicked();
     void on_pushButtonSave_clicked();
+    void on_pushButtonSelectConfig_clicked();
 
     void onFieldCheckStateChanged(QListWidgetItem *item);
 
@@ -108,7 +110,7 @@ private slots:
                             bool controlModeKnown);
 
     // Update Field List on Mask Received
-    void onMaskReceived(quint32 mask);
+    void onMaskReceived(quint32 mask1, quint32 mask2);
 
     // 定时刷新波形
     void updatePlot();
@@ -159,6 +161,7 @@ private:
         bool hasPendingValue = false;
     };
     QList<GaugeBinding> m_gaugeBindings;
+    QHash<QString, double> m_latestTelemetryValues;
 
     int m_currentMaxPoints;   // 当前显示的点数（滑动条值）
 
@@ -168,11 +171,24 @@ private:
 
     // Timer
     QVector<double> m_timeStamps;        // 每个采样点的时间（秒，相对）
-    qint64 m_packetCounter;          // 累计接收的包数（从0开始）
-    double m_packetIntervalSec;      // 包间隔秒数 = 1.0 / FREQ
+    quint64 m_lastTimestampTicks;
+    bool m_hasLastTimestamp;
 
     // Pause scope
     bool m_plotPaused;
+    bool m_plotDirty;
+    QVector<double> m_pausedTimeStamps;
+    QHash<QString, QVector<double>> m_pausedWaveData;
+
+    // Fault-triggered auto capture tuning.
+    // Adjust these values to change which faults trigger a capture,
+    // how wide the display window becomes, and how many packets to keep after the trigger.
+    quint32 m_faultAutoCaptureTriggerMask;
+    int m_faultAutoCaptureDisplayPoints;
+    int m_faultAutoCapturePacketsAfterTrigger;
+    bool m_faultAutoCapturePending;
+    bool m_faultAutoCaptureSkipCurrentPacket;
+    int m_faultAutoCapturePacketsRemaining;
 
     // CSV telemetry logging
     bool m_isLogging;
@@ -217,23 +233,34 @@ private:
     void sendCommand(const QString &cmd);
     void setupPlottingArea();           // 初始化动态示波器区域
     void setupGaugeArea();
-    void addGauge(const QString &fieldName,
-                  const QString &title,
-                  const QString &unit,
-                  double minimum,
-                  double maximum,
-                  double warningThreshold,
-                  double criticalThreshold,
-                  int divisionCount);
+    void addGauge(const GaugeDef &gauge);
+    void deriveGaugeThresholds(const GaugeDef &gauge,
+                               double *warningThreshold,
+                               double *criticalThreshold) const;
     void updateGauges(const QHash<QString, double> &values);
     void flushGaugeUpdates();
     void updateStatusIndicators();
+    void updateFaultAutoCaptureMask();
+    void applyIndicatorStatus(QLabel *label, const QString &text, const QString &colorName);
+    const IndicatorStatusDef* resolveIndicatorStatus(const IndicatorDef &indicator) const;
+    const IndicatorStatusDef* resolveModeIndicatorStatus(const IndicatorDef &indicator) const;
+    const IndicatorStatusDef* resolveConditionIndicatorStatus(const IndicatorDef &indicator) const;
+    const IndicatorStatusDef* resolveBitwiseIndicatorStatus(const IndicatorDef &indicator) const;
+    const IndicatorStatusDef* defaultIndicatorStatus(const IndicatorDef &indicator) const;
     void addOscilloscope(const QString &title = QString(), int index = -1);
     void removeOscilloscope(OscilloscopeWidget *osc);
     void updateAllMoveButtons();        // Update state of move up/down buttons for oscilloscopes
     void loadAvailableFields();         // 从 DataParser 加载字段列表到左侧
     void updateAllPlots();              // 刷新所有示波器
     void syncFieldCheckStates();
+    void capturePausedPlotSnapshot();
+    void setPlotPaused(bool paused);
+    void startFaultAutoCapture(quint32 triggeredMask);
+    void advanceFaultAutoCapture();
+    bool isReceiveTextByte(char byte) const;
+    void processReceiveTextChunk(const QByteArray &chunk, QByteArray &lineBuffer);
+    void flushReceiveTextLines(QByteArray &lineBuffer);
+    bool isLikelyReceiveTextLine(const QByteArray &line) const;
 
     void addTimeStamp(double offsetSec); // 添加时间戳
 

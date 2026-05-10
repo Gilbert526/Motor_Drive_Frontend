@@ -11,6 +11,11 @@
 #include <QListWidgetItem>
 #include <QDateTime>
 #include <QDir>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QSet>
+#include <QWheelEvent>
+#include <cmath>
 #include <utility>
 
 MainWindow::MainWindow(QWidget *parent):
@@ -23,6 +28,13 @@ MainWindow::MainWindow(QWidget *parent):
     m_maxWavePoints(20000),     // 最多存储20000点
     m_currentMaxPoints(500),
     m_plotPaused(false),
+    m_plotDirty(false),
+    m_faultAutoCaptureTriggerMask(0),
+    m_faultAutoCaptureDisplayPoints(5000),
+    m_faultAutoCapturePacketsAfterTrigger(50),
+    m_faultAutoCapturePending(false),
+    m_faultAutoCaptureSkipCurrentPacket(false),
+    m_faultAutoCapturePacketsRemaining(0),
     m_isLogging(false),
     m_syncingFromMask(false),
     m_lastSpeedValue(0.0),
@@ -31,9 +43,9 @@ MainWindow::MainWindow(QWidget *parent):
     m_timeManuallyEdited(false),
     m_updatingTargetType(false),
     m_recordHistory(true),
-    m_packetCounter(0),
     m_gaugeTimer(nullptr),
-    m_packetIntervalSec(1.0 / DEFAULT_PACKET_FREQ_HZ) {
+    m_lastTimestampTicks(0),
+    m_hasLastTimestamp(false) {
         ui->setupUi(this);
         setWindowTitle("Tuning Master");
 
@@ -45,6 +57,7 @@ MainWindow::MainWindow(QWidget *parent):
 
         // 创建数据解析器（主线程）
         m_dataParser = new DataParser(this);
+        updateFaultAutoCaptureMask();
 
         // 信号连接
         connect(m_serialManager, &SerialManager::portOpened, this, &MainWindow::handleSerialPortOpened);
@@ -52,11 +65,19 @@ MainWindow::MainWindow(QWidget *parent):
         connect(m_serialManager, &SerialManager::rawDataReceived, m_dataParser, &DataParser::parseData);
         connect(m_dataParser, &DataParser::parsedData, this, &MainWindow::handleNewData);
         connect(m_dataParser, &DataParser::packetStatusReceived, this, &MainWindow::handlePacketStatus);
+        connect(m_dataParser, &DataParser::configurationChanged, this, [this]() {
+            updateFaultAutoCaptureMask();
+            loadAvailableFields();
+            setupGaugeArea();
+            syncFieldCheckStates();
+            updateStatusIndicators();
+        });
 
         connect(m_dataParser, &DataParser::maskReceived, this, &MainWindow::onMaskReceived);
 
         // Display received message in text box
         connect(m_serialManager, &SerialManager::rawDataReceived, this, [this](const QByteArray &data) {
+            const QByteArray syncBytes = QByteArray::fromHex("AA55");
             static QByteArray buffer;           // Buffer for original data
             static QByteArray lineBuffer;       // Accumulated incomplete text lines
             buffer.append(data);
@@ -64,35 +85,33 @@ MainWindow::MainWindow(QWidget *parent):
             int idx = 0;
             while (idx < buffer.size()) {
                 // Look for the next frame header (0xAA 0x55)
-                int headerPos = buffer.indexOf(QByteArray::fromHex("AA55"), idx);
+                int headerPos = buffer.indexOf(syncBytes, idx);
                 if (headerPos == -1) {
-                    // Check for a split header: if the last byte is 0xAA, stop here
+                    // Preserve a partial sync header so the next chunk can complete a binary frame.
                     int endOfText = buffer.size();
-                    if (buffer.endsWith(char(0xAA))) {
-                        endOfText -= 1;
+                    const int partialHeaderLen = syncBytes.size() - 1;
+                    if (partialHeaderLen > 0 &&
+                        buffer.size() >= partialHeaderLen &&
+                        buffer.right(partialHeaderLen) == syncBytes.left(partialHeaderLen)) {
+                        endOfText -= partialHeaderLen;
                     }
                     if (endOfText > idx) {
-                        lineBuffer.append(buffer.mid(idx, endOfText - idx));
-                        idx = endOfText; 
+                        processReceiveTextChunk(buffer.mid(idx, endOfText - idx), lineBuffer);
+                        idx = endOfText;
                     }
                     break;
                 }
 
                 // Text data before the frame header (possibly incomplete line)
                 if (headerPos > idx) {
-                    lineBuffer.append(buffer.mid(idx, headerPos - idx));
+                    processReceiveTextChunk(buffer.mid(idx, headerPos - idx), lineBuffer);
                 }
 
-                // Process complete lines in lineBuffer (separated by newline characters)
-                int newlinePos;
-                while ((newlinePos = lineBuffer.indexOf('\n')) != -1) {
-                    QByteArray line = lineBuffer.left(newlinePos + 1); // Include newline character
-                    QString text = QString::fromUtf8(line).trimmed();
-                    if (!text.isEmpty()) {
-                        ui->plainTextEditReceive->appendPlainText(text);
-                        parseTuneResponse(text);   // Parse tuning response
-                    }
-                    lineBuffer.remove(0, newlinePos + 1);
+                if (buffer.size() >= headerPos + m_dataParser->minimumFrameSize() &&
+                    !m_dataParser->hasValidFrameMetadata(buffer, headerPos)) {
+                    processReceiveTextChunk(syncBytes.left(1), lineBuffer);
+                    idx = headerPos + 1;
+                    continue;
                 }
 
                 // Try to get the binary frame length
@@ -137,7 +156,7 @@ MainWindow::MainWindow(QWidget *parent):
         ui->comboBaud->addItems({"9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600"});
         ui->comboBaud->setCurrentText("115200");
 
-        ui->pushButtonRefresh->setText("Refresh");
+        ui->pushButtonRefresh->setText("⭮");
         ui->pushButtonRefresh->setToolTip("Refresh serial ports");
         ui->pushButtonSend->setText("➢");
         ui->pushButtonSend->setToolTip("Send command");
@@ -168,6 +187,9 @@ MainWindow::MainWindow(QWidget *parent):
 
         // Command line features
         ui->lineEditSend->installEventFilter(this);
+        ui->targetSlider->installEventFilter(this);
+        ui->timeSlider->installEventFilter(this);
+        ui->incrementSlider->installEventFilter(this);
 
         updateUiForSerialState(false);
 
@@ -182,6 +204,8 @@ MainWindow::MainWindow(QWidget *parent):
         ui->lineEditTarget->setToolTip("Manually enter target value (overrides slider)");
         ui->lineEditTime->setToolTip("Manually enter time duration in seconds (overrides time slider)");
         ui->pushButtonTargetSend->setToolTip("Send target command");
+        connect(ui->lineEditTarget, &QLineEdit::returnPressed,
+                this, &MainWindow::on_pushButtonTargetSend_clicked);
 
         // Initialize target slider
         updateTargetSliderLimits();
@@ -306,18 +330,25 @@ void MainWindow::setupGaugeArea()
     if (!gaugeLayout) {
         delete existingLayout;
         gaugeLayout = new QHBoxLayout(ui->gaugeArea);
-        gaugeLayout->setContentsMargins(0, 0, 0, 0);
-        gaugeLayout->setSpacing(8);
+        gaugeLayout->setContentsMargins(6, 0, 6, 0);
+        gaugeLayout->setSpacing(18);
         ui->gaugeArea->setLayout(gaugeLayout);
     }
 
     gaugeLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
     m_gaugeBindings.clear();
+    while (QLayoutItem *item = gaugeLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget()) {
+            widget->deleteLater();
+        }
+        delete item;
+    }
 
     gaugeLayout->setAlignment(Qt::AlignCenter);
     gaugeLayout->addStretch(1);
-    addGauge("VBATT", "Battery", "V", 0.0, 30.0, 14.0, 26.0, 6);
-    addGauge("RPM", "Speed", "RPM", -7000.0, 7000.0, 4000.0, 6000.0, 14);
+    for (const GaugeDef &gauge : m_dataParser->getGauges()) {
+        addGauge(gauge);
+    }
     gaugeLayout->addStretch(1);
 
     if (!m_gaugeTimer) {
@@ -327,30 +358,56 @@ void MainWindow::setupGaugeArea()
     }
 }
 
-void MainWindow::addGauge(const QString &fieldName,
-                          const QString &title,
-                          const QString &unit,
-                          double minimum,
-                          double maximum,
-                          double warningThreshold,
-                          double criticalThreshold,
-                          int divisionCount)
+void MainWindow::addGauge(const GaugeDef &gauge)
 {
     QHBoxLayout *gaugeLayout = qobject_cast<QHBoxLayout*>(ui->gaugeArea->layout());
     if (!gaugeLayout) {
         return;
     }
 
+    double warningThreshold = gauge.minimum + (gauge.maximum - gauge.minimum) * 0.65;
+    double criticalThreshold = gauge.minimum + (gauge.maximum - gauge.minimum) * 0.85;
+    deriveGaugeThresholds(gauge, &warningThreshold, &criticalThreshold);
+
     AudioLevelMeter *meter = new AudioLevelMeter(ui->gaugeArea);
-    meter->setTitle(title);
-    meter->setUnit(unit);
-    meter->setRange(minimum, maximum);
+    meter->setTitle(gauge.name);
+    meter->setUnit(gauge.topDisplayUnit);
+    meter->setRange(gauge.minimum, gauge.maximum);
     meter->setThresholds(warningThreshold, criticalThreshold);
-    meter->setDivisionCount(divisionCount);
+    meter->setThresholdHysteresisPercent(gauge.hysteresis);
+    meter->setDivisionCount(gauge.divisions);
     meter->setPeakHoldMs(1000);
 
     gaugeLayout->addWidget(meter, 0);
-    m_gaugeBindings.append({fieldName, meter});
+    m_gaugeBindings.append({gauge.dataSource, meter});
+}
+
+void MainWindow::deriveGaugeThresholds(const GaugeDef &gauge,
+                                       double *warningThreshold,
+                                       double *criticalThreshold) const
+{
+    auto lowerBoundMagnitudeForColor = [&gauge](const QString &color) -> std::optional<double> {
+        std::optional<double> best;
+        for (const GaugeThresholdDef &threshold : gauge.thresholds) {
+            if (threshold.color.compare(color, Qt::CaseInsensitive) != 0 || !threshold.hasLowerBound) {
+                continue;
+            }
+            const double magnitude = qAbs(threshold.lowerBound);
+            if (!best.has_value() || magnitude < best.value()) {
+                best = magnitude;
+            }
+        }
+        return best;
+    };
+
+    const std::optional<double> warning = lowerBoundMagnitudeForColor("yellow");
+    const std::optional<double> critical = lowerBoundMagnitudeForColor("red");
+    if (warning.has_value()) {
+        *warningThreshold = warning.value();
+    }
+    if (critical.has_value()) {
+        *criticalThreshold = critical.value();
+    }
 }
 
 void MainWindow::updateGauges(const QHash<QString, double> &values)
@@ -371,66 +428,225 @@ void MainWindow::flushGaugeUpdates()
             binding.hasPendingValue = false;
         }
     }
+
+    updateStatusIndicators();
 }
 
 void MainWindow::updateStatusIndicators()
 {
-    const auto setIndicator = [](QLabel *label, bool active, const QColor &activeColor) {
+    if (!m_dataParser) {
+        return;
+    }
+
+    QSet<int> configuredIndicators;
+    for (const IndicatorDef &indicator : m_dataParser->getIndicators()) {
+        configuredIndicators.insert(indicator.indicator);
+        QLabel *label = findChild<QLabel*>(QString("statusLed%1").arg(indicator.indicator));
         if (!label) {
-            return;
+            continue;
         }
 
-        if (active) {
-            label->setStyleSheet(QString(
-                "QLabel {"
-                " background-color: %1;"
-                " color: white;"
-                " border: 1px solid %2;"
-                " border-radius: 4px;"
-                " font-weight: bold;"
-                "}"
-            ).arg(activeColor.name(), activeColor.darker(130).name()));
+        const IndicatorStatusDef *status = resolveIndicatorStatus(indicator);
+        if (!status) {
+            status = defaultIndicatorStatus(indicator);
+        }
+
+        if (status) {
+            applyIndicatorStatus(label, status->displayText, status->color);
         } else {
-            label->setStyleSheet(
-                "QLabel {"
-                " background-color: #d7d9dc;"
-                " color: #555;"
-                " border: 1px solid #aeb4ba;"
-                " border-radius: 4px;"
-                " font-weight: normal;"
-                "}"
-            );
+            applyIndicatorStatus(label, indicator.name, "off");
         }
-    };
+    }
 
-    const quint8 focLinear = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_FOC_LINEAR);
-    const quint8 focDpwm = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_FOC_DPWM);
-    const quint8 vvvf = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_VVVF);
-    const quint8 protection = static_cast<quint8>(DataParser::MotorControlMode::MOTOR_PROTECTION);
+    for (int i = 0; i <= 8; ++i) {
+        if (!configuredIndicators.contains(i)) {
+            QLabel *label = findChild<QLabel*>(QString("statusLed%1").arg(i));
+            applyIndicatorStatus(label, "Reserve", "off");
+        }
+    }
+}
 
-    const bool focActive = m_telemetryStatus.controlModeKnown &&
-                           (m_telemetryStatus.controlMode == focLinear ||
-                            m_telemetryStatus.controlMode == focDpwm);
-    const bool vvvfActive = m_telemetryStatus.controlModeKnown &&
-                            m_telemetryStatus.controlMode == vvvf;
-    const bool protectionActive = m_telemetryStatus.controlModeKnown &&
-                                  m_telemetryStatus.controlMode == protection;
-    const bool overcurrentActive = (m_telemetryStatus.errorCode & DataParser::ERROR_OVERCURRENT) != 0;
-    const bool undervoltageActive = (m_telemetryStatus.errorCode & DataParser::ERROR_UNDERVOLTAGE) != 0;
-    const quint32 configErrorMask = DataParser::ERROR_PWM_CONFIG |
-                                    DataParser::ERROR_ADC_CONFIG |
-                                    DataParser::ERROR_DMA_CONFIG |
-                                    DataParser::ERROR_TIM_CONFIG |
-                                    DataParser::ERROR_ENCODER_CONFIG |
-                                    DataParser::ERROR_FOC_CONFIG;
-    const bool configErrorActive = (m_telemetryStatus.errorCode & configErrorMask) != 0;
+void MainWindow::updateFaultAutoCaptureMask()
+{
+    if (!m_dataParser) {
+        m_faultAutoCaptureTriggerMask = 0;
+        return;
+    }
 
-    setIndicator(ui->labelFoc, focActive, QColor(36, 166, 78));
-    setIndicator(ui->labelVvvf, vvvfActive, QColor(36, 166, 78));
-    setIndicator(ui->labelProtect, protectionActive, QColor(210, 64, 55));
-    setIndicator(ui->labelOvercurrent, overcurrentActive, QColor(210, 64, 55));
-    setIndicator(ui->labelUndervolt, undervoltageActive, QColor(210, 64, 55));
-    setIndicator(ui->labelConfig, configErrorActive, QColor(210, 64, 55));
+    m_faultAutoCaptureTriggerMask = m_dataParser->getErrorMaskForType("overcurrent") |
+                                    m_dataParser->getErrorMaskForType("undervoltage");
+}
+
+void MainWindow::applyIndicatorStatus(QLabel *label, const QString &text, const QString &colorName)
+{
+    if (!label) {
+        return;
+    }
+
+    label->setText(text);
+
+    QColor activeColor;
+    const QString normalizedColor = colorName.trimmed().toLower();
+    if (normalizedColor == "green") {
+        activeColor = QColor(36, 166, 78);
+    } else if (normalizedColor == "yellow") {
+        activeColor = QColor(228, 171, 48);
+    } else if (normalizedColor == "red") {
+        activeColor = QColor(210, 64, 55);
+    } else if (normalizedColor != "off") {
+        activeColor = QColor(colorName);
+    }
+
+    if (!activeColor.isValid()) {
+        label->setStyleSheet(
+            "QLabel {"
+            " background-color: #d7d9dc;"
+            " color: #555;"
+            " border: 1px solid #aeb4ba;"
+            " border-radius: 4px;"
+            " font-weight: normal;"
+            "}"
+        );
+        return;
+    }
+
+    const QColor textColor = activeColor.lightness() > 170 ? QColor(35, 35, 35) : QColor(Qt::white);
+    label->setStyleSheet(QString(
+        "QLabel {"
+        " background-color: %1;"
+        " color: %2;"
+        " border: 1px solid %3;"
+        " border-radius: 4px;"
+        " font-weight: bold;"
+        "}"
+    ).arg(activeColor.name(), textColor.name(), activeColor.darker(130).name()));
+}
+
+const IndicatorStatusDef* MainWindow::resolveIndicatorStatus(const IndicatorDef &indicator) const
+{
+    if (indicator.type == "mode") {
+        return resolveModeIndicatorStatus(indicator);
+    }
+    if (indicator.type == "condition") {
+        return resolveConditionIndicatorStatus(indicator);
+    }
+    if (indicator.type == "bitwise") {
+        return resolveBitwiseIndicatorStatus(indicator);
+    }
+    return defaultIndicatorStatus(indicator);
+}
+
+const IndicatorStatusDef* MainWindow::resolveModeIndicatorStatus(const IndicatorDef &indicator) const
+{
+    if (!m_dataParser || !m_telemetryStatus.controlModeKnown) {
+        return defaultIndicatorStatus(indicator);
+    }
+
+    for (const IndicatorStatusDef &status : indicator.statuses) {
+        if (!status.hasValue) {
+            continue;
+        }
+
+        if (status.numericValue.has_value()) {
+            if (m_telemetryStatus.controlMode == static_cast<quint8>(status.numericValue.value())) {
+                return &status;
+            }
+            continue;
+        }
+
+        const std::optional<quint8> modeValue = m_dataParser->getControlModeValueForName(status.valueName);
+        if (modeValue.has_value() && m_telemetryStatus.controlMode == modeValue.value()) {
+            return &status;
+        }
+    }
+
+    return defaultIndicatorStatus(indicator);
+}
+
+const IndicatorStatusDef* MainWindow::resolveConditionIndicatorStatus(const IndicatorDef &indicator) const
+{
+    if (indicator.dataSource.compare("Null", Qt::CaseInsensitive) == 0 ||
+        !m_latestTelemetryValues.contains(indicator.dataSource)) {
+        return defaultIndicatorStatus(indicator);
+    }
+
+    const double value = m_latestTelemetryValues.value(indicator.dataSource);
+
+    for (const IndicatorStatusDef &status : indicator.statuses) {
+        if (status.hasLowerBound && status.hasUpperBound &&
+            qFuzzyCompare(status.lowerBound + 1.0, status.upperBound + 1.0) &&
+            qFuzzyCompare(value + 1.0, status.lowerBound + 1.0)) {
+            return &status;
+        }
+    }
+
+    for (const IndicatorStatusDef &status : indicator.statuses) {
+        if (!status.hasLowerBound && !status.hasUpperBound) {
+            continue;
+        }
+        const bool aboveLower = !status.hasLowerBound || value >= status.lowerBound;
+        const bool belowUpper = !status.hasUpperBound || value < status.upperBound;
+        if (aboveLower && belowUpper) {
+            return &status;
+        }
+    }
+
+    return defaultIndicatorStatus(indicator);
+}
+
+const IndicatorStatusDef* MainWindow::resolveBitwiseIndicatorStatus(const IndicatorDef &indicator) const
+{
+    quint64 sourceValue = 0;
+    if (indicator.dataSource == "errors") {
+        sourceValue = m_telemetryStatus.errorCode;
+    } else if (m_latestTelemetryValues.contains(indicator.dataSource)) {
+        sourceValue = static_cast<quint64>(m_latestTelemetryValues.value(indicator.dataSource));
+    } else {
+        return defaultIndicatorStatus(indicator);
+    }
+
+    QList<const IndicatorStatusDef*> matches;
+    for (const IndicatorStatusDef &status : indicator.statuses) {
+        if (status.hasBit && (sourceValue & (1ULL << status.bit))) {
+            matches.append(&status);
+        }
+    }
+
+    if (matches.isEmpty()) {
+        return defaultIndicatorStatus(indicator);
+    }
+    if (matches.size() == 1) {
+        return matches.first();
+    }
+
+    double totalDuration = 0.0;
+    for (const IndicatorStatusDef *status : matches) {
+        totalDuration += qMax(0.05, status->timeSec);
+    }
+    if (totalDuration <= 0.0) {
+        return matches.first();
+    }
+
+    const double cycleTime = std::fmod(QDateTime::currentMSecsSinceEpoch() / 1000.0, totalDuration);
+    double accumulator = 0.0;
+    for (const IndicatorStatusDef *status : matches) {
+        accumulator += qMax(0.05, status->timeSec);
+        if (cycleTime < accumulator) {
+            return status;
+        }
+    }
+
+    return matches.first();
+}
+
+const IndicatorStatusDef* MainWindow::defaultIndicatorStatus(const IndicatorDef &indicator) const
+{
+    for (const IndicatorStatusDef &status : indicator.statuses) {
+        if (!status.hasValue && !status.hasBit && !status.hasLowerBound && !status.hasUpperBound) {
+            return &status;
+        }
+    }
+    return nullptr;
 }
 
 void MainWindow::addOscilloscope(const QString &title, int index) {
@@ -777,6 +993,27 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
             return true;
         }
     }
+
+    QSlider *slider = qobject_cast<QSlider*>(obj);
+    if (slider &&
+        (slider == ui->targetSlider || slider == ui->timeSlider || slider == ui->incrementSlider) &&
+        event->type() == QEvent::Wheel) {
+        QWheelEvent *wheelEvent = static_cast<QWheelEvent*>(event);
+        const int deltaY = wheelEvent->angleDelta().y();
+        if (deltaY == 0) {
+            return true;
+        }
+
+        const int direction = (deltaY > 0) ? 1 : -1;
+        const int step = qMax(1, slider->singleStep());
+        const int nextValue = qBound(slider->minimum(),
+                                     slider->value() + direction * step,
+                                     slider->maximum());
+        slider->setValue(nextValue);
+        wheelEvent->accept();
+        return true;
+    }
+
     return QMainWindow::eventFilter(obj, event);
 }
 
@@ -792,30 +1029,53 @@ void MainWindow::on_sampleSlider_valueChanged(int value) {
     // 3. Update your label and internal variables
     m_currentMaxPoints = snappedValue;
     m_sampleLabel->setText(QString::number(snappedValue));
+    m_plotDirty = true;
     updateAllPlots();
 }
 
 void MainWindow::updateAllPlots() {
+    const QHash<QString, QVector<double>> &plotData = m_plotPaused ? m_pausedWaveData : m_waveData;
+    const QVector<double> &plotTimeStamps = m_plotPaused ? m_pausedTimeStamps : m_timeStamps;
+
     for (OscilloscopeWidget *osc : m_oscilloscopes) {
-        osc->updatePlot(m_waveData, m_timeStamps, m_currentMaxPoints);
+        osc->updatePlot(plotData, plotTimeStamps, m_currentMaxPoints);
     }
+    m_plotDirty = false;
 }
 
 void MainWindow::updatePlot() {
-    if (!m_plotPaused) {
-        updateAllPlots();
-    }
+    if (m_plotPaused || !m_plotDirty) return;
+    updateAllPlots();
 }
 
 // ==================== 数据处理 ====================
 void MainWindow::handleNewData(const QHash<QString, double> &values) {
-    // Calculate current time
-    double currentTime = m_packetCounter * m_packetIntervalSec;
-    m_packetCounter++;
+    const quint64 timestampTicks = static_cast<quint64>(values.value(DataParser::TIMESTAMP_FIELD, 0.0));
+
+    if (m_hasLastTimestamp && timestampTicks < m_lastTimestampTicks) {
+        m_timeStamps.clear();
+        m_waveData.clear();
+        m_pausedTimeStamps.clear();
+        m_pausedWaveData.clear();
+        m_latestTelemetryValues.clear();
+    }
+
+    m_lastTimestampTicks = timestampTicks;
+    m_hasLastTimestamp = true;
+
+    const double currentTime = static_cast<double>(timestampTicks) / 275000000.0;
     addTimeStamp(currentTime);
+    for (auto it = values.cbegin(); it != values.cend(); ++it) {
+        if (it.key() != DataParser::TIMESTAMP_FIELD) {
+            m_latestTelemetryValues[it.key()] = it.value();
+        }
+    }
     // 追加到波形缓冲区
     for (auto it = values.begin(); it != values.end(); ++it) {
         const QString &field = it.key();
+        if (field == DataParser::TIMESTAMP_FIELD) {
+            continue;
+        }
         double val = it.value();
         QVector<double> &vec = m_waveData[field];
         vec.append(val);
@@ -823,12 +1083,108 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
             vec.remove(0, vec.size() - m_maxWavePoints);
         }
     }
+    m_plotDirty = true;
+    advanceFaultAutoCapture();
     updateGauges(values);
+    updateStatusIndicators();
     // 可选：在接收区显示关键数值（调试用，可注释）
     writeTelemetryLogRow(values);
     // if (values.contains("RPM")) {
     //     ui->plainTextEditReceive->appendPlainText(QString("RPM: %1").arg(values["RPM"], 0, 'f', 1));
     // }
+}
+
+void MainWindow::capturePausedPlotSnapshot()
+{
+    m_pausedTimeStamps.clear();
+    m_pausedWaveData.clear();
+
+    if (m_timeStamps.isEmpty()) {
+        return;
+    }
+
+    const int totalPoints = m_timeStamps.size();
+    const int startIdx = qMax(0, totalPoints - m_currentMaxPoints);
+    const int pointsToShow = totalPoints - startIdx;
+    if (pointsToShow <= 0) {
+        return;
+    }
+
+    m_pausedTimeStamps = m_timeStamps.mid(startIdx, pointsToShow);
+
+    for (auto it = m_waveData.cbegin(); it != m_waveData.cend(); ++it) {
+        const QVector<double> &series = it.value();
+        if (series.size() < totalPoints) {
+            continue;
+        }
+
+        m_pausedWaveData.insert(it.key(), series.mid(startIdx, pointsToShow));
+    }
+}
+
+void MainWindow::setPlotPaused(bool paused)
+{
+    if (m_plotPaused == paused) {
+        return;
+    }
+
+    m_plotPaused = paused;
+    ui->pushButtonPause->setText(m_plotPaused ? "▶️" : "⏸️");
+
+    if (m_plotPaused) {
+        capturePausedPlotSnapshot();
+    } else {
+        m_pausedTimeStamps.clear();
+        m_pausedWaveData.clear();
+    }
+
+    updateAllPlots();
+}
+
+void MainWindow::startFaultAutoCapture(quint32 triggeredMask)
+{
+    Q_UNUSED(triggeredMask);
+
+    if (m_plotPaused) {
+        return;
+    }
+
+    const int sliderMinimum = m_sampleSlider->minimum();
+    const int sliderMaximum = m_sampleSlider->maximum();
+    const int requestedPoints = qBound(sliderMinimum, m_faultAutoCaptureDisplayPoints, sliderMaximum);
+
+    m_faultAutoCapturePending = true;
+    m_faultAutoCaptureSkipCurrentPacket = true;
+    m_faultAutoCapturePacketsRemaining = qMax(0, m_faultAutoCapturePacketsAfterTrigger);
+
+    if (m_currentMaxPoints != requestedPoints) {
+        m_sampleSlider->setValue(requestedPoints);
+    } else {
+        m_plotDirty = true;
+        updateAllPlots();
+    }
+}
+
+void MainWindow::advanceFaultAutoCapture()
+{
+    if (!m_faultAutoCapturePending || m_plotPaused) {
+        return;
+    }
+
+    if (m_faultAutoCaptureSkipCurrentPacket) {
+        m_faultAutoCaptureSkipCurrentPacket = false;
+        return;
+    }
+
+    if (m_faultAutoCapturePacketsRemaining > 0) {
+        --m_faultAutoCapturePacketsRemaining;
+    }
+
+    if (m_faultAutoCapturePacketsRemaining <= 0) {
+        m_faultAutoCapturePending = false;
+        m_faultAutoCaptureSkipCurrentPacket = false;
+        setPlotPaused(true);
+    }
 }
 
 void MainWindow::handlePacketStatus(quint32 errorCode,
@@ -858,6 +1214,11 @@ void MainWindow::handlePacketStatus(quint32 errorCode,
         updateStatusIndicators();
     }
 
+    const quint32 newlyTriggeredErrors = (~previousErrorCode) & errorCode & m_faultAutoCaptureTriggerMask;
+    if (newlyTriggeredErrors != 0) {
+        startFaultAutoCapture(newlyTriggeredErrors);
+    }
+
     if (errorCode == 0) {
         return;
     }
@@ -872,16 +1233,18 @@ void MainWindow::handlePacketStatus(quint32 errorCode,
     statusBar()->showMessage(message, 5000);
 }
 
-void MainWindow::onMaskReceived(quint32 mask) {
+void MainWindow::onMaskReceived(quint32 mask1, quint32 mask2) {
     if (m_syncingFromMask) return;
     m_syncingFromMask = true;
 
-    static quint32 lastMask = 0;
-    if (mask == lastMask) {
+    static quint32 lastMask1 = 0;
+    static quint32 lastMask2 = 0;
+    if (mask1 == lastMask1 && mask2 == lastMask2) {
         m_syncingFromMask = false;   // 关键：必须重置标志
         return;
     }
-    lastMask = mask;
+    lastMask1 = mask1;
+    lastMask2 = mask2;
 
     // 遍历字段列表中的每个项
     for (int i = 0; i < m_fieldList->count(); ++i) {
@@ -889,8 +1252,7 @@ void MainWindow::onMaskReceived(quint32 mask) {
         if (!item) continue;
         // 获取字段名对应的掩码位（需要字段定义信息）
         QString fieldName = item->text();
-        quint32 bitMask = m_dataParser->getMaskForField(fieldName);
-        bool shouldCheck = (mask & bitMask) != 0;
+        bool shouldCheck = m_dataParser->isFieldEnabled(fieldName, mask1, mask2);
         if (shouldCheck != (item->checkState() == Qt::Checked)) {
             item->setCheckState(shouldCheck ? Qt::Checked : Qt::Unchecked);
         }
@@ -900,6 +1262,69 @@ void MainWindow::onMaskReceived(quint32 mask) {
 }
 
 // ==================== 串口处理 ====================
+bool MainWindow::isReceiveTextByte(char byte) const {
+    const uchar value = static_cast<uchar>(byte);
+    return byte == '\r' || byte == '\n' || byte == '\t' || (value >= 0x20 && value <= 0x7E);
+}
+
+void MainWindow::processReceiveTextChunk(const QByteArray &chunk, QByteArray &lineBuffer) {
+    for (char byte : chunk) {
+        if (isReceiveTextByte(byte)) {
+            lineBuffer.append(byte);
+            if (byte == '\n') {
+                flushReceiveTextLines(lineBuffer);
+            }
+            continue;
+        }
+
+        flushReceiveTextLines(lineBuffer);
+        lineBuffer.clear();
+    }
+
+    if (lineBuffer.size() > 1024 && lineBuffer.indexOf('\n') == -1) {
+        lineBuffer.clear();
+    }
+}
+
+void MainWindow::flushReceiveTextLines(QByteArray &lineBuffer) {
+    int newlinePos = -1;
+    while ((newlinePos = lineBuffer.indexOf('\n')) != -1) {
+        const QByteArray line = lineBuffer.left(newlinePos + 1);
+        const QString text = QString::fromLatin1(line).trimmed();
+        if (!text.isEmpty() && isLikelyReceiveTextLine(line)) {
+            ui->plainTextEditReceive->appendPlainText(text);
+            parseTuneResponse(text);
+        }
+        lineBuffer.remove(0, newlinePos + 1);
+    }
+}
+
+bool MainWindow::isLikelyReceiveTextLine(const QByteArray &line) const {
+    int letterCount = 0;
+    int digitCount = 0;
+    int whitespaceCount = 0;
+    int punctuationCount = 0;
+
+    for (char byte : line) {
+        if (byte == '\r' || byte == '\n' || byte == '\t' || byte == ' ') {
+            ++whitespaceCount;
+        } else if ((byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z')) {
+            ++letterCount;
+        } else if (byte >= '0' && byte <= '9') {
+            ++digitCount;
+        } else {
+            ++punctuationCount;
+        }
+    }
+
+    const int contentCount = letterCount + digitCount + punctuationCount;
+    if (contentCount == 0 || letterCount == 0) {
+        return false;
+    }
+
+    return punctuationCount <= letterCount + digitCount + whitespaceCount;
+}
+
 void MainWindow::refreshSerialPorts() {
     ui->comboPort->clear();
     foreach (const QSerialPortInfo &info, QSerialPortInfo::availablePorts()) {
@@ -911,12 +1336,12 @@ void MainWindow::refreshSerialPorts() {
 
 void MainWindow::updateUiForSerialState(bool isOpen) {
     if (isOpen) {
-        ui->pushButtonStartToggle->setText("Stop");
+        ui->pushButtonStartToggle->setText("⏹");
         ui->comboPort->setEnabled(false);
         ui->comboBaud->setEnabled(false);
         ui->pushButtonRefresh->setEnabled(false);
     } else {
-        ui->pushButtonStartToggle->setText("Start");
+        ui->pushButtonStartToggle->setText("▶");
         ui->comboPort->setEnabled(true);
         ui->comboBaud->setEnabled(true);
         ui->pushButtonRefresh->setEnabled(true);
@@ -935,7 +1360,7 @@ void MainWindow::sendCommand(const QString &cmd) {
 void MainWindow::on_pushButtonStartToggle_clicked() {
     if (m_serialManager->thread() == nullptr) return;
 
-    if (ui->pushButtonStartToggle->text() == "Stop") {
+    if (ui->pushButtonStartToggle->text() == "⏹") {
         QMetaObject::invokeMethod(m_serialManager, "closeSerialPort", Qt::QueuedConnection);
     } else {
         QString portName = ui->comboPort->currentText();
@@ -997,7 +1422,7 @@ void MainWindow::on_comboBoxTargetSelection_currentIndexChanged(int) {
         if (oldType == "Speed") {
             oldValue = ui->targetSlider->value();
         } else {
-            oldValue = ui->targetSlider->value() / 10.0;
+            oldValue = ui->targetSlider->value() / 1000.0;
         }
     }
     if (oldType == "Speed") {
@@ -1034,8 +1459,8 @@ void MainWindow::on_targetSlider_valueChanged(int value) {
         double realValue = value;
         ui->lineEditTarget->setText(QString::number(realValue, 'f', 0));
     } else {
-        double realValue = value / 10.0;
-        ui->lineEditTarget->setText(QString::number(realValue, 'f', 1));
+        double realValue = value / 1000.0;
+        ui->lineEditTarget->setText(QString::number(realValue, 'f', 3));
     }
 }
 
@@ -1047,17 +1472,17 @@ void MainWindow::on_lineEditTarget_editingFinished() {
     // Only limit the range, do not round
     bool isSpeed = (ui->comboBoxTargetSelection->currentText() == "Speed");
     if (isSpeed) {
-        val = qBound(-5000.0, val, 5000.0);
+        val = qBound(-9000.0, val, 9000.0);
     } else {
-        val = qBound(-10.0, val, 10.0);
+        val = qBound(0.0, val, 0.1);
     }
 
-    // Move the slider to the nearest step value (speed in tens, torque in 0.1 increments)
+    // Move the slider to the nearest step value (speed in hundreds, torque in 0.001 increments)
     int sliderValue;
     if (isSpeed) {
         sliderValue = static_cast<int>(qRound(val / 100.0) * 100); // Round to nearest 100
     } else {
-        sliderValue = static_cast<int>(qRound(val * 10.0));
+        sliderValue = static_cast<int>(qRound(val * 1000.0));
     }
     ui->targetSlider->blockSignals(true);
     ui->targetSlider->setValue(sliderValue);
@@ -1100,16 +1525,16 @@ void MainWindow::on_pushButtonTargetSend_clicked() {
         if (!ok) return;
         // Clamp again to ensure the range
         if (mode == "speed") {
-            target = qBound(-5000.0, target, 5000.0);
+            target = qBound(-9000.0, target, 9000.0);
         } else {
-            target = qBound(-10.0, target, 10.0);
+            target = qBound(0.0, target, 0.1);
         }
     } else {
         // Use the value from the slider
         if (mode == "speed") {
             target = ui->targetSlider->value();
         } else {
-            target = ui->targetSlider->value() / 10.0;
+            target = ui->targetSlider->value() / 1000.0;
         }
     }
     if (m_timeManuallyEdited) {
@@ -1245,12 +1670,13 @@ void MainWindow::on_comboBoxTuneParameter_currentIndexChanged(int index) {
 }
 
 void MainWindow::on_pushButtonPause_clicked() {
-    m_plotPaused = !m_plotPaused;
-    ui->pushButtonPause->setText(m_plotPaused ? "▶️" : "⏸️");
     if (!m_plotPaused) {
-        // 如果从暂停恢复，立即刷新一次
-        updateAllPlots();
+        m_faultAutoCapturePending = false;
+        m_faultAutoCaptureSkipCurrentPacket = false;
+        m_faultAutoCapturePacketsRemaining = 0;
     }
+
+    setPlotPaused(!m_plotPaused);
 }
 
 void MainWindow::on_pushButtonSave_clicked() {
@@ -1262,6 +1688,42 @@ void MainWindow::on_pushButtonSave_clicked() {
     if (!startTelemetryLogging()) {
         ui->pushButtonSave->setChecked(false);
     }
+}
+
+void MainWindow::on_pushButtonSelectConfig_clicked() {
+    const QString startDir = m_dataParser && !m_dataParser->configurationPath().isEmpty()
+                                 ? QFileInfo(m_dataParser->configurationPath()).absolutePath()
+                                 : QDir::currentPath();
+    const QString filePath = QFileDialog::getOpenFileName(this,
+                                                          "Select Telemetry Configuration",
+                                                          startDir,
+                                                          "JSON configuration (*.json);;All files (*)");
+    if (filePath.isEmpty()) {
+        return;
+    }
+
+    const bool restartLogging = m_isLogging;
+    if (restartLogging) {
+        stopTelemetryLogging();
+    }
+
+    QString errorMessage;
+    if (!m_dataParser->loadConfiguration(filePath, &errorMessage)) {
+        QMessageBox::critical(this, "Configuration Error", errorMessage);
+        return;
+    }
+
+    m_timeStamps.clear();
+    m_waveData.clear();
+    m_pausedTimeStamps.clear();
+    m_pausedWaveData.clear();
+    m_latestTelemetryValues.clear();
+    m_hasLastTimestamp = false;
+    updateAllPlots();
+    if (restartLogging && !startTelemetryLogging()) {
+        ui->pushButtonSave->setChecked(false);
+    }
+    statusBar()->showMessage("Loaded telemetry configuration: " + filePath, 5000);
 }
 
 bool MainWindow::startTelemetryLogging() {
@@ -1278,7 +1740,7 @@ bool MainWindow::startTelemetryLogging() {
 
     m_logFields = m_dataParser->getFieldNames();
     m_logStream.setDevice(&m_logFile);
-    m_logStream << "timestamp,error_code,error_flags,control_mode,control_mode_name";
+    m_logStream << "mcu_timestamp,error_code,error_flags,control_mode,control_mode_name";
     for (const QString &field : m_logFields) {
         m_logStream << "," << field;
     }
@@ -1312,7 +1774,9 @@ void MainWindow::writeTelemetryLogRow(const QHash<QString, double> &values) {
         return;
     }
 
-    m_logStream << QDateTime::currentDateTime().toString(Qt::ISODateWithMs)
+    const quint64 timestampTicks = static_cast<quint64>(values.value(DataParser::TIMESTAMP_FIELD, 0.0));
+
+    m_logStream << QString::number(timestampTicks)
                 << "," << m_telemetryStatus.errorCode
                 << "," << m_telemetryStatus.errorNames.join("|")
                 << "," << static_cast<int>(m_telemetryStatus.controlMode)
@@ -1360,6 +1824,9 @@ void MainWindow::onFieldCheckStateChanged(QListWidgetItem *item) {
     
     // 构造命令字符串
     QString cmdName = m_dataParser->getCommandNameForField(fieldName);
+    if (cmdName.isEmpty()) {
+        return;
+    }
     QString cmd = checked ? QString("log add %1\r\n").arg(cmdName)
                           : QString("log rm %1\r\n").arg(cmdName);
     sendCommand(cmd);   // 复用已有的 sendCommand
@@ -1387,7 +1854,10 @@ void MainWindow::syncFieldCheckStates()
     for (int i = 0; i < m_fieldList->count(); ++i) {
         QListWidgetItem *item = m_fieldList->item(i);
         if (item->checkState() == Qt::Checked) {
-            sendCommand(QString("log add %1\r\n").arg(m_dataParser->getCommandNameForField(item->text())));
+            const QString cmdName = m_dataParser->getCommandNameForField(item->text());
+            if (!cmdName.isEmpty()) {
+                sendCommand(QString("log add %1\r\n").arg(cmdName));
+            }
         }
     }
 }
@@ -1403,11 +1873,11 @@ void MainWindow::addTimeStamp(double offsetSec)
 void MainWindow::updateTargetSliderLimits() {
     bool isSpeed = (ui->comboBoxTargetSelection->currentText() == "Speed");
     if (isSpeed) {
-        ui->targetSlider->setRange(-5000, 5000);
+        ui->targetSlider->setRange(-9000, 9000);
         ui->targetSlider->setSingleStep(100);
         ui->targetLabelPrefix->setText("Speed");
     } else {
-        ui->targetSlider->setRange(-100, 100);   // -100 → -10.0, 100 → 10.0
+        ui->targetSlider->setRange(0, 100);   // 0 -> 0.0, 100 -> 0.100
         ui->targetSlider->setSingleStep(1);
         ui->targetLabelPrefix->setText("Torque");
     }
@@ -1427,7 +1897,7 @@ double MainWindow::getCurrentTargetValue() const {
     if (isSpeed) {
         return ui->targetSlider->value();
     } else {
-        return ui->targetSlider->value() / 10.0;
+        return ui->targetSlider->value() / 1000.0;
     }
 }
 
@@ -1436,12 +1906,12 @@ void MainWindow::setTargetValue(double val, bool markAsEdited) {
 
     bool isSpeed = (ui->comboBoxTargetSelection->currentText() == "Speed");
     if (isSpeed) {
-        val = qBound(-5000.0, val, 5000.0);
+        val = qBound(-9000.0, val, 9000.0);
         int sliderVal = static_cast<int>(qRound(val / 100.0) * 100);
         ui->targetSlider->setValue(sliderVal);
     } else {
-        val = qBound(-10.0, val, 10.0);
-        int sliderVal = static_cast<int>(qRound(val * 10.0));
+        val = qBound(0.0, val, 0.1);
+        int sliderVal = static_cast<int>(qRound(val * 1000.0));
         ui->targetSlider->setValue(sliderVal);
     }
     // Format display: remove trailing zeros, keep sufficient precision (up to 6 decimal places)
