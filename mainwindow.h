@@ -65,7 +65,7 @@ private slots:
     void on_pushButtonAlign_clicked();
     void on_pushButtonAudible_clicked();
     void on_pushButtonReset_clicked();
-    void on_pushButtonFocManual_clicked();
+    void on_pushButtonResetConnection_clicked();
     // Logging
     void on_pushButtonPreset1_clicked();
     void on_pushButtonPreset2_clicked();
@@ -74,6 +74,7 @@ private slots:
     void on_pushButtonRemoveAll_clicked();
     void on_pushButtonBin_clicked();
     void on_pushButtonUtf8_clicked();
+    void on_pushButtonSimStart_clicked();
     // Setting Targets
     void on_comboBoxTargetSelection_currentIndexChanged(int index);
     void on_targetSlider_valueChanged(int value);
@@ -130,6 +131,7 @@ private slots:
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
 private:
     Ui::MainWindow *ui;
@@ -168,6 +170,7 @@ private:
     // 定时器
     QTimer *m_plotTimer;
     QTimer *m_gaugeTimer;
+    bool m_plotUpdatesSuspended;
 
     // Timer
     QVector<double> m_timeStamps;        // 每个采样点的时间（秒，相对）
@@ -247,6 +250,7 @@ private:
     const IndicatorStatusDef* resolveConditionIndicatorStatus(const IndicatorDef &indicator) const;
     const IndicatorStatusDef* resolveBitwiseIndicatorStatus(const IndicatorDef &indicator) const;
     const IndicatorStatusDef* defaultIndicatorStatus(const IndicatorDef &indicator) const;
+    bool resolveIndicatorDataSourceValue(const QString &dataSource, double *value) const;
     void addOscilloscope(const QString &title = QString(), int index = -1);
     void removeOscilloscope(OscilloscopeWidget *osc);
     void updateAllMoveButtons();        // Update state of move up/down buttons for oscilloscopes
@@ -261,6 +265,7 @@ private:
     void processReceiveTextChunk(const QByteArray &chunk, QByteArray &lineBuffer);
     void flushReceiveTextLines(QByteArray &lineBuffer);
     bool isLikelyReceiveTextLine(const QByteArray &line) const;
+    void updatePlotRefreshState();
 
     void addTimeStamp(double offsetSec); // 添加时间戳
 

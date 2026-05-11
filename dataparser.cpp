@@ -946,9 +946,6 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
         ExpressionParser parser(field.expression, result);
         if (parser.evaluate(&value)) {
             result[field.name] = value;
-        } else {
-            qWarning() << "Failed to evaluate custom telemetry field" << field.name
-                       << "from expression" << field.expression;
         }
     }
 

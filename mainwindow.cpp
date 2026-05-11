@@ -44,6 +44,7 @@ MainWindow::MainWindow(QWidget *parent):
     m_updatingTargetType(false),
     m_recordHistory(true),
     m_gaugeTimer(nullptr),
+    m_plotUpdatesSuspended(false),
     m_lastTimestampTicks(0),
     m_hasLastTimestamp(false) {
         ui->setupUi(this);
@@ -56,7 +57,9 @@ MainWindow::MainWindow(QWidget *parent):
         connect(m_serialThread, &QThread::finished, m_serialManager, &QObject::deleteLater);
 
         // 创建数据解析器（主线程）
-        m_dataParser = new DataParser(this);
+        m_dataParser = new DataParser();
+        m_dataParser->moveToThread(m_serialThread);
+        connect(m_serialThread, &QThread::finished, m_dataParser, &QObject::deleteLater);
         updateFaultAutoCaptureMask();
 
         // 信号连接
@@ -136,7 +139,7 @@ MainWindow::MainWindow(QWidget *parent):
         });
 
         // 启动串口线程
-        m_serialThread->start();
+        m_serialThread->start(QThread::HighPriority);
 
         // 初始化示波器区域
         setupPlottingArea();
@@ -483,10 +486,16 @@ void MainWindow::applyIndicatorStatus(QLabel *label, const QString &text, const 
         return;
     }
 
+    const QString normalizedColor = colorName.trimmed().toLower();
+    const QString stateKey = text + "\n" + normalizedColor;
+    if (label->property("indicatorStateKey").toString() == stateKey) {
+        return;
+    }
+    label->setProperty("indicatorStateKey", stateKey);
+
     label->setText(text);
 
     QColor activeColor;
-    const QString normalizedColor = colorName.trimmed().toLower();
     if (normalizedColor == "green") {
         activeColor = QColor(36, 166, 78);
     } else if (normalizedColor == "yellow") {
@@ -538,7 +547,15 @@ const IndicatorStatusDef* MainWindow::resolveIndicatorStatus(const IndicatorDef 
 
 const IndicatorStatusDef* MainWindow::resolveModeIndicatorStatus(const IndicatorDef &indicator) const
 {
-    if (!m_dataParser || !m_telemetryStatus.controlModeKnown) {
+    const QString source = indicator.dataSource.trimmed();
+    const bool isControlModeSource =
+        source.compare("modes", Qt::CaseInsensitive) == 0 ||
+        source.compare("mode", Qt::CaseInsensitive) == 0 ||
+        source.compare("control_mode", Qt::CaseInsensitive) == 0 ||
+        source.compare("controlMode", Qt::CaseInsensitive) == 0;
+
+    double sourceValue = 0.0;
+    if (!resolveIndicatorDataSourceValue(source, &sourceValue)) {
         return defaultIndicatorStatus(indicator);
     }
 
@@ -548,14 +565,19 @@ const IndicatorStatusDef* MainWindow::resolveModeIndicatorStatus(const Indicator
         }
 
         if (status.numericValue.has_value()) {
-            if (m_telemetryStatus.controlMode == static_cast<quint8>(status.numericValue.value())) {
+            if (qFuzzyCompare(sourceValue + 1.0, status.numericValue.value() + 1.0)) {
                 return &status;
             }
             continue;
         }
 
+        if (!isControlModeSource || !m_dataParser) {
+            continue;
+        }
+
         const std::optional<quint8> modeValue = m_dataParser->getControlModeValueForName(status.valueName);
-        if (modeValue.has_value() && m_telemetryStatus.controlMode == modeValue.value()) {
+        if (modeValue.has_value() &&
+            qFuzzyCompare(sourceValue + 1.0, static_cast<double>(modeValue.value()) + 1.0)) {
             return &status;
         }
     }
@@ -565,12 +587,19 @@ const IndicatorStatusDef* MainWindow::resolveModeIndicatorStatus(const Indicator
 
 const IndicatorStatusDef* MainWindow::resolveConditionIndicatorStatus(const IndicatorDef &indicator) const
 {
-    if (indicator.dataSource.compare("Null", Qt::CaseInsensitive) == 0 ||
-        !m_latestTelemetryValues.contains(indicator.dataSource)) {
+    double value = 0.0;
+    if (!resolveIndicatorDataSourceValue(indicator.dataSource, &value)) {
         return defaultIndicatorStatus(indicator);
     }
 
-    const double value = m_latestTelemetryValues.value(indicator.dataSource);
+    for (const IndicatorStatusDef &status : indicator.statuses) {
+        if (status.numericValue.has_value() &&
+            !status.hasLowerBound &&
+            !status.hasUpperBound &&
+            qFuzzyCompare(value + 1.0, status.numericValue.value() + 1.0)) {
+            return &status;
+        }
+    }
 
     for (const IndicatorStatusDef &status : indicator.statuses) {
         if (status.hasLowerBound && status.hasUpperBound &&
@@ -596,14 +625,11 @@ const IndicatorStatusDef* MainWindow::resolveConditionIndicatorStatus(const Indi
 
 const IndicatorStatusDef* MainWindow::resolveBitwiseIndicatorStatus(const IndicatorDef &indicator) const
 {
-    quint64 sourceValue = 0;
-    if (indicator.dataSource == "errors") {
-        sourceValue = m_telemetryStatus.errorCode;
-    } else if (m_latestTelemetryValues.contains(indicator.dataSource)) {
-        sourceValue = static_cast<quint64>(m_latestTelemetryValues.value(indicator.dataSource));
-    } else {
+    double numericSourceValue = 0.0;
+    if (!resolveIndicatorDataSourceValue(indicator.dataSource, &numericSourceValue)) {
         return defaultIndicatorStatus(indicator);
     }
+    const quint64 sourceValue = static_cast<quint64>(numericSourceValue);
 
     QList<const IndicatorStatusDef*> matches;
     for (const IndicatorStatusDef &status : indicator.statuses) {
@@ -647,6 +673,44 @@ const IndicatorStatusDef* MainWindow::defaultIndicatorStatus(const IndicatorDef 
         }
     }
     return nullptr;
+}
+
+bool MainWindow::resolveIndicatorDataSourceValue(const QString &dataSource, double *value) const
+{
+    if (!value) {
+        return false;
+    }
+
+    const QString source = dataSource.trimmed();
+    if (source.isEmpty() || source.compare("Null", Qt::CaseInsensitive) == 0) {
+        return false;
+    }
+
+    if (source.compare("errors", Qt::CaseInsensitive) == 0 ||
+        source.compare("error", Qt::CaseInsensitive) == 0 ||
+        source.compare("error_code", Qt::CaseInsensitive) == 0 ||
+        source.compare("errorCode", Qt::CaseInsensitive) == 0) {
+        *value = static_cast<double>(m_telemetryStatus.errorCode);
+        return true;
+    }
+
+    if (source.compare("modes", Qt::CaseInsensitive) == 0 ||
+        source.compare("mode", Qt::CaseInsensitive) == 0 ||
+        source.compare("control_mode", Qt::CaseInsensitive) == 0 ||
+        source.compare("controlMode", Qt::CaseInsensitive) == 0) {
+        if (!m_telemetryStatus.controlModeKnown) {
+            return false;
+        }
+        *value = static_cast<double>(m_telemetryStatus.controlMode);
+        return true;
+    }
+
+    if (!m_latestTelemetryValues.contains(source)) {
+        return false;
+    }
+
+    *value = m_latestTelemetryValues.value(source);
+    return true;
 }
 
 void MainWindow::addOscilloscope(const QString &title, int index) {
@@ -1017,6 +1081,40 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
     return QMainWindow::eventFilter(obj, event);
 }
 
+void MainWindow::changeEvent(QEvent *event)
+{
+    QMainWindow::changeEvent(event);
+
+    if (event->type() == QEvent::ActivationChange ||
+        event->type() == QEvent::WindowStateChange) {
+        updatePlotRefreshState();
+    }
+}
+
+void MainWindow::updatePlotRefreshState()
+{
+    const bool shouldSuspend = !isActiveWindow() || isMinimized();
+    if (m_plotUpdatesSuspended == shouldSuspend) {
+        return;
+    }
+
+    m_plotUpdatesSuspended = shouldSuspend;
+    if (!m_plotTimer) {
+        return;
+    }
+
+    if (m_plotUpdatesSuspended) {
+        m_plotTimer->stop();
+    } else {
+        if (!m_plotTimer->isActive()) {
+            m_plotTimer->start(50);
+        }
+        if (!m_plotPaused && m_plotDirty) {
+            updateAllPlots();
+        }
+    }
+}
+
 void MainWindow::on_sampleSlider_valueChanged(int value) {
     // 1. Calculate the "snapped" value
     int snappedValue = (value / 100) * 100;
@@ -1044,7 +1142,7 @@ void MainWindow::updateAllPlots() {
 }
 
 void MainWindow::updatePlot() {
-    if (m_plotPaused || !m_plotDirty) return;
+    if (m_plotUpdatesSuspended || m_plotPaused || !m_plotDirty) return;
     updateAllPlots();
 }
 
@@ -1086,7 +1184,6 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
     m_plotDirty = true;
     advanceFaultAutoCapture();
     updateGauges(values);
-    updateStatusIndicators();
     // 可选：在接收区显示关键数值（调试用，可注释）
     writeTelemetryLogRow(values);
     // if (values.contains("RPM")) {
@@ -1396,7 +1493,7 @@ void MainWindow::on_pushButtonStop_clicked()    { sendCommand("stop\r\n"); }
 void MainWindow::on_pushButtonAlign_clicked()   { sendCommand("align\r\n"); }
 void MainWindow::on_pushButtonAudible_clicked() { sendCommand("audible\r\n"); }
 void MainWindow::on_pushButtonReset_clicked()   { sendCommand("reset\r\n"); }
-void MainWindow::on_pushButtonFocManual_clicked() { sendCommand("foc manual\r\n"); }
+void MainWindow::on_pushButtonResetConnection_clicked() { sendCommand("sim reset\r\n"); }
 void MainWindow::on_pushButtonPreset1_clicked() { sendCommand("log preset 1\r\n"); }
 void MainWindow::on_pushButtonPreset2_clicked() { sendCommand("log preset 2\r\n"); }
 void MainWindow::on_pushButtonPreset3_clicked() { sendCommand("log preset 3\r\n"); }
@@ -1404,6 +1501,7 @@ void MainWindow::on_pushButtonPreset4_clicked() { sendCommand("log preset 4\r\n"
 void MainWindow::on_pushButtonRemoveAll_clicked() { sendCommand("log rm all\r\n"); }
 void MainWindow::on_pushButtonBin_clicked()     { sendCommand("log bin\r\n"); }
 void MainWindow::on_pushButtonUtf8_clicked()    { sendCommand("log utf8\r\n"); }
+void MainWindow::on_pushButtonSimStart_clicked() { sendCommand("sim start\r\n"); }
 
 void MainWindow::on_comboBoxTargetSelection_currentIndexChanged(int) {
     if (m_updatingTargetType) return;  // Reentry prevention
@@ -1708,7 +1806,16 @@ void MainWindow::on_pushButtonSelectConfig_clicked() {
     }
 
     QString errorMessage;
-    if (!m_dataParser->loadConfiguration(filePath, &errorMessage)) {
+    bool loaded = false;
+    if (m_dataParser->thread() == QThread::currentThread()) {
+        loaded = m_dataParser->loadConfiguration(filePath, &errorMessage);
+    } else {
+        QMetaObject::invokeMethod(m_dataParser, [&]() {
+            loaded = m_dataParser->loadConfiguration(filePath, &errorMessage);
+        }, Qt::BlockingQueuedConnection);
+    }
+
+    if (!loaded) {
         QMessageBox::critical(this, "Configuration Error", errorMessage);
         return;
     }
