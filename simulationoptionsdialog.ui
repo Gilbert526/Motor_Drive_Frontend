@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SimulationOptionsDialog</class>
+ <widget class="QDialog" name="SimulationOptionsDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>780</width>
+    <height>560</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Simulation Mapping</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QGroupBox" name="groupBoxMapping">
+     <property name="title">
+      <string>Column Mapping</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayoutMapping">
+      <item row="0" column="0">
+       <widget class="QLabel" name="labelServerTargetType">
+        <property name="text">
+         <string>Server target type:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="comboBoxServerTargetType"/>
+      </item>
+      <item row="0" column="2">
+       <widget class="QLabel" name="labelServerValueColumn">
+        <property name="text">
+         <string>Server value column:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="3">
+       <widget class="QComboBox" name="comboBoxServerValueColumn"/>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="labelClientTargetType">
+        <property name="text">
+         <string>Client target type:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QComboBox" name="comboBoxClientTargetType"/>
+      </item>
+      <item row="1" column="2">
+       <widget class="QLabel" name="labelClientValueColumn">
+        <property name="text">
+         <string>Client value column:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="3">
+       <widget class="QComboBox" name="comboBoxClientValueColumn"/>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="labelTimeColumn">
+        <property name="text">
+         <string>Time column:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QComboBox" name="comboBoxTimeColumn"/>
+      </item>
+      <item row="2" column="2">
+       <widget class="QLabel" name="labelTimeUnit">
+        <property name="text">
+         <string>Time unit:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="3">
+       <widget class="QComboBox" name="comboBoxTimeUnit"/>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="labelStartRow">
+        <property name="text">
+         <string>Starting row:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QSpinBox" name="spinBoxStartRow"/>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTableWidget" name="tableWidgetCsvPreview"/>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="orientation">
+      <enum>Qt::Orientation::Horizontal</enum>
+     </property>
+     <property name="standardButtons">
+      <set>QDialogButtonBox::StandardButton::Cancel|QDialogButtonBox::StandardButton::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>accepted()</signal>
+   <receiver>SimulationOptionsDialog</receiver>
+   <slot>accept()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>248</x>
+     <y>254</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>157</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>rejected()</signal>
+   <receiver>SimulationOptionsDialog</receiver>
+   <slot>reject()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>316</x>
+     <y>260</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>286</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>

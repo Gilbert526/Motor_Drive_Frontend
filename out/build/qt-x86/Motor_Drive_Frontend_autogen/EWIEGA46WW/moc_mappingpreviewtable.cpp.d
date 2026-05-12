@@ -1,17 +1,17 @@
-C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/out/build/qt-x86/Motor_Drive_Frontend_autogen/EWIEGA46WW/moc_dataparser.cpp: C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/dataparser.h \
+C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/out/build/qt-x86/Motor_Drive_Frontend_autogen/EWIEGA46WW/moc_mappingpreviewtable.cpp: C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/mappingpreviewtable.h \
   C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/out/build/qt-x86/Motor_Drive_Frontend_autogen/moc_predefs.h \
-  D:/Qt/6.11.0/mingw_64/include/QtCore/QByteArray \
-  D:/Qt/6.11.0/mingw_64/include/QtCore/QHash \
-  D:/Qt/6.11.0/mingw_64/include/QtCore/QObject \
-  D:/Qt/6.11.0/mingw_64/include/QtCore/QStringList \
-  D:/Qt/6.11.0/mingw_64/include/QtCore/QVector \
   D:/Qt/6.11.0/mingw_64/include/QtCore/q17memory.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/q20bit.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/q20functional.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/q20iterator.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/q20memory.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/q20type_traits.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/q20utility.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/q23type_traits.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/q23utility.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qabstractitemmodel.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qalgorithms.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qalloc.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qanystringview.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qarraydata.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qarraydataops.h \
@@ -26,6 +26,7 @@ C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Proj
   D:/Qt/6.11.0/mingw_64/include/QtCore/qbytearraylist.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qbytearrayview.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qchar.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qcheckedint_impl.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qcompare.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qcompare_impl.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qcomparehelpers.h \
@@ -35,8 +36,11 @@ C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Proj
   D:/Qt/6.11.0/mingw_64/include/QtCore/qcontainerfwd.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qcontainerinfo.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qcontainertools_impl.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qcontiguouscache.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qdarwinhelpers.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qdatastream.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qdebug.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qendian.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qexceptionhandling.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qflags.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qfloat16.h \
@@ -49,12 +53,17 @@ C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Proj
   D:/Qt/6.11.0/mingw_64/include/QtCore/qhash.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qhashfunctions.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qiodevicebase.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qitemselectionmodel.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qiterable.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qiterator.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qlatin1stringview.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qline.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qlist.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qlocale.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qlogging.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qmalloc.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qmap.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qmargins.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qmath.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qmetacontainer.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qmetatype.h \
@@ -67,10 +76,20 @@ C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Proj
   D:/Qt/6.11.0/mingw_64/include/QtCore/qobjectdefs_impl.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qoverload.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qpair.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qpoint.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qprocessordetection.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qrect.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qrefcount.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qregularexpression.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qscopedpointer.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qscopeguard.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qset.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qshareddata.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qshareddata_impl.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qsharedpointer.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qsharedpointer_impl.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qsize.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qspan.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qstdlibdetection.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qstring.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qstringalgorithms.h \
@@ -95,6 +114,7 @@ C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Proj
   D:/Qt/6.11.0/mingw_64/include/QtCore/qtdeprecationdefinitions.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qtdeprecationmarkers.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qtenvironmentvariables.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qtextstream.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qtformat_impl.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qtmetamacros.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qtnoop.h \
@@ -107,10 +127,58 @@ C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Proj
   D:/Qt/6.11.0/mingw_64/include/QtCore/qtypeinfo.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qtypes.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qutf8stringview.h \
-  D:/Qt/6.11.0/mingw_64/include/QtCore/qvector.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qvariant.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qvarlengtharray.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qversiontagging.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qxptype_traits.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qyieldcpu.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qaction.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qbitmap.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qbrush.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qcolor.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qcursor.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qfont.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qfontinfo.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qfontmetrics.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qfontvariableaxis.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qicon.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qimage.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qkeysequence.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qpaintdevice.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qpalette.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qpixelformat.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qpixmap.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qpolygon.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qregion.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qrgb.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qrgba64.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qtgui-config.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qtguiexports.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qtguiglobal.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qtransform.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qvalidator.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qwindowdefs.h \
+  D:/Qt/6.11.0/mingw_64/include/QtGui/qwindowdefs_win.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/QTableWidget \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qabstractitemdelegate.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qabstractitemview.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qabstractscrollarea.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qabstractslider.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qabstractspinbox.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qframe.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qrubberband.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qsizepolicy.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qslider.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qstyle.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qstyleoption.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qtabbar.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qtableview.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qtablewidget.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qtabwidget.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qtwidgets-config.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qtwidgetsexports.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qtwidgetsglobal.h \
+  D:/Qt/6.11.0/mingw_64/include/QtWidgets/qwidget.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/algorithm \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/array \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/atomic \
@@ -181,10 +249,12 @@ C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Proj
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/stl_list.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/stl_map.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/stl_multimap.h \
+  D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/stl_multiset.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/stl_numeric.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/stl_pair.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/stl_raw_storage_iter.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/stl_relops.h \
+  D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/stl_set.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/stl_tempbuf.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/stl_tree.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/stl_uninitialized.h \
@@ -197,13 +267,16 @@ C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Proj
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/uniform_int_dist.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/unique_ptr.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/unordered_map.h \
+  D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/unordered_set.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/uses_allocator.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/uses_allocator_args.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/utility.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/bits/vector.tcc \
+  D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/cassert \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/cctype \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/cerrno \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/chrono \
+  D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/climits \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/clocale \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/cmath \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/compare \
@@ -241,6 +314,7 @@ C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Proj
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/pstl/glue_numeric_defs.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/pstl/pstl_config.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/ratio \
+  D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/set \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/stdexcept \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/stdlib.h \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/streambuf \
@@ -263,6 +337,7 @@ C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Proj
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/type_traits \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/typeinfo \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/unordered_map \
+  D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/unordered_set \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/utility \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/variant \
   D:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/vector \

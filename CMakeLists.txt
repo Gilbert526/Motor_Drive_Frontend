@@ -11,6 +11,7 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS
     Core
     Widgets
     SerialPort
+    Network
     PrintSupport
     Charts
 )
@@ -22,6 +23,12 @@ qt_add_executable(Motor_Drive_Frontend
     mainwindow.cpp
     mainwindow.ui
     mainwindow.h
+    simulationdialog.cpp
+    simulationdialog.ui
+    simulationdialog.h
+    simulationoptionsdialog.cpp
+    simulationoptionsdialog.ui
+    simulationoptionsdialog.h
     dataparser.cpp
     dataparser.h
     serialmanager.cpp
@@ -39,6 +46,7 @@ qt_add_executable(Motor_Drive_Frontend
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt${QT_VERSION_MAJOR}::Widgets
     Qt${QT_VERSION_MAJOR}::SerialPort
+    Qt${QT_VERSION_MAJOR}::Network
     Qt${QT_VERSION_MAJOR}::PrintSupport
     Qt${QT_VERSION_MAJOR}::Charts
 )
@@ -61,6 +69,8 @@ target_include_directories(Motor_Drive_Frontend PRIVATE ${CMAKE_CURRENT_SOURCE_D
 
 set(TELEMETRY_CONFIG_FILE "${CMAKE_CURRENT_SOURCE_DIR}/telemetry_config.json")
 set(TELEMETRY_CONFIG_EXAMPLE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/config_example.jsonc")
+set(SYNC_PROTOCOL_FILE "${CMAKE_CURRENT_SOURCE_DIR}/sync_protocol.json")
+set(SIMULATION_EXAMPLE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/simulation_example.csv")
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${TELEMETRY_CONFIG_FILE}"
@@ -68,11 +78,19 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${TELEMETRY_CONFIG_EXAMPLE_FILE}"
         "$<TARGET_FILE_DIR:${PROJECT_NAME}>/config_example.jsonc"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SYNC_PROTOCOL_FILE}"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/sync_protocol.json"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SIMULATION_EXAMPLE_FILE}"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/simulation_example.csv"
     COMMENT "Copying telemetry parser configuration"
     VERBATIM
 )
 install(FILES "${TELEMETRY_CONFIG_FILE}" DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES "${TELEMETRY_CONFIG_EXAMPLE_FILE}" DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES "${SYNC_PROTOCOL_FILE}" DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES "${SIMULATION_EXAMPLE_FILE}" DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 if(MINGW)
     set(APP_ICON_RC "${CMAKE_CURRENT_SOURCE_DIR}/app_icon.rc")

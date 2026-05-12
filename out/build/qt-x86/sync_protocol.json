@@ -1,0 +1,340 @@
+{
+  "protocol": "motor-drive-sync",
+  "version": 1,
+  "minCompatibleVersion": 1,
+  "maxCompatibleVersion": 1,
+  "transport": {
+    "tcp": {
+      "framing": "json-line",
+      "lineTerminator": "\n"
+    },
+    "udp": {
+      "usage": "discovery"
+    }
+  },
+  "commonFields": {
+    "protocol": {
+      "type": "string",
+      "required": true,
+      "value": "motor-drive-sync"
+    },
+    "version": {
+      "type": "integer",
+      "required": true
+    },
+    "type": {
+      "type": "string",
+      "required": true
+    },
+    "timestampMs": {
+      "type": "string",
+      "required": false
+    }
+  },
+  "messages": {
+    "discover": {
+      "transport": "udp",
+      "direction": "client_to_server",
+      "description": "Client asks any listening sync server on the selected UDP port to identify itself.",
+      "required": [
+        "protocol",
+        "version",
+        "type"
+      ],
+      "fields": {}
+    },
+    "discover_response": {
+      "transport": "udp",
+      "direction": "server_to_client",
+      "description": "Server advertises the TCP endpoint that clients can connect to.",
+      "required": [
+        "protocol",
+        "version",
+        "type",
+        "host",
+        "port"
+      ],
+      "fields": {
+        "host": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "label": {
+          "type": "string",
+          "required": false
+        },
+        "role": {
+          "type": "string",
+          "required": false,
+          "allowedValues": [
+            "server"
+          ]
+        }
+      }
+    },
+    "hello": {
+      "transport": "tcp",
+      "direction": "bidirectional",
+      "description": "Initial TCP handshake after connection.",
+      "required": [
+        "protocol",
+        "version",
+        "type",
+        "role"
+      ],
+      "fields": {
+        "role": {
+          "type": "string",
+          "allowedValues": [
+            "server",
+            "client"
+          ]
+        },
+        "listenAddress": {
+          "type": "string",
+          "required": false
+        },
+        "listenPort": {
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 65535
+        }
+      }
+    },
+    "sync_ping": {
+      "transport": "tcp",
+      "direction": "server_to_client",
+      "description": "Server sends a timing probe used to estimate round trip time and client clock offset.",
+      "required": [
+        "protocol",
+        "version",
+        "type",
+        "id",
+        "serverSendMs"
+      ],
+      "fields": {
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Protocol operation identifier for matching this ping to its pong."
+        },
+        "serverSendMs": {
+          "type": "string",
+          "description": "Server monotonic timestamp in milliseconds when the ping was sent."
+        }
+      }
+    },
+    "sync_pong": {
+      "transport": "tcp",
+      "direction": "client_to_server",
+      "description": "Client replies to a timing probe with receive and send timestamps.",
+      "required": [
+        "protocol",
+        "version",
+        "type",
+        "id",
+        "serverSendMs",
+        "clientReceiveMs",
+        "clientSendMs"
+      ],
+      "fields": {
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Protocol operation identifier copied from sync_ping."
+        },
+        "serverSendMs": {
+          "type": "string",
+          "description": "Server timestamp copied from sync_ping."
+        },
+        "clientReceiveMs": {
+          "type": "string",
+          "description": "Client monotonic timestamp in milliseconds when sync_ping was received."
+        },
+        "clientSendMs": {
+          "type": "string",
+          "description": "Client monotonic timestamp in milliseconds when sync_pong was sent."
+        }
+      }
+    },
+    "prepare": {
+      "transport": "tcp",
+      "direction": "server_to_client",
+      "description": "Coordinator sends a command frame for the peer to stage before synchronized execution.",
+      "required": [
+        "protocol",
+        "version",
+        "type",
+        "id",
+        "timestampMs",
+        "targetType",
+        "targetValue"
+      ],
+      "fields": {
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Protocol operation identifier for matching prepare, ready, and fire messages."
+        },
+        "timestampMs": {
+          "type": "string",
+          "description": "Coordinator timestamp in milliseconds when the prepare message was created."
+        },
+        "line": {
+          "type": "integer",
+          "required": false,
+          "description": "Optional source CSV line number for logging and traceability.",
+          "minimum": 0
+        },
+        "targetType": {
+          "type": "string",
+          "description": "Target command type, for example speed or torque."
+        },
+        "targetValue": {
+          "type": "double",
+          "description": "The value for the target command."
+        }
+      }
+    },
+    "starter": {
+      "transport": "tcp",
+      "direction": "server_to_client",
+      "description": "Coordinator announces the start of a simulation stream before the first prepare message.",
+      "required": [
+        "protocol",
+        "version",
+        "type",
+        "timestampMs",
+        "lineCount"
+      ],
+      "fields": {
+        "lineCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of simulate-able data rows in this run."
+        },
+        "serverTargetType": {
+          "type": "string",
+          "required": false
+        },
+        "clientTargetType": {
+          "type": "string",
+          "required": false
+        }
+      }
+    },
+    "ready": {
+      "transport": "tcp",
+      "direction": "client_to_server",
+      "description": "Peer confirms that a prepared command frame is staged and ready to fire.",
+      "required": [
+        "protocol",
+        "version",
+        "type",
+        "timestampMs",
+        "id"
+      ],
+      "fields": {
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Protocol operation identifier copied from prepare."
+        },
+        "timestampMs": {
+          "type": "string",
+          "description": "Peer timestamp in milliseconds when the prepared command became ready."
+        },
+        "line": {
+          "type": "integer",
+          "required": false,
+          "description": "Optional source CSV line number copied from prepare.",
+          "minimum": 0
+        }
+      }
+    },
+    "fire": {
+      "transport": "tcp",
+      "direction": "server_to_client",
+      "description": "Coordinator tells every staged participant to execute the prepared command for the given sequence.",
+      "required": [
+        "protocol",
+        "version",
+        "type",
+        "id",
+        "timestampMs",
+        "executeAtServerMs"
+      ],
+      "fields": {
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Protocol operation identifier copied from prepare."
+        },
+        "timestampMs": {
+          "type": "string",
+          "description": "Coordinator timestamp in milliseconds when the fire message was created."
+        },
+        "executeAtServerMs": {
+          "type": "string",
+          "description": "Server monotonic timestamp in milliseconds when the command should execute."
+        },
+        "executeAtClientMs": {
+          "type": "string",
+          "required": false,
+          "description": "Optional receiver-local monotonic timestamp in milliseconds. When present, the receiver should use this instead of converting executeAtServerMs."
+        },
+        "line": {
+          "type": "integer",
+          "required": false,
+          "description": "Optional source CSV line number copied from prepare.",
+          "minimum": 0
+        }
+      }
+    },
+    "finish": {
+      "transport": "tcp",
+      "direction": "server_to_client",
+      "description": "Coordinator informs the peer that the simulation has ended after the final fire message.",
+      "required": [
+        "protocol",
+        "version",
+        "type",
+        "timestampMs"
+      ],
+      "fields": {}
+    },
+    "finish_ack": {
+      "transport": "tcp",
+      "direction": "client_to_server",
+      "description": "Peer acknowledges that it received the simulation finish message.",
+      "required": [
+        "protocol",
+        "version",
+        "type",
+        "timestampMs"
+      ],
+      "fields": {}
+    },
+    "abort": {
+      "transport": "tcp",
+      "direction": "bidirectional",
+      "description": "Immediate cancellation of staged or running synchronized operation.",
+      "required": [
+        "protocol",
+        "version",
+        "type",
+        "reason"
+      ],
+      "fields": {
+        "reason": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

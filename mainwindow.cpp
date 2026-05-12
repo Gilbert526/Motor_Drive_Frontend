@@ -3,6 +3,7 @@
 #include "audiolevelmeter.h"
 #include "SerialManager.h"
 #include "DataParser.h"
+#include "simulationdialog.h"
 #include <QMessageBox>
 #include <QSerialPortInfo>
 #include <QDialog>
@@ -145,6 +146,8 @@ MainWindow::MainWindow(QWidget *parent):
         setupPlottingArea();
         setupGaugeArea();
         updateStatusIndicators();
+        applyIndicatorStatus(ui->labelServerStatus, "Disconnected", "off");
+        applyIndicatorStatus(ui->labelSimStatus, "N/A", "off");
 
         // 加载字段列表到左侧
         loadAvailableFields();
@@ -1494,6 +1497,30 @@ void MainWindow::on_pushButtonAlign_clicked()   { sendCommand("align\r\n"); }
 void MainWindow::on_pushButtonAudible_clicked() { sendCommand("audible\r\n"); }
 void MainWindow::on_pushButtonReset_clicked()   { sendCommand("reset\r\n"); }
 void MainWindow::on_pushButtonResetConnection_clicked() { sendCommand("sim reset\r\n"); }
+
+void MainWindow::on_pushButtonSyncSim_clicked()
+{
+    if (!m_simulationDialog) {
+        m_simulationDialog = new simulationDialog(this);
+        connect(m_simulationDialog, &simulationDialog::serialCommandRequested,
+                this, [this](const QString &command) {
+                    sendCommand(command);
+                });
+        connect(m_simulationDialog, &simulationDialog::mainStatusChanged,
+                this, [this](const QString &connectionText,
+                              const QString &connectionColor,
+                              const QString &simulationText,
+                              const QString &simulationColor) {
+                    applyIndicatorStatus(ui->labelServerStatus, connectionText, connectionColor);
+                    applyIndicatorStatus(ui->labelSimStatus, simulationText, simulationColor);
+                });
+    }
+
+    m_simulationDialog->show();
+    m_simulationDialog->raise();
+    m_simulationDialog->activateWindow();
+}
+
 void MainWindow::on_pushButtonPreset1_clicked() { sendCommand("log preset 1\r\n"); }
 void MainWindow::on_pushButtonPreset2_clicked() { sendCommand("log preset 2\r\n"); }
 void MainWindow::on_pushButtonPreset3_clicked() { sendCommand("log preset 3\r\n"); }

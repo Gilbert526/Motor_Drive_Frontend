@@ -6,3 +6,5 @@
 #include "EWIEGA46WW/moc_oscilloscopewidget.cpp"
 #include "EWIEGA46WW/moc_qcustomplot.cpp"
 #include "EWIEGA46WW/moc_serialmanager.cpp"
+#include "EWIEGA46WW/moc_simulationdialog.cpp"
+#include "EWIEGA46WW/moc_simulationoptionsdialog.cpp"

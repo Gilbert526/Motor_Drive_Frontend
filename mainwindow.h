@@ -14,6 +14,7 @@
 #include <QVBoxLayout>
 #include <QFile>
 #include <QTextStream>
+#include <QPointer>
 #include "OscilloscopeWidget.h"
 #include <QStack>
 #include <QMap>
@@ -21,6 +22,7 @@
 class AudioLevelMeter;
 class SerialManager;
 class DataParser;
+class simulationDialog;
 struct IndicatorDef;
 struct IndicatorStatusDef;
 struct GaugeDef;
@@ -66,6 +68,7 @@ private slots:
     void on_pushButtonAudible_clicked();
     void on_pushButtonReset_clicked();
     void on_pushButtonResetConnection_clicked();
+    void on_pushButtonSyncSim_clicked();
     // Logging
     void on_pushButtonPreset1_clicked();
     void on_pushButtonPreset2_clicked();
@@ -138,6 +141,7 @@ private:
     SerialManager   *m_serialManager;
     DataParser      *m_dataParser;
     QThread         *m_serialThread;
+    QPointer<simulationDialog> m_simulationDialog;
 
     // Command line history
     QStringList m_sendHistory;
