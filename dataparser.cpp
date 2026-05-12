@@ -857,7 +857,7 @@ void DataParser::parseData(const QByteArray &newData) {
         int nextIdx;
         QHash<QString, double> values = tryParsePacket(idx, nextIdx);
         if (nextIdx > idx) {
-            if (nextIdx == idx + 1 && values.isEmpty()) {
+            if (values.isEmpty()) {
                 idx = nextIdx;
                 continue;
             }

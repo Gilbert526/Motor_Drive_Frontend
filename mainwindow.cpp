@@ -17,6 +17,7 @@
 #include <QSet>
 #include <QWheelEvent>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 MainWindow::MainWindow(QWidget *parent):
@@ -1166,6 +1167,20 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
 
     const double currentTime = static_cast<double>(timestampTicks) / 275000000.0;
     addTimeStamp(currentTime);
+    const int targetSize = m_timeStamps.size();
+    const double missingValue = std::numeric_limits<double>::quiet_NaN();
+
+    for (auto it = m_waveData.begin(); it != m_waveData.end(); ++it) {
+        QVector<double> &vec = it.value();
+        while (vec.size() < targetSize - 1) {
+            vec.prepend(missingValue);
+        }
+        if (vec.size() > targetSize - 1) {
+            vec.remove(0, vec.size() - (targetSize - 1));
+        }
+        vec.append(missingValue);
+    }
+
     for (auto it = values.cbegin(); it != values.cend(); ++it) {
         if (it.key() != DataParser::TIMESTAMP_FIELD) {
             m_latestTelemetryValues[it.key()] = it.value();
@@ -1177,12 +1192,14 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
         if (field == DataParser::TIMESTAMP_FIELD) {
             continue;
         }
-        double val = it.value();
         QVector<double> &vec = m_waveData[field];
-        vec.append(val);
-        if (vec.size() > m_maxWavePoints) {
-            vec.remove(0, vec.size() - m_maxWavePoints);
+        while (vec.size() < targetSize) {
+            vec.prepend(missingValue);
         }
+        if (vec.size() > targetSize) {
+            vec.remove(0, vec.size() - targetSize);
+        }
+        vec[targetSize - 1] = it.value();
     }
     m_plotDirty = true;
     advanceFaultAutoCapture();

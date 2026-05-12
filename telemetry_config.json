@@ -56,7 +56,7 @@
     { "name": "FOC_VQ", "size": 4, "format": "f", "bit": 30, "command": "vq" }
   ],
   "fields2": [
-    { "name": "CP_MODE", "size": 1, "format": "B", "bit": 0, "command": "cp_mode" },
+    { "name": "CP_MODE", "size": 2, "format": "H", "bit": 0, "command": "cp_mode" },
     { "name": "M_INDEX", "size": 4, "format": "f", "bit": 1, "command": "m_index" },
     { "name": "FW", "size": 1, "format": "B", "bit": 2, "command": "fw" },
     { "name": "UMAG", "size": 4, "format": "f", "bit": 3, "command": "umag" },
@@ -130,25 +130,7 @@
       "indicator": 5,
       "dataSource": "CP_MODE",
       "status": [
-        { "value": 0, "displayText": "Default", "color": "off" },
-        { "value": 1, "displayText": "Master", "color": "green" },
-        { "value": 2, "displayText": "Master Paring", "color": "yellow" },
-        { "value": 3, "displayText": "Master Startup", "color": "yellow" },
-        { "value": 4, "displayText": "Master Ready", "color": "green" },
-        { "value": 5, "displayText": "Master Run", "color": "green" },
-        { "value": 6, "displayText": "Master Finish", "color": "green" },
-        { "value": 63, "displayText": "Master Lost", "color": "red" },
-        { "value": 64, "displayText": "Slave Lost", "color": "red" },
-        { "value": 122, "displayText": "Slave Finish", "color": "green" },
-        { "value": 123, "displayText": "Slave Run", "color": "green" },
-        { "value": 124, "displayText": "Slave Ready", "color": "green" },
-        { "value": 125, "displayText": "Slave Startup", "color": "yellow" },
-        { "value": 126, "displayText": "Slave Paring", "color": "yellow" },
-        { "value": 127, "displayText": "Slave", "color": "green" },
-        { "value": 253, "displayText": "Callback Error", "color": "red" },
-        { "value": 254, "displayText": "Array Error", "color": "red" },
-        { "value": 255, "displayText": "Error", "color": "red" },
-        { "displayText": "Coupling", "color": "off" }
+        { "displayText": "Simulation", "color": "off" }
       ]
     },
     {

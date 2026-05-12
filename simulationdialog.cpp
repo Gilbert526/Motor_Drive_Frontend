@@ -47,10 +47,12 @@ simulationDialog::simulationDialog(QWidget *parent)
     , m_discoveryTimer(new QTimer(this))
     , m_syncPingTimer(new QTimer(this))
     , m_simulationTimer(new QTimer(this))
+    , m_scopeMarkerUpdateTimer(new QTimer(this))
     , m_readyDeadlineTimer(new QTimer(this))
     , m_clientWatchdogTimer(new QTimer(this))
     , m_scopePlot(nullptr)
     , m_scopeStepLine(nullptr)
+    , m_scopeStepOverlay(nullptr)
     , m_clientSocket(nullptr)
     , m_clientServerClockOffsetMs(0)
     , m_pendingFireDueServerMs(0)
@@ -64,6 +66,7 @@ simulationDialog::simulationDialog(QWidget *parent)
     , m_clientSimulationActive(false)
     , m_scopeSliderTracksMax(true)
     , m_scopePlotDirtyWhileHidden(false)
+    , m_scopeMarkerUpdatePending(false)
     , m_simulationAborted(false)
     , m_clientExpectedLineCount(0)
 {
@@ -81,6 +84,20 @@ simulationDialog::simulationDialog(QWidget *parent)
             this, &simulationDialog::sendSyncPingToClients);
     connect(m_simulationTimer, &QTimer::timeout,
             this, &simulationDialog::runNextSimulationLine);
+    m_scopeMarkerUpdateTimer->setSingleShot(true);
+    m_scopeMarkerUpdateTimer->setInterval(80);
+    connect(m_scopeMarkerUpdateTimer, &QTimer::timeout, this, [this]() {
+        if (!m_scopeMarkerUpdatePending) {
+            return;
+        }
+        m_scopeMarkerUpdatePending = false;
+        if (!m_scopePlot || !isVisible()) {
+            m_scopePlotDirtyWhileHidden = true;
+            return;
+        }
+        const bool activeClientMode = !m_tcpServer->isListening() && !m_clientReceivedY.isEmpty();
+        updateScopeStepMarker(activeClientMode);
+    });
     m_readyDeadlineTimer->setSingleShot(true);
     connect(m_readyDeadlineTimer, &QTimer::timeout,
             this, &simulationDialog::handleReadyDeadlineExpired);
@@ -182,6 +199,10 @@ void simulationDialog::initializeSimulationUi()
     m_scopeStepLine->setPen(QPen(QColor("#f57c00"), 2));
     m_scopeStepLine->setSelectable(false);
     m_scopeStepLine->setVisible(false);
+    m_scopeStepOverlay = new QWidget(m_scopePlot);
+    m_scopeStepOverlay->setFixedWidth(2);
+    m_scopeStepOverlay->setStyleSheet("background-color: #f57c00;");
+    m_scopeStepOverlay->hide();
     m_scopePlot->legend->setVisible(true);
     m_scopePlot->xAxis->setLabel("CSV row");
     m_scopePlot->yAxis->setLabel("Server");
@@ -1775,6 +1796,7 @@ void simulationDialog::updateScopePlot()
     QVector<double> x;
     QVector<double> serverY;
     QVector<double> clientY;
+    const int targetSamples = qMax(300, m_scopePlot->viewport().width() * 2);
 
     const bool activeClientMode = !m_tcpServer->isListening() && !m_clientReceivedY.isEmpty();
     updateScopeLegendAndAxes();
@@ -1785,9 +1807,14 @@ void simulationDialog::updateScopePlot()
         const int minStart = qBound(0, m_mapping.startRow, qMax(0, rowCount - 1));
         const int start = qBound(minStart, ui->horizontalScrollBarScope->value(), qMax(minStart, rowCount - points));
         const int end = qMin(rowCount, start + points);
-        for (int row = start; row < end; ++row) {
+        const int stride = qMax(1, (end - start) / targetSamples);
+        for (int row = start; row < end; row += stride) {
             x.append(row < m_clientReceivedX.size() ? m_clientReceivedX.at(row) : row + 1);
             serverY.append(m_clientReceivedY.at(row));
+        }
+        if (end > start && (x.isEmpty() || x.last() != (end - 1 < m_clientReceivedX.size() ? m_clientReceivedX.at(end - 1) : end))) {
+            x.append(end - 1 < m_clientReceivedX.size() ? m_clientReceivedX.at(end - 1) : end);
+            serverY.append(m_clientReceivedY.at(end - 1));
         }
     } else if (mappingIsValid()) {
         const int rowCount = m_csvNumericRows.size();
@@ -1795,10 +1822,20 @@ void simulationDialog::updateScopePlot()
         const int start = qBound(0, ui->horizontalScrollBarScope->value(), qMax(0, rowCount - points));
         const int end = qMin(rowCount, start + points);
 
-        for (int row = start; row < end; ++row) {
+        const int stride = qMax(1, (end - start) / targetSamples);
+        for (int row = start; row < end; row += stride) {
             x.append(m_mapping.timeColumn >= 0 ? timeValueSeconds(row) : static_cast<double>(row + 1));
             serverY.append(numericValue(row, m_mapping.serverValueColumn));
             clientY.append(numericValue(row, m_mapping.clientValueColumn));
+        }
+        if (end > start) {
+            const int lastRow = end - 1;
+            const double lastX = m_mapping.timeColumn >= 0 ? timeValueSeconds(lastRow) : static_cast<double>(lastRow + 1);
+            if (x.isEmpty() || !qFuzzyCompare(x.last() + 1.0, lastX + 1.0)) {
+                x.append(lastX);
+                serverY.append(numericValue(lastRow, m_mapping.serverValueColumn));
+                clientY.append(numericValue(lastRow, m_mapping.clientValueColumn));
+            }
         }
     }
 
@@ -1867,12 +1904,17 @@ void simulationDialog::updateScopeLegendAndAxes()
 
 void simulationDialog::updateScopeStepMarker(bool activeClientMode)
 {
-    if (!m_scopeStepLine) {
+    if (!m_scopePlot) {
         return;
     }
 
     if (activeClientMode || !mappingIsValid() || m_csvNumericRows.isEmpty()) {
-        m_scopeStepLine->setVisible(false);
+        if (m_scopeStepLine) {
+            m_scopeStepLine->setVisible(false);
+        }
+        if (m_scopeStepOverlay) {
+            m_scopeStepOverlay->hide();
+        }
         return;
     }
 
@@ -1884,9 +1926,18 @@ void simulationDialog::updateScopeStepMarker(bool activeClientMode)
     const QCPRange yRange = m_scopePlot->yAxis->range();
     const double markerX = qBound(xRange.lower, stepX, xRange.upper);
 
-    m_scopeStepLine->start->setCoords(markerX, yRange.lower);
-    m_scopeStepLine->end->setCoords(markerX, yRange.upper);
-    m_scopeStepLine->setVisible(true);
+    if (m_scopeStepLine) {
+        m_scopeStepLine->setVisible(false);
+    }
+    if (!m_scopeStepOverlay) {
+        return;
+    }
+
+    const QRect axisRect = m_scopePlot->axisRect()->rect();
+    const int xPixel = qRound(m_scopePlot->xAxis->coordToPixel(markerX));
+    m_scopeStepOverlay->setGeometry(xPixel - 1, axisRect.top(), 2, axisRect.height());
+    m_scopeStepOverlay->show();
+    m_scopeStepOverlay->raise();
 }
 
 void simulationDialog::updateScopeStepMarkerOnly()
@@ -1899,9 +1950,16 @@ void simulationDialog::updateScopeStepMarkerOnly()
         return;
     }
 
+    if (m_simulationRunning && !m_simulationPaused) {
+        m_scopeMarkerUpdatePending = true;
+        if (!m_scopeMarkerUpdateTimer->isActive()) {
+            m_scopeMarkerUpdateTimer->start();
+        }
+        return;
+    }
+
     const bool activeClientMode = !m_tcpServer->isListening() && !m_clientReceivedY.isEmpty();
     updateScopeStepMarker(activeClientMode);
-    m_scopePlot->replot(QCustomPlot::rpQueuedReplot);
 }
 
 int simulationDialog::simulatableLineCount() const

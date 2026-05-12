@@ -5,6 +5,7 @@
 #include <QPushButton>
 #include <QMimeData>
 #include <QPalette>
+#include <cmath>
 #include <limits>
 
 OscilloscopeWidget::OscilloscopeWidget(QWidget *parent):
@@ -79,7 +80,7 @@ void OscilloscopeWidget::setupUi() {
     m_plot->yAxis->setLabel("Value");
     m_plot->legend->setVisible(true);
     m_plot->legend->setFont(QFont("Arial", 7));
-    m_plot->setOpenGl(true);
+    m_plot->setOpenGl(false);
     m_plot->setNoAntialiasingOnDrag(true);
     m_plot->setPlottingHint(QCP::phFastPolylines, true);
     applyTheme();
@@ -149,87 +150,37 @@ void OscilloscopeWidget::updatePlot(const QHash<QString, QVector<double>> &dataP
         QCPGraph *graph = m_graphs.value(field);
         if (!graph) continue;
         const QVector<double> &data = dataPool.value(field);
-        if (data.size() < totalPoints) {
-            const int dataStartIdx = totalPoints - data.size();
-            const int visibleStartIdx = qMax(startIdx, qMax(0, dataStartIdx));
-            const int visiblePoints = totalPoints - visibleStartIdx;
-
-            RenderBuffers &buffers = m_renderBuffers[field];
-            buffers.x.clear();
-            buffers.y.clear();
-            buffers.x.reserve(shouldDownsample ? (visiblePoints / stride) * 2 + 2 : visiblePoints);
-            buffers.y.reserve(buffers.x.capacity());
-
-            if (visiblePoints > 0) {
-                if (shouldDownsample) {
-                    for (int bucketStart = visibleStartIdx; bucketStart < totalPoints; bucketStart += stride) {
-                        const int bucketEnd = qMin(totalPoints, bucketStart + stride);
-                        int minIndex = bucketStart;
-                        int maxIndex = bucketStart;
-                        double minValue = data[bucketStart - dataStartIdx];
-                        double maxValue = minValue;
-
-                        for (int i = bucketStart + 1; i < bucketEnd; ++i) {
-                            const double value = data[i - dataStartIdx];
-                            if (value < minValue) {
-                                minValue = value;
-                                minIndex = i;
-                            }
-                            if (value > maxValue) {
-                                maxValue = value;
-                                maxIndex = i;
-                            }
-                        }
-
-                        if (minIndex <= maxIndex) {
-                            buffers.x.append(timeStamps[minIndex]);
-                            buffers.y.append(minValue);
-                            if (minIndex != maxIndex) {
-                                buffers.x.append(timeStamps[maxIndex]);
-                                buffers.y.append(maxValue);
-                            }
-                        } else {
-                            buffers.x.append(timeStamps[maxIndex]);
-                            buffers.y.append(maxValue);
-                            buffers.x.append(timeStamps[minIndex]);
-                            buffers.y.append(minValue);
-                        }
-
-                        yMin = qMin(yMin, minValue);
-                        yMax = qMax(yMax, maxValue);
-                        hasVisibleData = true;
-                    }
-                } else {
-                    for (int i = visibleStartIdx; i < totalPoints; ++i) {
-                        const double value = data[i - dataStartIdx];
-                        buffers.x.append(timeStamps[i]);
-                        buffers.y.append(value);
-                        yMin = qMin(yMin, value);
-                        yMax = qMax(yMax, value);
-                        hasVisibleData = true;
-                    }
-                }
-            }
-
-            graph->setData(buffers.x, buffers.y, true);
-            continue;
-        }
+        const int dataStartIdx = qMax(0, totalPoints - data.size());
+        const int visibleStartIdx = qMax(startIdx, dataStartIdx);
+        const int visiblePoints = totalPoints - visibleStartIdx;
         RenderBuffers &buffers = m_renderBuffers[field];
         buffers.x.clear();
         buffers.y.clear();
-        buffers.x.reserve(shouldDownsample ? (pointsToShow / stride) * 2 + 2 : pointsToShow);
+        buffers.x.reserve(shouldDownsample ? (qMax(0, visiblePoints) / stride) * 2 + 2 : qMax(0, visiblePoints));
         buffers.y.reserve(buffers.x.capacity());
 
-        if (shouldDownsample) {
-            for (int bucketStart = startIdx; bucketStart < totalPoints; bucketStart += stride) {
-                const int bucketEnd = qMin(totalPoints, bucketStart + stride);
-                int minIndex = bucketStart;
-                int maxIndex = bucketStart;
-                double minValue = data[bucketStart];
-                double maxValue = minValue;
+        if (visiblePoints <= 0) {
+            graph->setData(buffers.x, buffers.y, true);
+            continue;
+        }
 
-                for (int i = bucketStart + 1; i < bucketEnd; ++i) {
-                    const double value = data[i];
+        if (shouldDownsample) {
+            for (int bucketStart = visibleStartIdx; bucketStart < totalPoints; bucketStart += stride) {
+                const int bucketEnd = qMin(totalPoints, bucketStart + stride);
+                int minIndex = -1;
+                int maxIndex = -1;
+                double minValue = std::numeric_limits<double>::max();
+                double maxValue = std::numeric_limits<double>::lowest();
+
+                for (int i = bucketStart; i < bucketEnd; ++i) {
+                    const int dataIndex = i - dataStartIdx;
+                    if (dataIndex < 0 || dataIndex >= data.size()) {
+                        continue;
+                    }
+                    const double value = data[dataIndex];
+                    if (!std::isfinite(value)) {
+                        continue;
+                    }
                     if (value < minValue) {
                         minValue = value;
                         minIndex = i;
@@ -238,6 +189,10 @@ void OscilloscopeWidget::updatePlot(const QHash<QString, QVector<double>> &dataP
                         maxValue = value;
                         maxIndex = i;
                     }
+                }
+
+                if (minIndex < 0 || maxIndex < 0) {
+                    continue;
                 }
 
                 if (minIndex <= maxIndex) {
@@ -259,8 +214,15 @@ void OscilloscopeWidget::updatePlot(const QHash<QString, QVector<double>> &dataP
                 hasVisibleData = true;
             }
         } else {
-            for (int i = startIdx; i < totalPoints; ++i) {
-                const double value = data[i];
+            for (int i = visibleStartIdx; i < totalPoints; ++i) {
+                const int dataIndex = i - dataStartIdx;
+                if (dataIndex < 0 || dataIndex >= data.size()) {
+                    continue;
+                }
+                const double value = data[dataIndex];
+                if (!std::isfinite(value)) {
+                    continue;
+                }
                 buffers.x.append(timeStamps[i]);
                 buffers.y.append(value);
                 yMin = qMin(yMin, value);

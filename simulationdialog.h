@@ -97,10 +97,12 @@ private:
     QTimer *m_discoveryTimer;
     QTimer *m_syncPingTimer;
     QTimer *m_simulationTimer;
+    QTimer *m_scopeMarkerUpdateTimer;
     QTimer *m_readyDeadlineTimer;
     QTimer *m_clientWatchdogTimer;
     QCustomPlot *m_scopePlot;
     QCPItemLine *m_scopeStepLine;
+    QWidget *m_scopeStepOverlay;
     QList<QTcpSocket*> m_serverClients;
     QHash<QTcpSocket*, QByteArray> m_receiveBuffers;
     QHash<QTcpSocket*, QHash<int, qint64>> m_syncPingServerSendMs;
@@ -129,6 +131,7 @@ private:
     bool m_clientSimulationActive;
     bool m_scopeSliderTracksMax;
     bool m_scopePlotDirtyWhileHidden;
+    bool m_scopeMarkerUpdatePending;
     bool m_simulationAborted;
     int m_clientExpectedLineCount;
     QString m_clientReceivedTargetType;
