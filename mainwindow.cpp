@@ -15,10 +15,39 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QSet>
+#include <QStyle>
 #include <QWheelEvent>
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <utility>
+
+namespace {
+constexpr const char *kSaveButtonStyle =
+    "QPushButton#pushButtonSave:checked,"
+    "QPushButton#pushButtonSaveAdc:checked {"
+    " background-color: #31e63a;"
+    " border: 1px solid #0a8a1f;"
+    "}"
+    "QPushButton#pushButtonSaveAdc[adcRecent=\"true\"] {"
+    " background-color: #00d5ff;"
+    " border: 1px solid #008ba6;"
+    "}"
+    "QPushButton#pushButtonSaveAdc[adcRecent=\"true\"]:checked {"
+    " background-color: #31e63a;"
+    " border: 1px solid #0a8a1f;"
+    "}";
+
+void refreshStyle(QWidget *widget)
+{
+    if (!widget) {
+        return;
+    }
+    widget->style()->unpolish(widget);
+    widget->style()->polish(widget);
+    widget->update();
+}
+}
 
 MainWindow::MainWindow(QWidget *parent):
     QMainWindow(parent),
@@ -38,6 +67,10 @@ MainWindow::MainWindow(QWidget *parent):
     m_faultAutoCaptureSkipCurrentPacket(false),
     m_faultAutoCapturePacketsRemaining(0),
     m_isLogging(false),
+    m_isAdcLogging(false),
+    m_adcPacketActive(false),
+    m_lastAdcPacketMs(0),
+    m_adcActivityTimer(nullptr),
     m_syncingFromMask(false),
     m_lastSpeedValue(0.0),
     m_lastTorqueValue(0.0),
@@ -69,6 +102,7 @@ MainWindow::MainWindow(QWidget *parent):
         connect(m_serialManager, &SerialManager::portClosed, this, &MainWindow::handleSerialPortClosed);
         connect(m_serialManager, &SerialManager::rawDataReceived, m_dataParser, &DataParser::parseData);
         connect(m_dataParser, &DataParser::parsedData, this, &MainWindow::handleNewData);
+        connect(m_dataParser, &DataParser::adcSampleReceived, this, &MainWindow::handleAdcSample);
         connect(m_dataParser, &DataParser::packetStatusReceived, this, &MainWindow::handlePacketStatus);
         connect(m_dataParser, &DataParser::configurationChanged, this, [this]() {
             updateFaultAutoCaptureMask();
@@ -82,22 +116,19 @@ MainWindow::MainWindow(QWidget *parent):
 
         // Display received message in text box
         connect(m_serialManager, &SerialManager::rawDataReceived, this, [this](const QByteArray &data) {
-            const QByteArray syncBytes = QByteArray::fromHex("AA55");
             static QByteArray buffer;           // Buffer for original data
             static QByteArray lineBuffer;       // Accumulated incomplete text lines
             buffer.append(data);
 
             int idx = 0;
             while (idx < buffer.size()) {
-                // Look for the next frame header (0xAA 0x55)
-                int headerPos = buffer.indexOf(syncBytes, idx);
+                // Look for the next binary frame header.
+                int headerPos = m_dataParser->findNextFrameHeader(buffer, idx);
                 if (headerPos == -1) {
                     // Preserve a partial sync header so the next chunk can complete a binary frame.
                     int endOfText = buffer.size();
-                    const int partialHeaderLen = syncBytes.size() - 1;
-                    if (partialHeaderLen > 0 &&
-                        buffer.size() >= partialHeaderLen &&
-                        buffer.right(partialHeaderLen) == syncBytes.left(partialHeaderLen)) {
+                    const int partialHeaderLen = m_dataParser->partialFrameHeaderLength(buffer);
+                    if (partialHeaderLen > 0) {
                         endOfText -= partialHeaderLen;
                     }
                     if (endOfText > idx) {
@@ -110,13 +141,6 @@ MainWindow::MainWindow(QWidget *parent):
                 // Text data before the frame header (possibly incomplete line)
                 if (headerPos > idx) {
                     processReceiveTextChunk(buffer.mid(idx, headerPos - idx), lineBuffer);
-                }
-
-                if (buffer.size() >= headerPos + m_dataParser->minimumFrameSize() &&
-                    !m_dataParser->hasValidFrameMetadata(buffer, headerPos)) {
-                    processReceiveTextChunk(syncBytes.left(1), lineBuffer);
-                    idx = headerPos + 1;
-                    continue;
                 }
 
                 // Try to get the binary frame length
@@ -158,6 +182,10 @@ MainWindow::MainWindow(QWidget *parent):
         connect(m_plotTimer, &QTimer::timeout, this, &MainWindow::updatePlot);
         m_plotTimer->start(50);
 
+        m_adcActivityTimer = new QTimer(this);
+        m_adcActivityTimer->setSingleShot(true);
+        connect(m_adcActivityTimer, &QTimer::timeout, this, &MainWindow::updateAdcSaveButtonState);
+
         // 串口UI初始化
         refreshSerialPorts();
         ui->comboBaud->addItems({"9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600"});
@@ -184,12 +212,12 @@ MainWindow::MainWindow(QWidget *parent):
         ui->pushButtonPause->setText("⏸️");
         ui->pushButtonSave->setCheckable(true);
         ui->pushButtonSave->setToolTip("Start or stop saving telemetry to CSV");
-        ui->pushButtonSave->setStyleSheet(
-            "QPushButton:checked {"
-            " background-color: #31e63a;"
-            " border: 1px solid #0a8a1f;"
-            "}"
-        );
+        ui->pushButtonSave->setStyleSheet(kSaveButtonStyle);
+        ui->pushButtonSaveAdc->setCheckable(true);
+        ui->pushButtonSaveAdc->setToolTip("Start or stop saving ADC samples to CSV");
+        ui->pushButtonSaveAdc->setStyleSheet(kSaveButtonStyle);
+        ui->pushButtonSaveAdc->setProperty("adcRecent", false);
+        updateAdcSaveButtonState();
         ui->plainTextEditReceive->setReadOnly(true);
 
         // Command line features
@@ -254,6 +282,7 @@ MainWindow::MainWindow(QWidget *parent):
 
 MainWindow::~MainWindow() {
     stopTelemetryLogging();
+    stopAdcLogging();
     if (m_serialThread->isRunning()) {
         m_serialThread->quit();
         m_serialThread->wait();
@@ -1152,7 +1181,11 @@ void MainWindow::updatePlot() {
 
 // ==================== 数据处理 ====================
 void MainWindow::handleNewData(const QHash<QString, double> &values) {
-    const quint64 timestampTicks = static_cast<quint64>(values.value(DataParser::TIMESTAMP_FIELD, 0.0));
+    const double currentTime = values.value(DataParser::TIMESTAMP_SECONDS_FIELD,
+                                            static_cast<double>(static_cast<quint64>(values.value(DataParser::TIMESTAMP_FIELD, 0.0))) / 275000000.0);
+    const quint64 timestampTicks = values.contains(DataParser::TIMESTAMP_US_FIELD)
+                                       ? static_cast<quint64>(values.value(DataParser::TIMESTAMP_US_FIELD, 0.0))
+                                       : static_cast<quint64>(values.value(DataParser::TIMESTAMP_FIELD, 0.0));
 
     if (m_hasLastTimestamp && timestampTicks < m_lastTimestampTicks) {
         m_timeStamps.clear();
@@ -1165,7 +1198,6 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
     m_lastTimestampTicks = timestampTicks;
     m_hasLastTimestamp = true;
 
-    const double currentTime = static_cast<double>(timestampTicks) / 275000000.0;
     addTimeStamp(currentTime);
     const int targetSize = m_timeStamps.size();
     const double missingValue = std::numeric_limits<double>::quiet_NaN();
@@ -1182,14 +1214,18 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
     }
 
     for (auto it = values.cbegin(); it != values.cend(); ++it) {
-        if (it.key() != DataParser::TIMESTAMP_FIELD) {
+        if (it.key() != DataParser::TIMESTAMP_FIELD &&
+            it.key() != DataParser::TIMESTAMP_US_FIELD &&
+            it.key() != DataParser::TIMESTAMP_SECONDS_FIELD) {
             m_latestTelemetryValues[it.key()] = it.value();
         }
     }
     // 追加到波形缓冲区
     for (auto it = values.begin(); it != values.end(); ++it) {
         const QString &field = it.key();
-        if (field == DataParser::TIMESTAMP_FIELD) {
+        if (field == DataParser::TIMESTAMP_FIELD ||
+            field == DataParser::TIMESTAMP_US_FIELD ||
+            field == DataParser::TIMESTAMP_SECONDS_FIELD) {
             continue;
         }
         QVector<double> &vec = m_waveData[field];
@@ -1209,6 +1245,16 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
     // if (values.contains("RPM")) {
     //     ui->plainTextEditReceive->appendPlainText(QString("RPM: %1").arg(values["RPM"], 0, 'f', 1));
     // }
+}
+
+void MainWindow::handleAdcSample(const AdcSamplePacket &packet) {
+    m_lastAdcPacketMs = QDateTime::currentMSecsSinceEpoch();
+    m_adcPacketActive = true;
+    if (m_adcActivityTimer) {
+        m_adcActivityTimer->start(500);
+    }
+    updateAdcSaveButtonState();
+    writeAdcLogRows(packet);
 }
 
 void MainWindow::capturePausedPlotSnapshot()
@@ -1513,7 +1559,7 @@ void MainWindow::on_pushButtonStop_clicked()    { sendCommand("stop\r\n"); }
 void MainWindow::on_pushButtonAlign_clicked()   { sendCommand("align\r\n"); }
 void MainWindow::on_pushButtonAudible_clicked() { sendCommand("audible\r\n"); }
 void MainWindow::on_pushButtonReset_clicked()   { sendCommand("reset\r\n"); }
-void MainWindow::on_pushButtonResetConnection_clicked() { sendCommand("sim reset\r\n"); }
+void MainWindow::on_pushButtonResetAlign_clicked() { sendCommand("align reset\r\n"); }
 
 void MainWindow::on_pushButtonSyncSim_clicked()
 {
@@ -1545,7 +1591,6 @@ void MainWindow::on_pushButtonPreset4_clicked() { sendCommand("log preset 4\r\n"
 void MainWindow::on_pushButtonRemoveAll_clicked() { sendCommand("log rm all\r\n"); }
 void MainWindow::on_pushButtonBin_clicked()     { sendCommand("log bin\r\n"); }
 void MainWindow::on_pushButtonUtf8_clicked()    { sendCommand("log utf8\r\n"); }
-void MainWindow::on_pushButtonSimStart_clicked() { sendCommand("sim start\r\n"); }
 
 void MainWindow::on_comboBoxTargetSelection_currentIndexChanged(int) {
     if (m_updatingTargetType) return;  // Reentry prevention
@@ -1832,6 +1877,23 @@ void MainWindow::on_pushButtonSave_clicked() {
     }
 }
 
+void MainWindow::on_pushButtonSaveAdc_clicked() {
+    if (m_isAdcLogging) {
+        stopAdcLogging();
+        updateAdcSaveButtonState();
+        return;
+    }
+
+    if (!startAdcLogging()) {
+        ui->pushButtonSaveAdc->setChecked(false);
+    }
+    updateAdcSaveButtonState();
+}
+
+void MainWindow::on_pushButtonLogAdc_clicked() {
+    sendCommand(m_adcPacketActive ? "log rm adc\r\n" : "log add adc\r\n");
+}
+
 void MainWindow::on_pushButtonSelectConfig_clicked() {
     const QString startDir = m_dataParser && !m_dataParser->configurationPath().isEmpty()
                                  ? QFileInfo(m_dataParser->configurationPath()).absolutePath()
@@ -1845,8 +1907,12 @@ void MainWindow::on_pushButtonSelectConfig_clicked() {
     }
 
     const bool restartLogging = m_isLogging;
+    const bool restartAdcLogging = m_isAdcLogging;
     if (restartLogging) {
         stopTelemetryLogging();
+    }
+    if (restartAdcLogging) {
+        stopAdcLogging();
     }
 
     QString errorMessage;
@@ -1874,6 +1940,10 @@ void MainWindow::on_pushButtonSelectConfig_clicked() {
     if (restartLogging && !startTelemetryLogging()) {
         ui->pushButtonSave->setChecked(false);
     }
+    if (restartAdcLogging && !startAdcLogging()) {
+        ui->pushButtonSaveAdc->setChecked(false);
+    }
+    updateAdcSaveButtonState();
     statusBar()->showMessage("Loaded telemetry configuration: " + filePath, 5000);
 }
 
@@ -1891,7 +1961,7 @@ bool MainWindow::startTelemetryLogging() {
 
     m_logFields = m_dataParser->getFieldNames();
     m_logStream.setDevice(&m_logFile);
-    m_logStream << "mcu_timestamp,error_code,error_flags,control_mode,control_mode_name";
+    m_logStream << "time,error_code,error_flags,control_mode,control_mode_name";
     for (const QString &field : m_logFields) {
         m_logStream << "," << field;
     }
@@ -1925,9 +1995,11 @@ void MainWindow::writeTelemetryLogRow(const QHash<QString, double> &values) {
         return;
     }
 
-    const quint64 timestampTicks = static_cast<quint64>(values.value(DataParser::TIMESTAMP_FIELD, 0.0));
+    const QString timestamp = values.contains(DataParser::TIMESTAMP_US_FIELD)
+                                  ? QString::number(static_cast<quint64>(values.value(DataParser::TIMESTAMP_US_FIELD, 0.0)))
+                                  : QString::number(static_cast<quint64>(values.value(DataParser::TIMESTAMP_FIELD, 0.0)));
 
-    m_logStream << QString::number(timestampTicks)
+    m_logStream << timestamp
                 << "," << m_telemetryStatus.errorCode
                 << "," << m_telemetryStatus.errorNames.join("|")
                 << "," << static_cast<int>(m_telemetryStatus.controlMode)
@@ -1936,6 +2008,160 @@ void MainWindow::writeTelemetryLogRow(const QHash<QString, double> &values) {
         m_logStream << "," << QString::number(values.value(field, 0.0), 'g', 17);
     }
     m_logStream << "\n";
+}
+
+bool MainWindow::startAdcLogging() {
+    if (m_isAdcLogging) {
+        return true;
+    }
+
+    const QString fileName = QDateTime::currentDateTime().toString("yyyy-MM-dd-hh.mm.ss'_adc_sample.csv'");
+    m_adcLogFile.setFileName(QDir::current().filePath(fileName));
+    if (!m_adcLogFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::critical(this, "Error", "Failed to create ADC sample log file: " + m_adcLogFile.errorString());
+        return false;
+    }
+
+    m_adcLogStream.setDevice(&m_adcLogFile);
+    m_adcLogStream << "time,adc1_raw,adc2_raw,adc3_raw,adc1_a,adc2_a,adc3_a\n";
+    m_pendingAdcSequences.clear();
+    m_isAdcLogging = true;
+    ui->pushButtonSaveAdc->setChecked(true);
+    ui->pushButtonSaveAdc->setToolTip("Saving ADC samples to " + m_adcLogFile.fileName());
+    return true;
+}
+
+void MainWindow::stopAdcLogging() {
+    if (!m_isAdcLogging && !m_adcLogFile.isOpen()) {
+        return;
+    }
+
+    m_adcLogStream.flush();
+    const QList<quint32> pendingSequences = m_pendingAdcSequences.keys();
+    for (quint32 sequence : pendingSequences) {
+        flushAdcSequence(sequence);
+    }
+    m_adcLogStream.flush();
+    m_adcLogStream.setDevice(nullptr);
+    if (m_adcLogFile.isOpen()) {
+        m_adcLogFile.close();
+    }
+    m_isAdcLogging = false;
+    m_pendingAdcSequences.clear();
+    if (ui && ui->pushButtonSaveAdc) {
+        ui->pushButtonSaveAdc->setChecked(false);
+        ui->pushButtonSaveAdc->setToolTip("Start or stop saving ADC samples to CSV");
+    }
+}
+
+void MainWindow::writeAdcLogRows(const AdcSamplePacket &packet) {
+    if (!m_isAdcLogging || !m_adcLogFile.isOpen() || packet.adcId < 1 || packet.adcId > 3) {
+        return;
+    }
+
+    const QString timestamp = packet.hasTimestampUs
+                                  ? QString::number(packet.timestampUs)
+                                  : QString::number(packet.timestampTicks);
+    const double resolution = std::pow(2.0, static_cast<int>(packet.resolutionBit)) - 1.0;
+    if (resolution <= 0.0 || qFuzzyIsNull(static_cast<double>(packet.shunt))) {
+        return;
+    }
+
+    PendingAdcSequence &pending = m_pendingAdcSequences[packet.sequence];
+    if (pending.time.isEmpty()) {
+        pending.time = timestamp;
+    }
+    pending.lastUpdateMs = QDateTime::currentMSecsSinceEpoch();
+    pending.receivedMask |= 1 << (packet.adcId - 1);
+    if (pending.rows.size() < packet.samples.size()) {
+        pending.rows.resize(packet.samples.size());
+    }
+
+    const int adcIndex = static_cast<int>(packet.adcId) - 1;
+    for (int i = 0; i < packet.samples.size(); ++i) {
+        const quint16 raw = packet.samples.at(i);
+        const double voltage = ((static_cast<double>(raw) / resolution) * 3.3 - (1.65 + packet.offset)) / 50.0;
+        const double current = voltage / packet.shunt;
+        pending.rows[i].hasAdc[adcIndex] = true;
+        pending.rows[i].raw[adcIndex] = raw;
+        pending.rows[i].current[adcIndex] = current;
+    }
+
+    if ((pending.receivedMask & 0b111) == 0b111) {
+        flushAdcSequence(packet.sequence);
+    }
+    flushStaleAdcSequences();
+}
+
+void MainWindow::flushAdcSequence(quint32 sequence) {
+    if (!m_adcLogFile.isOpen() || !m_pendingAdcSequences.contains(sequence)) {
+        return;
+    }
+
+    const PendingAdcSequence pending = m_pendingAdcSequences.take(sequence);
+    for (const PendingAdcSampleRow &row : pending.rows) {
+        QStringList columns;
+        columns << pending.time << "" << "" << "" << "" << "" << "";
+        for (int adc = 0; adc < 3; ++adc) {
+            if (!row.hasAdc[adc]) {
+                continue;
+            }
+            columns[1 + adc] = QString::number(row.raw[adc]);
+            columns[4 + adc] = QString::number(row.current[adc], 'g', 17);
+        }
+        m_adcLogStream << columns.join(',') << "\n";
+    }
+}
+
+void MainWindow::flushStaleAdcSequences() {
+    if (m_pendingAdcSequences.isEmpty()) {
+        return;
+    }
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    QList<quint32> toFlush;
+    quint32 newestSequence = 0;
+    bool hasNewest = false;
+    for (auto it = m_pendingAdcSequences.cbegin(); it != m_pendingAdcSequences.cend(); ++it) {
+        if (!hasNewest || it.key() > newestSequence) {
+            newestSequence = it.key();
+            hasNewest = true;
+        }
+        if (nowMs - it.value().lastUpdateMs > 1000) {
+            toFlush.append(it.key());
+        }
+    }
+
+    if (m_pendingAdcSequences.size() > 8 && hasNewest) {
+        for (auto it = m_pendingAdcSequences.cbegin(); it != m_pendingAdcSequences.cend(); ++it) {
+            if (it.key() + 2 < newestSequence) {
+                toFlush.append(it.key());
+            }
+        }
+    }
+
+    std::sort(toFlush.begin(), toFlush.end());
+    toFlush.erase(std::unique(toFlush.begin(), toFlush.end()), toFlush.end());
+    for (quint32 sequence : toFlush) {
+        flushAdcSequence(sequence);
+    }
+}
+
+void MainWindow::updateAdcSaveButtonState() {
+    if (!ui || !ui->pushButtonSaveAdc) {
+        return;
+    }
+    if (m_isAdcLogging) {
+        flushStaleAdcSequences();
+    }
+
+    m_adcPacketActive = m_lastAdcPacketMs > 0 &&
+                        QDateTime::currentMSecsSinceEpoch() - m_lastAdcPacketMs <= 500;
+    const bool adcRecentProperty = !m_isAdcLogging && m_adcPacketActive;
+    if (ui->pushButtonSaveAdc->property("adcRecent").toBool() != adcRecentProperty) {
+        ui->pushButtonSaveAdc->setProperty("adcRecent", adcRecentProperty);
+        refreshStyle(ui->pushButtonSaveAdc);
+    }
 }
 
 void MainWindow::sendCurrentLineEditCommand() {

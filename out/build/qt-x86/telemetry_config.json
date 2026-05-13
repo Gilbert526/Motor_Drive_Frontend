@@ -1,4 +1,151 @@
 {
+  "telemetry_fields": {
+    "header": {
+      "length": 2,
+      "value": "0xAA55",
+      "required": true
+    },
+    "version": {
+      "length": 1,
+      "required": true
+    },
+    "errors": {
+      "length": 4,
+      "required": true
+    },
+    "modes": {
+      "length": 1,
+      "required": true
+    },
+    "timestamp_high": {
+      "length": 2,
+      "required": false
+    },
+    "timestamp_low": {
+      "length": 4,
+      "required": false
+    },
+    "timestamp_us": {
+      "length": 4,
+      "required": false
+    },
+    "mask": {
+      "length": 4,
+      "required": true
+    },
+    "mask2": {
+      "length": 4,
+      "required": true
+    },
+    "payload": {
+      "length": "variable",
+      "required": false
+    },
+    "payload2": {
+      "length": "variable",
+      "required": false
+    },
+    "crc": {
+      "length": 4,
+      "polynomial": "0x04C11DB7",
+      "required": false
+    }
+  },
+  "telemetry_structure": [
+    {
+      "version": 0,
+      "fields":[
+        "header",
+        "version",
+        "errors",
+        "modes",
+        "timestamp_high",
+        "timestamp_low",
+        "mask",
+        "mask2",
+        "payload",
+        "payload2"
+      ]
+    }
+  ],
+
+  "adc_sample_fields": {
+    "header": {
+      "length": 2,
+      "value": "0xAA46",
+      "required": true
+    },
+    "version": {
+      "length": 1,
+      "required": true
+    },
+    "adc_id": {
+      "length": 1,
+      "required": true
+    },
+    "sample_count": {
+      "length": 2,
+      "required": true
+    },
+    "resolution_bit": {
+      "length": 1,
+      "required": true
+    },
+    "sequence": {
+      "length": 4,
+      "required": true
+    },
+    "timestamp_high": {
+      "length": 2,
+      "required": false
+    },
+    "timestamp_low": {
+      "length": 4,
+      "required": false
+    },
+    "timestamp_us": {
+      "length": 4,
+      "required": false
+    },
+    "shunt": {
+      "length": 4,
+      "format": "f",
+      "required": true
+    },
+    "offset": {
+      "length": 4,
+      "format": "f",
+      "required": true
+    },
+    "payload": {
+      "length": "variable",
+      "format": "H",
+      "required": true
+    },
+    "crc": {
+      "length": 4,
+      "polynomial": "0x04C11DB7",
+      "required": false
+    }
+  },
+  "adc_sample_structure": [
+    {
+      "version": 0,
+      "fields":[
+        "header",
+        "version",
+        "adc_id",
+        "sample_count",
+        "resolution_bit",
+        "sequence",
+        "timestamp_us",
+        "shunt",
+        "offset",
+        "payload"
+      ]
+    }
+  ],
+
   "errors": [
     { "name": "ERROR_PWM_CONFIG", "type": "config", "bit": 0 },
     { "name": "ERROR_ADC_CONFIG", "type": "config", "bit": 1 },

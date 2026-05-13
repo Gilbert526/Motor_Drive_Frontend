@@ -25,7 +25,7 @@
            <enum>QLayout::SizeConstraint::SetDefaultConstraint</enum>
           </property>
           <item>
-           <layout class="QVBoxLayout" name="verticalLayoutSerialLeft" stretch="1,2,2,1">
+           <layout class="QVBoxLayout" name="verticalLayoutSerialLeft" stretch="1,2,2,0,1">
             <item>
              <widget class="QGroupBox" name="groupBoxSerialSetting">
               <property name="sizePolicy">
@@ -184,7 +184,7 @@
                   <number>12</number>
                  </property>
                  <item row="1" column="4">
-                  <widget class="QPushButton" name="pushButtonResetConnection">
+                  <widget class="QPushButton" name="pushButtonResetAlign">
                    <property name="sizePolicy">
                     <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
                      <horstretch>0</horstretch>
@@ -204,7 +204,7 @@
                     </size>
                    </property>
                    <property name="text">
-                    <string>Sim Reset</string>
+                    <string>Aln Reset</string>
                    </property>
                   </widget>
                  </item>
@@ -593,7 +593,7 @@
                   </widget>
                  </item>
                  <item row="1" column="2">
-                  <widget class="QPushButton" name="pushButtonSimStart">
+                  <widget class="QPushButton" name="pushButtonLogAdc">
                    <property name="sizePolicy">
                     <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
                      <horstretch>0</horstretch>
@@ -613,11 +613,127 @@
                     </size>
                    </property>
                    <property name="text">
-                    <string>Sim Start</string>
+                    <string>ADC</string>
                    </property>
                   </widget>
                  </item>
                 </layout>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QGroupBox" name="groupBoxSimulation">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>340</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>340</width>
+                <height>16777215</height>
+               </size>
+              </property>
+              <property name="title">
+               <string>Simulation</string>
+              </property>
+              <layout class="QHBoxLayout" name="horizontalLayout_4">
+               <item>
+                <layout class="QHBoxLayout" name="horizontalLayoutSyncSim" stretch="5">
+                 <item>
+                  <layout class="QGridLayout" name="gridLayoutSyncStatus">
+                   <item row="1" column="1">
+                    <widget class="QLabel" name="labelSimStatus">
+                     <property name="sizePolicy">
+                      <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+                       <horstretch>0</horstretch>
+                       <verstretch>0</verstretch>
+                      </sizepolicy>
+                     </property>
+                     <property name="minimumSize">
+                      <size>
+                       <width>90</width>
+                       <height>20</height>
+                      </size>
+                     </property>
+                     <property name="maximumSize">
+                      <size>
+                       <width>90</width>
+                       <height>50</height>
+                      </size>
+                     </property>
+                     <property name="text">
+                      <string>Simulation</string>
+                     </property>
+                     <property name="alignment">
+                      <set>Qt::AlignmentFlag::AlignCenter</set>
+                     </property>
+                    </widget>
+                   </item>
+                   <item row="1" column="0">
+                    <widget class="QLabel" name="labelServerStatus">
+                     <property name="sizePolicy">
+                      <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+                       <horstretch>0</horstretch>
+                       <verstretch>0</verstretch>
+                      </sizepolicy>
+                     </property>
+                     <property name="minimumSize">
+                      <size>
+                       <width>90</width>
+                       <height>20</height>
+                      </size>
+                     </property>
+                     <property name="maximumSize">
+                      <size>
+                       <width>90</width>
+                       <height>50</height>
+                      </size>
+                     </property>
+                     <property name="text">
+                      <string>Server</string>
+                     </property>
+                     <property name="alignment">
+                      <set>Qt::AlignmentFlag::AlignCenter</set>
+                     </property>
+                    </widget>
+                   </item>
+                  </layout>
+                 </item>
+                </layout>
+               </item>
+               <item>
+                <widget class="QPushButton" name="pushButtonSyncSim">
+                 <property name="sizePolicy">
+                  <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                   <horstretch>0</horstretch>
+                   <verstretch>0</verstretch>
+                  </sizepolicy>
+                 </property>
+                 <property name="minimumSize">
+                  <size>
+                   <width>27</width>
+                   <height>0</height>
+                  </size>
+                 </property>
+                 <property name="maximumSize">
+                  <size>
+                   <width>27</width>
+                   <height>16777215</height>
+                  </size>
+                 </property>
+                 <property name="text">
+                  <string>🔗</string>
+                 </property>
+                </widget>
                </item>
               </layout>
              </widget>
@@ -665,13 +781,13 @@
                    </property>
                    <property name="minimumSize">
                     <size>
-                     <width>24</width>
+                     <width>27</width>
                      <height>24</height>
                     </size>
                    </property>
                    <property name="maximumSize">
                     <size>
-                     <width>24</width>
+                     <width>27</width>
                      <height>24</height>
                     </size>
                    </property>
@@ -688,123 +804,7 @@
            </layout>
           </item>
           <item>
-           <layout class="QVBoxLayout" name="verticalLayoutSerialRight" stretch="1,2,3">
-            <item>
-             <widget class="QGroupBox" name="groupBoxSimulation">
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
-              </property>
-              <property name="minimumSize">
-               <size>
-                <width>200</width>
-                <height>0</height>
-               </size>
-              </property>
-              <property name="maximumSize">
-               <size>
-                <width>200</width>
-                <height>16777215</height>
-               </size>
-              </property>
-              <property name="title">
-               <string>Synchronized Simulation</string>
-              </property>
-              <layout class="QHBoxLayout" name="horizontalLayout_4">
-               <item>
-                <layout class="QHBoxLayout" name="horizontalLayoutSyncSim" stretch="1,5">
-                 <item>
-                  <widget class="QPushButton" name="pushButtonSyncSim">
-                   <property name="sizePolicy">
-                    <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-                     <horstretch>0</horstretch>
-                     <verstretch>0</verstretch>
-                    </sizepolicy>
-                   </property>
-                   <property name="minimumSize">
-                    <size>
-                     <width>27</width>
-                     <height>0</height>
-                    </size>
-                   </property>
-                   <property name="maximumSize">
-                    <size>
-                     <width>27</width>
-                     <height>16777215</height>
-                    </size>
-                   </property>
-                   <property name="text">
-                    <string>🔗</string>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <layout class="QGridLayout" name="gridLayoutSyncStatus">
-                   <item row="0" column="0">
-                    <widget class="QLabel" name="labelServerStatus">
-                     <property name="sizePolicy">
-                      <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
-                       <horstretch>0</horstretch>
-                       <verstretch>0</verstretch>
-                      </sizepolicy>
-                     </property>
-                     <property name="minimumSize">
-                      <size>
-                       <width>90</width>
-                       <height>20</height>
-                      </size>
-                     </property>
-                     <property name="maximumSize">
-                      <size>
-                       <width>90</width>
-                       <height>50</height>
-                      </size>
-                     </property>
-                     <property name="text">
-                      <string>TextLabel</string>
-                     </property>
-                     <property name="alignment">
-                      <set>Qt::AlignmentFlag::AlignCenter</set>
-                     </property>
-                    </widget>
-                   </item>
-                   <item row="1" column="0">
-                    <widget class="QLabel" name="labelSimStatus">
-                     <property name="sizePolicy">
-                      <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
-                       <horstretch>0</horstretch>
-                       <verstretch>0</verstretch>
-                      </sizepolicy>
-                     </property>
-                     <property name="minimumSize">
-                      <size>
-                       <width>90</width>
-                       <height>20</height>
-                      </size>
-                     </property>
-                     <property name="maximumSize">
-                      <size>
-                       <width>90</width>
-                       <height>50</height>
-                      </size>
-                     </property>
-                     <property name="text">
-                      <string>TextLabel</string>
-                     </property>
-                     <property name="alignment">
-                      <set>Qt::AlignmentFlag::AlignCenter</set>
-                     </property>
-                    </widget>
-                   </item>
-                  </layout>
-                 </item>
-                </layout>
-               </item>
-              </layout>
-             </widget>
-            </item>
+           <layout class="QVBoxLayout" name="verticalLayoutSerialRight" stretch="3,3,1">
             <item>
              <widget class="QGroupBox" name="groupBoxTarget">
               <property name="sizePolicy">
@@ -1162,6 +1162,149 @@
                     </widget>
                    </item>
                   </layout>
+                 </item>
+                </layout>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QGroupBox" name="groupBoxSaving">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>200</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>200</width>
+                <height>16777215</height>
+               </size>
+              </property>
+              <property name="title">
+               <string>Save CSV</string>
+              </property>
+              <layout class="QVBoxLayout" name="verticalLayout">
+               <item>
+                <layout class="QGridLayout" name="gridLayout_3">
+                 <item row="0" column="0">
+                  <widget class="QLabel" name="labelSaveStatus">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="minimumSize">
+                    <size>
+                     <width>65</width>
+                     <height>20</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>65</width>
+                     <height>50</height>
+                    </size>
+                   </property>
+                   <property name="text">
+                    <string>Telemetry</string>
+                   </property>
+                   <property name="alignment">
+                    <set>Qt::AlignmentFlag::AlignCenter</set>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="0" column="1">
+                  <widget class="QPushButton" name="pushButtonSave">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="minimumSize">
+                    <size>
+                     <width>27</width>
+                     <height>0</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>27</width>
+                     <height>16777215</height>
+                    </size>
+                   </property>
+                   <property name="text">
+                    <string>💾</string>
+                   </property>
+                   <property name="checkable">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="0" column="2">
+                  <widget class="QLabel" name="labelSaveAdcStatus">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="minimumSize">
+                    <size>
+                     <width>35</width>
+                     <height>20</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>35</width>
+                     <height>50</height>
+                    </size>
+                   </property>
+                   <property name="text">
+                    <string>ADC</string>
+                   </property>
+                   <property name="alignment">
+                    <set>Qt::AlignmentFlag::AlignCenter</set>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="0" column="3">
+                  <widget class="QPushButton" name="pushButtonSaveAdc">
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="minimumSize">
+                    <size>
+                     <width>27</width>
+                     <height>0</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>27</width>
+                     <height>16777215</height>
+                    </size>
+                   </property>
+                   <property name="text">
+                    <string>💾</string>
+                   </property>
+                   <property name="checkable">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
                  </item>
                 </layout>
                </item>
@@ -1652,31 +1795,6 @@
                  </property>
                  <property name="text">
                   <string>⏸️</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QPushButton" name="pushButtonSave">
-                 <property name="sizePolicy">
-                  <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-                   <horstretch>0</horstretch>
-                   <verstretch>0</verstretch>
-                  </sizepolicy>
-                 </property>
-                 <property name="minimumSize">
-                  <size>
-                   <width>27</width>
-                   <height>0</height>
-                  </size>
-                 </property>
-                 <property name="maximumSize">
-                  <size>
-                   <width>27</width>
-                   <height>16777215</height>
-                  </size>
-                 </property>
-                 <property name="text">
-                  <string>💾</string>
                  </property>
                 </widget>
                </item>

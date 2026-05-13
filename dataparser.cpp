@@ -15,6 +15,7 @@
 const QByteArray DataParser::SYNC_BYTES = QByteArray::fromHex("AA55");
 
 DataParser::DataParser(QObject *parent): QObject{parent} {
+    qRegisterMetaType<AdcSamplePacket>("AdcSamplePacket");
     QString errorMessage;
     if (!loadDefaultConfiguration(&errorMessage)) {
         qWarning() << "Failed to load telemetry parser configuration:" << errorMessage;
@@ -453,6 +454,174 @@ bool parseGauges(const QJsonArray &array, QList<GaugeDef> *gauges, QString *erro
     return true;
 }
 
+bool parseUnsignedValue(const QJsonValue &value, quint32 *out)
+{
+    if (value.isDouble()) {
+        *out = static_cast<quint32>(value.toDouble());
+        return true;
+    }
+    if (value.isString()) {
+        bool ok = false;
+        *out = value.toString().toUInt(&ok, 0);
+        return ok;
+    }
+    return false;
+}
+
+QByteArray parseHexByteValue(const QString &text, int expectedLength)
+{
+    QString hex = text.trimmed();
+    if (hex.startsWith("0x", Qt::CaseInsensitive)) {
+        hex = hex.mid(2);
+    }
+    if (hex.size() % 2 != 0) {
+        hex.prepend('0');
+    }
+    const QByteArray bytes = QByteArray::fromHex(hex.toLatin1());
+    return bytes.size() == expectedLength ? bytes : QByteArray();
+}
+
+bool parsePacketFields(const QJsonObject &root,
+                       const QString &key,
+                       QHash<QString, TelemetryFieldDef> *packetFields,
+                       QString *errorMessage)
+{
+    const QJsonValue fieldsValue = root.value(key);
+    if (!fieldsValue.isObject()) {
+        if (errorMessage) {
+            *errorMessage = QString("Missing or invalid '%1' object").arg(key);
+        }
+        return false;
+    }
+
+    QHash<QString, TelemetryFieldDef> parsed;
+    const QJsonObject fieldsObject = fieldsValue.toObject();
+    for (auto it = fieldsObject.constBegin(); it != fieldsObject.constEnd(); ++it) {
+        if (!it.value().isObject()) {
+            if (errorMessage) {
+                *errorMessage = QString("telemetry_fields.%1 must be an object").arg(it.key());
+            }
+            return false;
+        }
+
+        const QJsonObject object = it.value().toObject();
+        TelemetryFieldDef field;
+        field.name = it.key();
+        const QJsonValue lengthValue = object.value("length");
+        if (lengthValue.isString() && lengthValue.toString() == "variable") {
+            field.variableLength = true;
+        } else if (lengthValue.isDouble()) {
+            field.length = lengthValue.toInt();
+            if (field.length <= 0) {
+                if (errorMessage) {
+                    *errorMessage = QString("%1.%2 length must be positive").arg(key, it.key());
+                }
+                return false;
+            }
+        } else {
+            if (errorMessage) {
+                *errorMessage = QString("%1.%2 length must be numeric or 'variable'").arg(key, it.key());
+            }
+            return false;
+        }
+        field.required = object.value("required").toBool(false);
+        if (object.contains("polynomial") && !parseUnsignedValue(object.value("polynomial"), &field.polynomial)) {
+            if (errorMessage) {
+                *errorMessage = QString("%1.%2 polynomial must be numeric or hex string").arg(key, it.key());
+            }
+            return false;
+        }
+        field.format = object.value("format").toString();
+        if (object.contains("value")) {
+            if (!object.value("value").isString() || field.variableLength) {
+                if (errorMessage) {
+                    *errorMessage = QString("%1.%2 value must be a hex string on a fixed-length field").arg(key, it.key());
+                }
+                return false;
+            }
+            field.value = parseHexByteValue(object.value("value").toString(), field.length);
+            if (field.value.isEmpty()) {
+                if (errorMessage) {
+                    *errorMessage = QString("%1.%2 value length does not match field length").arg(key, it.key());
+                }
+                return false;
+            }
+        }
+        parsed.insert(field.name, field);
+    }
+
+    *packetFields = parsed;
+    return true;
+}
+
+bool parsePacketStructures(const QJsonObject &root,
+                           const QString &key,
+                           const QHash<QString, TelemetryFieldDef> &packetFields,
+                           QList<TelemetryStructureDef> *packetStructures,
+                           QString *errorMessage)
+{
+    QJsonArray structuresJson;
+    if (!readObjectArray(root, key, &structuresJson, errorMessage)) {
+        return false;
+    }
+
+    QList<TelemetryStructureDef> parsed;
+    for (int i = 0; i < structuresJson.size(); ++i) {
+        if (!structuresJson[i].isObject()) {
+            if (errorMessage) {
+                *errorMessage = QString("%1[%2] must be an object").arg(key).arg(i);
+            }
+            return false;
+        }
+
+        const QJsonObject object = structuresJson[i].toObject();
+        int version = 0;
+        if (!readIntRange(object, "version", 0, 255, &version, errorMessage)) {
+            if (errorMessage) {
+                *errorMessage = QString("%1[%2]: %3").arg(key).arg(i).arg(*errorMessage);
+            }
+            return false;
+        }
+        QJsonArray fieldsJson;
+        if (!readObjectArray(object, "fields", &fieldsJson, errorMessage)) {
+            if (errorMessage) {
+                *errorMessage = QString("%1[%2]: %3").arg(key).arg(i).arg(*errorMessage);
+            }
+            return false;
+        }
+
+        TelemetryStructureDef structure;
+        structure.version = static_cast<quint8>(version);
+        for (int j = 0; j < fieldsJson.size(); ++j) {
+            if (!fieldsJson[j].isString()) {
+                if (errorMessage) {
+                    *errorMessage = QString("%1[%2].fields[%3] must be a string").arg(key).arg(i).arg(j);
+                }
+                return false;
+            }
+            const QString fieldName = fieldsJson[j].toString();
+            if (!packetFields.contains(fieldName)) {
+                if (errorMessage) {
+                    *errorMessage = QString("%1[%2].fields[%3] references unknown field '%4'")
+                                        .arg(key).arg(i).arg(j).arg(fieldName);
+                }
+                return false;
+            }
+            structure.fields.append(fieldName);
+        }
+        if (!structure.fields.contains("header") || !structure.fields.contains("version")) {
+            if (errorMessage) {
+                *errorMessage = QString("%1[%2] must include header and version").arg(key).arg(i);
+            }
+            return false;
+        }
+        parsed.append(structure);
+    }
+
+    *packetStructures = parsed;
+    return true;
+}
+
 class ExpressionParser {
 public:
     ExpressionParser(const QString &expression, const QHash<QString, double> &values)
@@ -801,6 +970,17 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
     }
 
     const QJsonObject root = document.object();
+    QHash<QString, TelemetryFieldDef> telemetryFields;
+    QList<TelemetryStructureDef> telemetryStructures;
+    QHash<QString, TelemetryFieldDef> adcSampleFields;
+    QList<TelemetryStructureDef> adcSampleStructures;
+    if (!parsePacketFields(root, "telemetry_fields", &telemetryFields, errorMessage) ||
+        !parsePacketStructures(root, "telemetry_structure", telemetryFields, &telemetryStructures, errorMessage) ||
+        !parsePacketFields(root, "adc_sample_fields", &adcSampleFields, errorMessage) ||
+        !parsePacketStructures(root, "adc_sample_structure", adcSampleFields, &adcSampleStructures, errorMessage)) {
+        return false;
+    }
+
     QJsonArray errorsJson;
     QJsonArray modesJson;
     QJsonArray fieldsJson;
@@ -843,6 +1023,14 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
     m_customFields = customFields;
     m_indicators = indicators;
     m_gauges = gauges;
+    m_telemetryFields = telemetryFields;
+    m_telemetryStructures = telemetryStructures;
+    m_adcSampleFields = adcSampleFields;
+    m_adcSampleStructures = adcSampleStructures;
+    m_telemetrySyncBytes = m_telemetryFields.value("header").value.isEmpty()
+                               ? SYNC_BYTES
+                               : m_telemetryFields.value("header").value;
+    m_adcSampleSyncBytes = m_adcSampleFields.value("header").value;
     m_displayToCmd = commandMap;
     m_configurationPath = QFileInfo(filePath).absoluteFilePath();
     m_buffer.clear();
@@ -875,16 +1063,304 @@ void DataParser::parseData(const QByteArray &newData) {
     }
 }
 
+const TelemetryStructureDef* DataParser::structureForVersion(quint8 version,
+                                                             const QList<TelemetryStructureDef> &structures) const
+{
+    for (const TelemetryStructureDef &structure : structures) {
+        if (structure.version == version) {
+            return &structure;
+        }
+    }
+    return nullptr;
+}
+
+int DataParser::minimumStructureSize(const TelemetryStructureDef &structure,
+                                     const QHash<QString, TelemetryFieldDef> &fields) const
+{
+    int size = 0;
+    for (const QString &fieldName : structure.fields) {
+        const TelemetryFieldDef field = fields.value(fieldName);
+        if (field.variableLength) {
+            break;
+        }
+        size += field.length;
+    }
+    return size;
+}
+
+int DataParser::payloadLengthForMask(quint32 mask, const QList<FieldDef> &fields) const
+{
+    int length = 0;
+    for (const FieldDef &field : fields) {
+        if (mask & field.maskBit) {
+            length += field.size;
+        }
+    }
+    return length;
+}
+
+std::optional<PacketLayout> DataParser::buildPacketLayout(const QByteArray &data,
+                                                          int startIdx,
+                                                          bool requireComplete) const
+{
+    const int headerLength = m_telemetryFields.value("header").length;
+    const int versionLength = m_telemetryFields.value("version").length;
+    if (headerLength <= 0 || versionLength != 1 ||
+        data.size() < startIdx + headerLength + versionLength) {
+        return std::nullopt;
+    }
+
+    const quint8 version = static_cast<quint8>(data.at(startIdx + headerLength));
+    const TelemetryStructureDef *structure = structureForVersion(version, m_telemetryStructures);
+    if (!structure) {
+        return std::nullopt;
+    }
+
+    PacketLayout layout;
+    layout.structure = structure;
+    layout.startPos = startIdx;
+    int pos = startIdx;
+    quint32 mask1 = 0;
+    quint32 mask2 = 0;
+    bool hasMask1 = false;
+    bool hasMask2 = false;
+    bool passedVariableField = false;
+
+    for (const QString &fieldName : structure->fields) {
+        const TelemetryFieldDef field = m_telemetryFields.value(fieldName);
+        if (fieldName == "payload") {
+            if (!hasMask1) {
+                return std::nullopt;
+            }
+            passedVariableField = true;
+            layout.payloadPos = pos;
+            layout.payloadLength = payloadLengthForMask(mask1, m_fields);
+            pos += layout.payloadLength;
+            continue;
+        }
+        if (fieldName == "payload2") {
+            if (!hasMask2) {
+                return std::nullopt;
+            }
+            passedVariableField = true;
+            layout.payload2Pos = pos;
+            layout.payload2Length = payloadLengthForMask(mask2, m_fields2);
+            pos += layout.payload2Length;
+            continue;
+        }
+        if (field.variableLength || field.length <= 0) {
+            return std::nullopt;
+        }
+
+        if (requireComplete && data.size() < pos + field.length) {
+            return std::nullopt;
+        }
+        if (!requireComplete && !passedVariableField && data.size() < pos + field.length) {
+            return std::nullopt;
+        }
+
+        if (fieldName == "header") {
+            if (field.length != m_telemetrySyncBytes.size() ||
+                data.mid(pos, field.length) != m_telemetrySyncBytes) {
+                return std::nullopt;
+            }
+        } else if (fieldName == "version") {
+            layout.versionPos = pos;
+        } else if (fieldName == "errors") {
+            layout.errorPos = pos;
+        } else if (fieldName == "modes") {
+            layout.modePos = pos;
+        } else if (fieldName == "timestamp_high") {
+            layout.timeHighPos = pos;
+        } else if (fieldName == "timestamp_low") {
+            layout.timeLowPos = pos;
+        } else if (fieldName == "timestamp_us") {
+            layout.timeUsPos = pos;
+        } else if (fieldName == "mask") {
+            layout.mask1Pos = pos;
+            mask1 = qFromLittleEndian<quint32>(data.constData() + pos);
+            hasMask1 = true;
+        } else if (fieldName == "mask2") {
+            layout.mask2Pos = pos;
+            mask2 = qFromLittleEndian<quint32>(data.constData() + pos);
+            hasMask2 = true;
+        } else if (fieldName == "crc") {
+            layout.crcPos = pos;
+            layout.crcLength = field.length;
+            layout.crcPolynomial = field.polynomial;
+        }
+        pos += field.length;
+        if (layout.payloadPos < 0) {
+            layout.fixedMetadataSize = pos - startIdx;
+        }
+    }
+
+    layout.totalLength = pos - startIdx;
+    if (requireComplete && data.size() < startIdx + layout.totalLength) {
+        return std::nullopt;
+    }
+
+    return layout;
+}
+
+bool DataParser::validatePacketCrc(const QByteArray &data, const PacketLayout &layout) const
+{
+    if (layout.crcPos < 0) {
+        return true;
+    }
+    if (layout.crcLength != 4 || data.size() < layout.crcPos + layout.crcLength) {
+        return false;
+    }
+
+    const quint32 expected = qFromLittleEndian<quint32>(data.constData() + layout.crcPos);
+    const quint32 calculated = calculateCrc32(data.constData() + layout.startPos,
+                                             layout.crcPos - layout.startPos,
+                                             layout.crcPolynomial);
+    return expected == calculated;
+}
+
+quint32 DataParser::calculateCrc32(const char *data, int length, quint32 polynomial) const
+{
+    quint32 crc = 0xFFFFFFFFu;
+    for (int i = 0; i < length; ++i) {
+        crc ^= static_cast<quint32>(static_cast<quint8>(data[i])) << 24;
+        for (int bit = 0; bit < 8; ++bit) {
+            crc = (crc & 0x80000000u) ? ((crc << 1) ^ polynomial) : (crc << 1);
+        }
+    }
+    return crc;
+}
+
+int DataParser::formatElementSize(const QString &format)
+{
+    if (format == "B") return 1;
+    if (format == "H") return 2;
+    if (format == "f") return 4;
+    return 1;
+}
+
+double DataParser::timestampSeconds(bool hasTimestampUs,
+                                    quint32 timestampUs,
+                                    bool hasTimestampTicks,
+                                    quint64 timestampTicks)
+{
+    if (hasTimestampUs) {
+        return static_cast<double>(timestampUs) / 1000000.0;
+    }
+    if (hasTimestampTicks) {
+        return static_cast<double>(timestampTicks) / 275000000.0;
+    }
+    return 0.0;
+}
+
+std::optional<PacketLayout> DataParser::buildAdcPacketLayout(const QByteArray &data,
+                                                             int startIdx,
+                                                             bool requireComplete) const
+{
+    const int headerLength = m_adcSampleFields.value("header").length;
+    const int versionLength = m_adcSampleFields.value("version").length;
+    if (headerLength <= 0 || versionLength != 1 ||
+        data.size() < startIdx + headerLength + versionLength) {
+        return std::nullopt;
+    }
+
+    const quint8 version = static_cast<quint8>(data.at(startIdx + headerLength));
+    const TelemetryStructureDef *structure = structureForVersion(version, m_adcSampleStructures);
+    if (!structure) {
+        return std::nullopt;
+    }
+
+    PacketLayout layout;
+    layout.structure = structure;
+    layout.startPos = startIdx;
+    int pos = startIdx;
+    quint16 sampleCount = 0;
+    bool hasSampleCount = false;
+
+    for (const QString &fieldName : structure->fields) {
+        const TelemetryFieldDef field = m_adcSampleFields.value(fieldName);
+        if (fieldName == "payload") {
+            if (!hasSampleCount) {
+                return std::nullopt;
+            }
+            layout.payloadPos = pos;
+            layout.payloadLength = static_cast<int>(sampleCount) * formatElementSize(field.format);
+            pos += layout.payloadLength;
+            continue;
+        }
+        if (field.variableLength || field.length <= 0) {
+            return std::nullopt;
+        }
+
+        if (requireComplete && data.size() < pos + field.length) {
+            return std::nullopt;
+        }
+        if (!requireComplete && data.size() < pos + field.length) {
+            return std::nullopt;
+        }
+
+        if (fieldName == "header") {
+            if (field.length != m_adcSampleSyncBytes.size() ||
+                data.mid(pos, field.length) != m_adcSampleSyncBytes) {
+                return std::nullopt;
+            }
+        } else if (fieldName == "version") {
+            layout.versionPos = pos;
+        } else if (fieldName == "adc_id") {
+            layout.adcIdPos = pos;
+        } else if (fieldName == "sample_count") {
+            layout.sampleCountPos = pos;
+            sampleCount = qFromLittleEndian<quint16>(data.constData() + pos);
+            hasSampleCount = true;
+        } else if (fieldName == "resolution_bit") {
+            layout.resolutionBitPos = pos;
+        } else if (fieldName == "sequence") {
+            layout.sequencePos = pos;
+        } else if (fieldName == "timestamp_high") {
+            layout.timeHighPos = pos;
+        } else if (fieldName == "timestamp_low") {
+            layout.timeLowPos = pos;
+        } else if (fieldName == "timestamp_us") {
+            layout.timeUsPos = pos;
+        } else if (fieldName == "shunt") {
+            layout.shuntPos = pos;
+        } else if (fieldName == "offset") {
+            layout.offsetPos = pos;
+        } else if (fieldName == "crc") {
+            layout.crcPos = pos;
+            layout.crcLength = field.length;
+            layout.crcPolynomial = field.polynomial;
+        }
+        pos += field.length;
+        if (layout.payloadPos < 0) {
+            layout.fixedMetadataSize = pos - startIdx;
+        }
+    }
+
+    layout.totalLength = pos - startIdx;
+    if (requireComplete && data.size() < startIdx + layout.totalLength) {
+        return std::nullopt;
+    }
+
+    return layout;
+}
+
 QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartIdx) {
     QHash<QString, double> result;
     nextStartIdx = startIdx;
 
     // 查找帧头
-    int headerPos = m_buffer.indexOf(SYNC_BYTES, startIdx);
+    int headerPos = findNextFrameHeader(m_buffer, startIdx);
     if (headerPos == -1) {
         // 没有找到帧头，跳过所有已扫描的数据（但保留最后几个字节防止跨边界）
-        nextStartIdx = m_buffer.size() - SYNC_BYTES.size() + 1;
+        nextStartIdx = m_buffer.size() - qMax(m_telemetrySyncBytes.size(), m_adcSampleSyncBytes.size()) + 1;
         if (nextStartIdx < startIdx) nextStartIdx = m_buffer.size();
+        return result;
+    }
+
+    if (!m_adcSampleSyncBytes.isEmpty() &&
+        m_buffer.mid(headerPos, m_adcSampleSyncBytes.size()) == m_adcSampleSyncBytes) {
+        tryParseAdcPacket(headerPos, nextStartIdx);
         return result;
     }
 
@@ -897,23 +1373,35 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
         return result;
     }
 
-    const int errorPos = headerPos + 2;
-    const int modePos = errorPos + 4;
-    const int timeHighPos = modePos + 1;
-    const int timeLowPos = timeHighPos + 2;
-    const int mask1Pos = timeLowPos + 4;
-    const int mask2Pos = mask1Pos + 4;
-    const quint32 errorCode = qFromLittleEndian<quint32>(m_buffer.constData() + errorPos);
-    const quint8 controlMode = static_cast<quint8>(m_buffer.at(modePos));
-    const quint16 timeHigh = qFromLittleEndian<quint16>(m_buffer.constData() + timeHighPos);
-    const quint32 timeLow = qFromLittleEndian<quint32>(m_buffer.constData() + timeLowPos);
-    const quint64 timestampTicks = (static_cast<quint64>(timeHigh) << 32) | timeLow;
-    const quint32 mask1 = qFromLittleEndian<quint32>(m_buffer.constData() + mask1Pos);
-    const quint32 mask2 = qFromLittleEndian<quint32>(m_buffer.constData() + mask2Pos);
+    const std::optional<PacketLayout> maybeLayout = buildPacketLayout(m_buffer, headerPos, true);
+    if (!maybeLayout.has_value()) {
+        return result;
+    }
+    const PacketLayout layout = maybeLayout.value();
+    if (!validatePacketCrc(m_buffer, layout)) {
+        nextStartIdx = headerPos + 1;
+        return result;
+    }
 
-    int payloadPos = mask2Pos + 4;
-    int currentPos = payloadPos;
-    result[TIMESTAMP_FIELD] = static_cast<double>(timestampTicks);
+    const quint32 errorCode = qFromLittleEndian<quint32>(m_buffer.constData() + layout.errorPos);
+    const quint8 controlMode = static_cast<quint8>(m_buffer.at(layout.modePos));
+    const bool hasTimestampTicks = layout.timeHighPos >= 0 && layout.timeLowPos >= 0;
+    const bool hasTimestampUs = layout.timeUsPos >= 0;
+    const quint16 timeHigh = hasTimestampTicks ? qFromLittleEndian<quint16>(m_buffer.constData() + layout.timeHighPos) : 0;
+    const quint32 timeLow = hasTimestampTicks ? qFromLittleEndian<quint32>(m_buffer.constData() + layout.timeLowPos) : 0;
+    const quint64 timestampTicks = (static_cast<quint64>(timeHigh) << 32) | timeLow;
+    const quint32 timestampUs = hasTimestampUs ? qFromLittleEndian<quint32>(m_buffer.constData() + layout.timeUsPos) : 0;
+    const quint32 mask1 = qFromLittleEndian<quint32>(m_buffer.constData() + layout.mask1Pos);
+    const quint32 mask2 = qFromLittleEndian<quint32>(m_buffer.constData() + layout.mask2Pos);
+
+    int currentPos = layout.payloadPos;
+    if (hasTimestampTicks) {
+        result[TIMESTAMP_FIELD] = static_cast<double>(timestampTicks);
+    }
+    if (hasTimestampUs) {
+        result[TIMESTAMP_US_FIELD] = static_cast<double>(timestampUs);
+    }
+    result[TIMESTAMP_SECONDS_FIELD] = timestampSeconds(hasTimestampUs, timestampUs, hasTimestampTicks, timestampTicks);
 
     // 按字段定义顺序解析
     for (const FieldDef &field : m_fields) {
@@ -949,7 +1437,7 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
         }
     }
 
-    nextStartIdx = currentPos;
+    nextStartIdx = headerPos + layout.totalLength;
     const QStringList errorNames = getErrorNames(errorCode);
     emit errorReceived(errorCode, errorNames);
     emit packetStatusReceived(errorCode,
@@ -959,6 +1447,63 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
                               isControlModeKnown(controlMode));
     emit maskReceived(mask1, mask2);
     return result;
+}
+
+bool DataParser::tryParseAdcPacket(int headerPos, int &nextStartIdx)
+{
+    nextStartIdx = headerPos;
+    const std::optional<PacketLayout> maybeLayout = buildAdcPacketLayout(m_buffer, headerPos, true);
+    if (!maybeLayout.has_value()) {
+        return false;
+    }
+    const PacketLayout layout = maybeLayout.value();
+    if (!validatePacketCrc(m_buffer, layout)) {
+        nextStartIdx = headerPos + 1;
+        return false;
+    }
+    if (layout.adcIdPos < 0 || layout.sampleCountPos < 0 || layout.resolutionBitPos < 0 ||
+        layout.sequencePos < 0 || layout.shuntPos < 0 || layout.offsetPos < 0 ||
+        layout.payloadPos < 0) {
+        nextStartIdx = headerPos + 1;
+        return false;
+    }
+
+    AdcSamplePacket packet;
+    packet.version = layout.versionPos >= 0 ? static_cast<quint8>(m_buffer.at(layout.versionPos)) : 0;
+    packet.adcId = static_cast<quint8>(m_buffer.at(layout.adcIdPos));
+    packet.resolutionBit = static_cast<quint8>(m_buffer.at(layout.resolutionBitPos));
+    packet.sequence = qFromLittleEndian<quint32>(m_buffer.constData() + layout.sequencePos);
+    packet.shunt = qFromLittleEndian<float>(m_buffer.constData() + layout.shuntPos);
+    packet.offset = qFromLittleEndian<float>(m_buffer.constData() + layout.offsetPos);
+
+    if (layout.timeHighPos >= 0 && layout.timeLowPos >= 0) {
+        const quint16 timeHigh = qFromLittleEndian<quint16>(m_buffer.constData() + layout.timeHighPos);
+        const quint32 timeLow = qFromLittleEndian<quint32>(m_buffer.constData() + layout.timeLowPos);
+        packet.timestampTicks = (static_cast<quint64>(timeHigh) << 32) | timeLow;
+        packet.hasTimestampTicks = true;
+    }
+    if (layout.timeUsPos >= 0) {
+        packet.timestampUs = qFromLittleEndian<quint32>(m_buffer.constData() + layout.timeUsPos);
+        packet.hasTimestampUs = true;
+    }
+    packet.timestampSeconds = timestampSeconds(packet.hasTimestampUs,
+                                               packet.timestampUs,
+                                               packet.hasTimestampTicks,
+                                               packet.timestampTicks);
+
+    const quint16 sampleCount = qFromLittleEndian<quint16>(m_buffer.constData() + layout.sampleCountPos);
+    packet.samples.reserve(sampleCount);
+    for (int i = 0; i < sampleCount; ++i) {
+        const int pos = layout.payloadPos + i * static_cast<int>(sizeof(quint16));
+        if (pos + static_cast<int>(sizeof(quint16)) > headerPos + layout.totalLength) {
+            break;
+        }
+        packet.samples.append(qFromLittleEndian<quint16>(m_buffer.constData() + pos));
+    }
+
+    nextStartIdx = headerPos + layout.totalLength;
+    emit adcSampleReceived(packet);
+    return true;
 }
 
 double DataParser::unpackValue(const QByteArray &data, const FieldDef &field) {
@@ -1080,23 +1625,27 @@ std::optional<quint8> DataParser::getControlModeValueForName(const QString &mode
 }
 
 int DataParser::minimumFrameSize() const {
-    return 2 + 4 + 1 + 2 + 4 + 4 + 4;
+    int minimumSize = std::numeric_limits<int>::max();
+    for (const TelemetryStructureDef &structure : m_telemetryStructures) {
+        const int size = minimumStructureSize(structure, m_telemetryFields);
+        if (size > 0) {
+            minimumSize = qMin(minimumSize, size);
+        }
+    }
+    return minimumSize == std::numeric_limits<int>::max() ? 2 + 1 : minimumSize;
 }
 
 bool DataParser::hasValidFrameMetadata(const QByteArray &data, int startIdx) const {
-    if (data.size() < startIdx + minimumFrameSize())
+    const std::optional<PacketLayout> maybeLayout = buildPacketLayout(data, startIdx, false);
+    if (!maybeLayout.has_value())
         return false;
 
-    if (data.at(startIdx) != char(0xAA) || data.at(startIdx + 1) != char(0x55))
+    const PacketLayout layout = maybeLayout.value();
+    if (layout.errorPos < 0 || layout.modePos < 0 || layout.mask1Pos < 0 || layout.mask2Pos < 0)
         return false;
 
-    const int modePos = startIdx + 2 + 4;
-    const int timeHighPos = modePos + 1;
-    const int timeLowPos = timeHighPos + 2;
-    const int mask1Pos = timeLowPos + 4;
-    const int mask2Pos = mask1Pos + 4;
-    const quint32 errorCode = qFromLittleEndian<quint32>(data.constData() + startIdx + 2);
-    const quint8 controlMode = static_cast<quint8>(data.at(modePos));
+    const quint32 errorCode = qFromLittleEndian<quint32>(data.constData() + layout.errorPos);
+    const quint8 controlMode = static_cast<quint8>(data.at(layout.modePos));
     if (!isControlModeKnown(controlMode))
         return false;
 
@@ -1117,45 +1666,62 @@ bool DataParser::hasValidFrameMetadata(const QByteArray &data, int startIdx) con
         validMask2Bits |= field.maskBit;
     }
 
-    const quint32 mask1 = qFromLittleEndian<quint32>(data.constData() + mask1Pos);
-    const quint32 mask2 = qFromLittleEndian<quint32>(data.constData() + mask2Pos);
+    const quint32 mask1 = qFromLittleEndian<quint32>(data.constData() + layout.mask1Pos);
+    const quint32 mask2 = qFromLittleEndian<quint32>(data.constData() + layout.mask2Pos);
     return (mask1 & ~validMask1Bits) == 0 && (mask2 & ~validMask2Bits) == 0;
 }
 
 int DataParser::getFrameLength(const QByteArray &data, int startIdx) const
 {
-    // Check if the data is sufficient to contain the frame header (2 bytes) + mask (4 bytes)
+    if (!m_adcSampleSyncBytes.isEmpty() &&
+        data.size() >= startIdx + m_adcSampleSyncBytes.size() &&
+        data.mid(startIdx, m_adcSampleSyncBytes.size()) == m_adcSampleSyncBytes) {
+        const std::optional<PacketLayout> maybeLayout = buildAdcPacketLayout(data, startIdx, true);
+        return maybeLayout.has_value() ? maybeLayout->totalLength : -1;
+    }
+
+    // Check if the data is sufficient to contain the fixed frame metadata.
     if (data.size() < startIdx + minimumFrameSize())
         return -1;
 
     if (!hasValidFrameMetadata(data, startIdx))
         return -1;
 
-    // Read the masks after the error code, mode byte, and MCU timestamp.
-    const int mask1Pos = startIdx + 2 + 4 + 1 + 2 + 4;
-    const int mask2Pos = mask1Pos + 4;
-    const quint32 mask1 = qFromLittleEndian<quint32>(data.constData() + mask1Pos);
-    const quint32 mask2 = qFromLittleEndian<quint32>(data.constData() + mask2Pos);
-
-    // Calculate the total length of the payload area
-    int payloadLen = 0;
-    for (const FieldDef &field : m_fields) {
-        if (mask1 & field.maskBit) {
-            payloadLen += field.size;
-        }
-    }
-    for (const FieldDef &field : m_fields2) {
-        if (mask2 & field.maskBit) {
-            payloadLen += field.size;
-        }
-    }
-
-    // Total length = frame header(2) + error(4) + mode(1) + timestamp(6) + masks(8) + payload length
-    int totalLen = 2 + 4 + 1 + 2 + 4 + 4 + 4 + payloadLen;
-    if (data.size() < startIdx + totalLen)
+    const std::optional<PacketLayout> maybeLayout = buildPacketLayout(data, startIdx, true);
+    if (!maybeLayout.has_value())
         return -1;   // Insufficient data
 
-    return totalLen;
+    return maybeLayout->totalLength;
+}
+
+int DataParser::findNextFrameHeader(const QByteArray &data, int startIdx) const
+{
+    int best = -1;
+    const QList<QByteArray> headers{m_telemetrySyncBytes, m_adcSampleSyncBytes};
+    for (const QByteArray &header : headers) {
+        if (header.isEmpty()) {
+            continue;
+        }
+        const int pos = data.indexOf(header, startIdx);
+        if (pos >= 0 && (best < 0 || pos < best)) {
+            best = pos;
+        }
+    }
+    return best;
+}
+
+int DataParser::partialFrameHeaderLength(const QByteArray &data) const
+{
+    int best = 0;
+    const QList<QByteArray> headers{m_telemetrySyncBytes, m_adcSampleSyncBytes};
+    for (const QByteArray &header : headers) {
+        for (int len = 1; len < header.size(); ++len) {
+            if (data.size() >= len && data.right(len) == header.left(len)) {
+                best = qMax(best, len);
+            }
+        }
+    }
+    return best;
 }
 
 void DataParser::addCommandMapping(const QString &displayName, const QString &commandName) {

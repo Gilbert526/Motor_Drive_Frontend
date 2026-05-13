@@ -3,6 +3,79 @@
 // The application loads strict JSON, so telemetry_config.json must not contain // comments.
 
 {
+  // Fixed and variable fields in the binary telemetry frame.
+  // This documents the byte layout expected by the current parser.
+  "telemetry_fields": {
+    "header": {
+      "length": 2,
+      "required": true
+    },
+    "version": {
+      "length": 1,
+      "required": true
+    },
+    "errors": {
+      "length": 4,
+      "required": true
+    },
+    "modes": {
+      "length": 1,
+      "required": true
+    },
+    "timestamp_high": {
+      "length": 2,
+      "required": true
+    },
+    "timestamp_low": {
+      "length": 4,
+      "required": true
+    },
+    "mask": {
+      "length": 4,
+      "required": true
+    },
+    "mask2": {
+      "length": 4,
+      "required": true
+    },
+    "payload": {
+      "length": "variable",
+      "required": false
+    },
+    "payload2": {
+      "length": "variable",
+      "required": false
+    },
+    "crc": {
+      // Optional fixed-width CRC32 field for future packet versions.
+      // When a telemetry_structure includes "crc", the parser validates it over all preceding frame bytes.
+      // The stored CRC is read as little-endian uint32.
+      "length": 4,
+      "polynomial": "0x04C11DB7",
+      "required": false
+    }
+  },
+
+  // Version 0 currently maps to:
+  // header | version | errors | modes | timestamp_high | timestamp_low | mask | mask2 | payload | payload2
+  "telemetry_structure": [
+    {
+      "version": 0,
+      "fields": [
+        "header",
+        "version",
+        "errors",
+        "modes",
+        "timestamp_high",
+        "timestamp_low",
+        "mask",
+        "mask2",
+        "payload",
+        "payload2"
+      ]
+    }
+  ],
+
   // Error definitions.
   // bit is the bit index used in error_code, equivalent to (1u << bit).
   // type controls grouped status LEDs and fault auto-capture behavior.

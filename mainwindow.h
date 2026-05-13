@@ -26,6 +26,7 @@ class simulationDialog;
 struct IndicatorDef;
 struct IndicatorStatusDef;
 struct GaugeDef;
+struct AdcSamplePacket;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -65,9 +66,9 @@ private slots:
     void on_pushButtonFoc_clicked();
     void on_pushButtonStop_clicked();
     void on_pushButtonAlign_clicked();
+    void on_pushButtonResetAlign_clicked();
     void on_pushButtonAudible_clicked();
     void on_pushButtonReset_clicked();
-    void on_pushButtonResetConnection_clicked();
     void on_pushButtonSyncSim_clicked();
     // Logging
     void on_pushButtonPreset1_clicked();
@@ -77,7 +78,7 @@ private slots:
     void on_pushButtonRemoveAll_clicked();
     void on_pushButtonBin_clicked();
     void on_pushButtonUtf8_clicked();
-    void on_pushButtonSimStart_clicked();
+    void on_pushButtonLogAdc_clicked();
     // Setting Targets
     void on_comboBoxTargetSelection_currentIndexChanged(int index);
     void on_targetSlider_valueChanged(int value);
@@ -97,6 +98,7 @@ private slots:
     // Scope control
     void on_pushButtonPause_clicked();
     void on_pushButtonSave_clicked();
+    void on_pushButtonSaveAdc_clicked();
     void on_pushButtonSelectConfig_clicked();
 
     void onFieldCheckStateChanged(QListWidgetItem *item);
@@ -107,6 +109,7 @@ private slots:
 
     // 数据解析
     void handleNewData(const QHash<QString, double> &values);
+    void handleAdcSample(const AdcSamplePacket &packet);
     void handlePacketStatus(quint32 errorCode,
                             const QStringList &errorNames,
                             quint8 controlMode,
@@ -204,6 +207,26 @@ private:
     QStringList m_logFields;
     TelemetryStatus m_telemetryStatus;
 
+    // CSV ADC sample logging
+    bool m_isAdcLogging;
+    bool m_adcPacketActive;
+    QFile m_adcLogFile;
+    QTextStream m_adcLogStream;
+    qint64 m_lastAdcPacketMs;
+    QTimer *m_adcActivityTimer;
+    struct PendingAdcSampleRow {
+        bool hasAdc[3] = {false, false, false};
+        quint16 raw[3] = {0, 0, 0};
+        double current[3] = {0.0, 0.0, 0.0};
+    };
+    struct PendingAdcSequence {
+        QString time;
+        QVector<PendingAdcSampleRow> rows;
+        int receivedMask = 0;
+        qint64 lastUpdateMs = 0;
+    };
+    QHash<quint32, PendingAdcSequence> m_pendingAdcSequences;
+
     bool m_syncingFromMask;
 
     // Target type selection
@@ -276,6 +299,12 @@ private:
     bool startTelemetryLogging();
     void stopTelemetryLogging();
     void writeTelemetryLogRow(const QHash<QString, double> &values);
+    bool startAdcLogging();
+    void stopAdcLogging();
+    void writeAdcLogRows(const AdcSamplePacket &packet);
+    void flushAdcSequence(quint32 sequence);
+    void flushStaleAdcSequences();
+    void updateAdcSaveButtonState();
 
     // Target setting helpers
     void updateTargetSliderLimits();   // 根据 Speed/Torque 更新滑块范围和步进
