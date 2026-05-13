@@ -5,6 +5,7 @@
 #include "DataParser.h"
 #include "simulationdialog.h"
 #include <QMessageBox>
+#include <QMetaObject>
 #include <QSerialPortInfo>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -103,7 +104,20 @@ MainWindow::MainWindow(QWidget *parent):
         connect(m_serialManager, &SerialManager::rawDataReceived, m_dataParser, &DataParser::parseData);
         connect(m_dataParser, &DataParser::parsedData, this, &MainWindow::handleNewData);
         connect(m_dataParser, &DataParser::adcSampleReceived, this, &MainWindow::handleAdcSample);
+        connect(m_dataParser, &DataParser::adcSampleActivityReceived, this, [this]() {
+            m_lastAdcPacketMs = QDateTime::currentMSecsSinceEpoch();
+            m_adcPacketActive = true;
+            if (m_adcActivityTimer) {
+                m_adcActivityTimer->start(100);
+            }
+            updateAdcSaveButtonState();
+        });
         connect(m_dataParser, &DataParser::packetStatusReceived, this, &MainWindow::handlePacketStatus);
+        connect(m_dataParser, &DataParser::receivedTextLine, this, [this](const QString &text) {
+            ui->plainTextEditReceive->appendPlainText(text);
+            handleAdcStatusText(text);
+            parseTuneResponse(text);
+        });
         connect(m_dataParser, &DataParser::configurationChanged, this, [this]() {
             updateFaultAutoCaptureMask();
             loadAvailableFields();
@@ -113,56 +127,6 @@ MainWindow::MainWindow(QWidget *parent):
         });
 
         connect(m_dataParser, &DataParser::maskReceived, this, &MainWindow::onMaskReceived);
-
-        // Display received message in text box
-        connect(m_serialManager, &SerialManager::rawDataReceived, this, [this](const QByteArray &data) {
-            static QByteArray buffer;           // Buffer for original data
-            static QByteArray lineBuffer;       // Accumulated incomplete text lines
-            buffer.append(data);
-
-            int idx = 0;
-            while (idx < buffer.size()) {
-                // Look for the next binary frame header.
-                int headerPos = m_dataParser->findNextFrameHeader(buffer, idx);
-                if (headerPos == -1) {
-                    // Preserve a partial sync header so the next chunk can complete a binary frame.
-                    int endOfText = buffer.size();
-                    const int partialHeaderLen = m_dataParser->partialFrameHeaderLength(buffer);
-                    if (partialHeaderLen > 0) {
-                        endOfText -= partialHeaderLen;
-                    }
-                    if (endOfText > idx) {
-                        processReceiveTextChunk(buffer.mid(idx, endOfText - idx), lineBuffer);
-                        idx = endOfText;
-                    }
-                    break;
-                }
-
-                // Text data before the frame header (possibly incomplete line)
-                if (headerPos > idx) {
-                    processReceiveTextChunk(buffer.mid(idx, headerPos - idx), lineBuffer);
-                }
-
-                // Try to get the binary frame length
-                int frameLen = m_dataParser->getFrameLength(buffer, headerPos);
-                if (frameLen == -1) {
-                    // Insufficient data, retain the unprocessed portion from headerPos (incomplete frame header)
-                    idx = headerPos;
-                    break;
-                }
-
-                // Skip the entire binary frame
-                idx = headerPos + frameLen;
-            }
-
-            // If the loop ends normally (idx reaches the end), clear the buffer
-            if (idx >= buffer.size()) {
-                buffer.clear();
-            } else {
-                // Retain the unprocessed portion (possibly an incomplete binary frame header)
-                buffer = buffer.mid(idx);
-            }
-        });
 
         // 启动串口线程
         m_serialThread->start(QThread::HighPriority);
@@ -1248,12 +1212,6 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
 }
 
 void MainWindow::handleAdcSample(const AdcSamplePacket &packet) {
-    m_lastAdcPacketMs = QDateTime::currentMSecsSinceEpoch();
-    m_adcPacketActive = true;
-    if (m_adcActivityTimer) {
-        m_adcActivityTimer->start(500);
-    }
-    updateAdcSaveButtonState();
     writeAdcLogRows(packet);
 }
 
@@ -1891,6 +1849,7 @@ void MainWindow::on_pushButtonSaveAdc_clicked() {
 }
 
 void MainWindow::on_pushButtonLogAdc_clicked() {
+    updateAdcSaveButtonState();
     sendCommand(m_adcPacketActive ? "log rm adc\r\n" : "log add adc\r\n");
 }
 
@@ -2016,36 +1975,32 @@ bool MainWindow::startAdcLogging() {
     }
 
     const QString fileName = QDateTime::currentDateTime().toString("yyyy-MM-dd-hh.mm.ss'_adc_sample.csv'");
-    m_adcLogFile.setFileName(QDir::current().filePath(fileName));
-    if (!m_adcLogFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::critical(this, "Error", "Failed to create ADC sample log file: " + m_adcLogFile.errorString());
+    const QString filePath = QDir::current().filePath(fileName);
+    bool started = false;
+    QString errorMessage;
+    QMetaObject::invokeMethod(m_dataParser, [this, filePath, &started, &errorMessage]() {
+        started = m_dataParser->startAdcCsvLogging(filePath, &errorMessage);
+    }, Qt::BlockingQueuedConnection);
+    if (!started) {
+        QMessageBox::critical(this, "Error", "Failed to create ADC sample log file: " + errorMessage);
         return false;
     }
 
-    m_adcLogStream.setDevice(&m_adcLogFile);
-    m_adcLogStream << "time,adc1_raw,adc2_raw,adc3_raw,adc1_a,adc2_a,adc3_a\n";
     m_pendingAdcSequences.clear();
     m_isAdcLogging = true;
     ui->pushButtonSaveAdc->setChecked(true);
-    ui->pushButtonSaveAdc->setToolTip("Saving ADC samples to " + m_adcLogFile.fileName());
+    ui->pushButtonSaveAdc->setToolTip("Saving ADC samples to " + filePath);
     return true;
 }
 
 void MainWindow::stopAdcLogging() {
-    if (!m_isAdcLogging && !m_adcLogFile.isOpen()) {
+    if (!m_isAdcLogging) {
         return;
     }
 
-    m_adcLogStream.flush();
-    const QList<quint32> pendingSequences = m_pendingAdcSequences.keys();
-    for (quint32 sequence : pendingSequences) {
-        flushAdcSequence(sequence);
-    }
-    m_adcLogStream.flush();
-    m_adcLogStream.setDevice(nullptr);
-    if (m_adcLogFile.isOpen()) {
-        m_adcLogFile.close();
-    }
+    QMetaObject::invokeMethod(m_dataParser, [this]() {
+        m_dataParser->stopAdcCsvLogging();
+    }, Qt::BlockingQueuedConnection);
     m_isAdcLogging = false;
     m_pendingAdcSequences.clear();
     if (ui && ui->pushButtonSaveAdc) {
@@ -2152,15 +2107,39 @@ void MainWindow::updateAdcSaveButtonState() {
         return;
     }
     if (m_isAdcLogging) {
+        QMetaObject::invokeMethod(m_dataParser, [this]() {
+            m_dataParser->flushStaleAdcCsvSequences();
+        }, Qt::QueuedConnection);
         flushStaleAdcSequences();
+        if (m_adcActivityTimer && !m_adcActivityTimer->isActive()) {
+            m_adcActivityTimer->start(600);
+        }
     }
 
     m_adcPacketActive = m_lastAdcPacketMs > 0 &&
-                        QDateTime::currentMSecsSinceEpoch() - m_lastAdcPacketMs <= 500;
+                        QDateTime::currentMSecsSinceEpoch() - m_lastAdcPacketMs <= 100;
     const bool adcRecentProperty = !m_isAdcLogging && m_adcPacketActive;
     if (ui->pushButtonSaveAdc->property("adcRecent").toBool() != adcRecentProperty) {
         ui->pushButtonSaveAdc->setProperty("adcRecent", adcRecentProperty);
         refreshStyle(ui->pushButtonSaveAdc);
+    }
+}
+
+void MainWindow::handleAdcStatusText(const QString &text)
+{
+    const QString normalized = text.trimmed().toLower();
+    if (normalized == "adc print enabled") {
+        m_adcPacketActive = true;
+        m_lastAdcPacketMs = QDateTime::currentMSecsSinceEpoch();
+        if (m_adcActivityTimer) {
+            m_adcActivityTimer->start(100);
+        }
+        updateAdcSaveButtonState();
+        return;
+    }
+
+    if (normalized == "adc print disabled") {
+        updateAdcSaveButtonState();
     }
 }
 

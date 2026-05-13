@@ -4,7 +4,10 @@
 #include <QObject>
 #include <QByteArray>
 #include <QHash>
+#include <QElapsedTimer>
+#include <QFile>
 #include <QStringList>
+#include <QTextStream>
 #include <QVector>
 #include <optional>
 
@@ -176,15 +179,22 @@ public:
      */
     int getFrameLength(const QByteArray &data, int startIdx = 0) const;
     int findNextFrameHeader(const QByteArray &data, int startIdx = 0) const;
+    int findNextValidTelemetryFrameHeader(const QByteArray &data, int startIdx = 0) const;
     int partialFrameHeaderLength(const QByteArray &data) const;
 
     static constexpr const char *TIMESTAMP_FIELD = "__mcu_timestamp_ticks";
     static constexpr const char *TIMESTAMP_US_FIELD = "__mcu_timestamp_us";
     static constexpr const char *TIMESTAMP_SECONDS_FIELD = "__mcu_timestamp_seconds";
 
+    bool startAdcCsvLogging(const QString &fileName, QString *errorMessage = nullptr);
+    void stopAdcCsvLogging();
+    void flushStaleAdcCsvSequences();
+
 signals:
     void parsedData(const QHash<QString, double> &values);
     void adcSampleReceived(const AdcSamplePacket &packet);
+    void adcSampleActivityReceived();
+    void receivedTextLine(const QString &text);
 
     void maskReceived(quint32 mask1, quint32 mask2);
 
@@ -216,16 +226,51 @@ private:
     QByteArray m_adcSampleSyncBytes;
 
     QByteArray m_buffer;
+    QByteArray m_textLineBuffer;
     QString m_configurationPath;
+    QElapsedTimer m_telemetryEmitTimer;
+    QElapsedTimer m_adcActivityEmitTimer;
+    bool m_hasLastMask = false;
+    quint32 m_lastMask1 = 0;
+    quint32 m_lastMask2 = 0;
+    bool m_hasLastPacketStatus = false;
+    quint32 m_lastStatusErrorCode = 0;
+    quint8 m_lastStatusControlMode = 0;
+    bool m_lastStatusControlModeKnown = false;
+    bool m_isAdcLogging = false;
+    QFile m_adcLogFile;
+    QTextStream m_adcLogStream;
+    struct PendingAdcSampleRow {
+        bool hasAdc[3] = {false, false, false};
+        quint16 raw[3] = {0, 0, 0};
+        double current[3] = {0.0, 0.0, 0.0};
+    };
+    struct PendingAdcSequence {
+        QString time;
+        QVector<PendingAdcSampleRow> rows;
+        int receivedMask = 0;
+        qint64 lastUpdateMs = 0;
+    };
+    QHash<quint32, PendingAdcSequence> m_pendingAdcSequences;
 
     QHash<QString, double> tryParsePacket(int startIdx, int &nextStartIdx);
 
     double unpackValue(const QByteArray &data, const FieldDef &field);
+    void maybeEmitParsedData(const QHash<QString, double> &values);
+    void maybeEmitPacketMetadata(quint32 errorCode, quint8 controlMode, quint32 mask1, quint32 mask2);
+    void processReceiveTextChunk(const QByteArray &chunk);
+    void flushReceiveTextLines();
+    static bool isReceiveTextByte(char byte);
+    static bool isLikelyReceiveTextLine(const QByteArray &line);
+    void writeAdcLogRows(const AdcSamplePacket &packet);
+    void flushAdcSequence(quint32 sequence, const QString &reason = QString());
+    void flushStaleAdcSequences();
     void addCommandMapping(const QString &displayName, const QString &commandName);
     bool loadDefaultConfiguration(QString *errorMessage = nullptr);
     static QStringList configurationSearchPaths();
     const TelemetryStructureDef* structureForVersion(quint8 version, const QList<TelemetryStructureDef> &structures) const;
     int minimumStructureSize(const TelemetryStructureDef &structure, const QHash<QString, TelemetryFieldDef> &fields) const;
+    int minimumAdcFrameSize() const;
     std::optional<PacketLayout> buildPacketLayout(const QByteArray &data, int startIdx, bool requireComplete) const;
     std::optional<PacketLayout> buildAdcPacketLayout(const QByteArray &data, int startIdx, bool requireComplete) const;
     int payloadLengthForMask(quint32 mask, const QList<FieldDef> &fields) const;

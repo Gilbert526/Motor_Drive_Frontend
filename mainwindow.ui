@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1525</width>
-    <height>810</height>
+    <width>1503</width>
+    <height>860</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -25,7 +25,7 @@
            <enum>QLayout::SizeConstraint::SetDefaultConstraint</enum>
           </property>
           <item>
-           <layout class="QVBoxLayout" name="verticalLayoutSerialLeft" stretch="1,2,2,0,1">
+           <layout class="QVBoxLayout" name="verticalLayoutSerialLeft" stretch="1,2,2,1,1">
             <item>
              <widget class="QGroupBox" name="groupBoxSerialSetting">
               <property name="sizePolicy">
@@ -828,9 +828,9 @@
               <property name="title">
                <string>Set Target</string>
               </property>
-              <layout class="QVBoxLayout" name="verticalLayout_7">
+              <layout class="QVBoxLayout" name="verticalLayout_6">
                <item>
-                <layout class="QVBoxLayout" name="verticalLayoutTarget">
+                <layout class="QVBoxLayout" name="verticalLayoutTarget" stretch="1,1,1">
                  <item>
                   <layout class="QHBoxLayout" name="horizontalLayoutTargetSelection">
                    <item>
@@ -1015,7 +1015,7 @@
               </property>
               <layout class="QVBoxLayout" name="verticalLayout_5">
                <item>
-                <layout class="QVBoxLayout" name="verticalLayoutTuning" stretch="0,0,0,0">
+                <layout class="QVBoxLayout" name="verticalLayoutTuning" stretch="1,1,1,1">
                  <item>
                   <layout class="QHBoxLayout" name="horizontalLayoutTuneSelection">
                    <item>
@@ -1662,8 +1662,8 @@
                  <rect>
                   <x>0</x>
                   <y>0</y>
-                  <width>497</width>
-                  <height>675</height>
+                  <width>475</width>
+                  <height>725</height>
                  </rect>
                 </property>
                 <layout class="QVBoxLayout" name="verticalLayout_OscContainer">
@@ -1816,7 +1816,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1525</width>
+     <width>1503</width>
      <height>22</height>
     </rect>
    </property>

@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QDateTime>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -16,6 +17,8 @@ const QByteArray DataParser::SYNC_BYTES = QByteArray::fromHex("AA55");
 
 DataParser::DataParser(QObject *parent): QObject{parent} {
     qRegisterMetaType<AdcSamplePacket>("AdcSamplePacket");
+    m_telemetryEmitTimer.start();
+    m_adcActivityEmitTimer.start();
     QString errorMessage;
     if (!loadDefaultConfiguration(&errorMessage)) {
         qWarning() << "Failed to load telemetry parser configuration:" << errorMessage;
@@ -1038,6 +1041,54 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
     return true;
 }
 
+bool DataParser::startAdcCsvLogging(const QString &fileName, QString *errorMessage)
+{
+    if (m_isAdcLogging) {
+        return true;
+    }
+
+    m_adcLogFile.setFileName(fileName);
+    if (!m_adcLogFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        if (errorMessage) {
+            *errorMessage = m_adcLogFile.errorString();
+        }
+        return false;
+    }
+
+    m_adcLogStream.setDevice(&m_adcLogFile);
+    m_adcLogStream << "time,sequence,adc1_raw,adc2_raw,adc3_raw,adc1_a,adc2_a,adc3_a\n";
+    m_pendingAdcSequences.clear();
+    m_isAdcLogging = true;
+    return true;
+}
+
+void DataParser::stopAdcCsvLogging()
+{
+    if (!m_isAdcLogging && !m_adcLogFile.isOpen()) {
+        return;
+    }
+
+    m_adcLogStream.flush();
+    const QList<quint32> pendingSequences = m_pendingAdcSequences.keys();
+    for (quint32 sequence : pendingSequences) {
+        flushAdcSequence(sequence);
+    }
+    m_adcLogStream.flush();
+    m_adcLogStream.setDevice(nullptr);
+    if (m_adcLogFile.isOpen()) {
+        m_adcLogFile.close();
+    }
+    m_isAdcLogging = false;
+    m_pendingAdcSequences.clear();
+}
+
+void DataParser::flushStaleAdcCsvSequences()
+{
+    if (m_isAdcLogging) {
+        flushStaleAdcSequences();
+    }
+}
+
 void DataParser::parseData(const QByteArray &newData) {
     m_buffer.append(newData);
     int idx = 0;
@@ -1049,7 +1100,7 @@ void DataParser::parseData(const QByteArray &newData) {
                 idx = nextIdx;
                 continue;
             }
-            emit parsedData(values);   // Inform MainWindow of new parsed data
+            maybeEmitParsedData(values);
             idx = nextIdx;
         } else {
             break;  // 数据不足，等待更多数据
@@ -1060,6 +1111,9 @@ void DataParser::parseData(const QByteArray &newData) {
         m_buffer = m_buffer.mid(idx);
         if (m_buffer.size() > MAX_FRAME_SIZE)
             m_buffer.clear();
+    } else if (m_buffer.size() > MAX_FRAME_SIZE) {
+        const int keepBytes = qMax(m_telemetrySyncBytes.size(), m_adcSampleSyncBytes.size()) - 1;
+        m_buffer = keepBytes > 0 ? m_buffer.right(keepBytes) : QByteArray();
     }
 }
 
@@ -1086,6 +1140,20 @@ int DataParser::minimumStructureSize(const TelemetryStructureDef &structure,
         size += field.length;
     }
     return size;
+}
+
+int DataParser::minimumAdcFrameSize() const
+{
+    int minimumSize = std::numeric_limits<int>::max();
+    for (const TelemetryStructureDef &structure : m_adcSampleStructures) {
+        const int size = minimumStructureSize(structure, m_adcSampleFields);
+        if (size > 0) {
+            minimumSize = qMin(minimumSize, size);
+        }
+    }
+    return minimumSize == std::numeric_limits<int>::max()
+               ? m_adcSampleSyncBytes.size() + 1
+               : minimumSize;
 }
 
 int DataParser::payloadLengthForMask(quint32 mask, const QList<FieldDef> &fields) const
@@ -1196,6 +1264,9 @@ std::optional<PacketLayout> DataParser::buildPacketLayout(const QByteArray &data
     }
 
     layout.totalLength = pos - startIdx;
+    if (layout.totalLength <= 0 || layout.totalLength > MAX_FRAME_SIZE) {
+        return std::nullopt;
+    }
     if (requireComplete && data.size() < startIdx + layout.totalLength) {
         return std::nullopt;
     }
@@ -1338,6 +1409,9 @@ std::optional<PacketLayout> DataParser::buildAdcPacketLayout(const QByteArray &d
     }
 
     layout.totalLength = pos - startIdx;
+    if (layout.totalLength <= 0 || layout.totalLength > MAX_FRAME_SIZE) {
+        return std::nullopt;
+    }
     if (requireComplete && data.size() < startIdx + layout.totalLength) {
         return std::nullopt;
     }
@@ -1355,7 +1429,14 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
         // 没有找到帧头，跳过所有已扫描的数据（但保留最后几个字节防止跨边界）
         nextStartIdx = m_buffer.size() - qMax(m_telemetrySyncBytes.size(), m_adcSampleSyncBytes.size()) + 1;
         if (nextStartIdx < startIdx) nextStartIdx = m_buffer.size();
+        if (nextStartIdx > startIdx) {
+            processReceiveTextChunk(m_buffer.mid(startIdx, nextStartIdx - startIdx));
+        }
         return result;
+    }
+
+    if (headerPos > startIdx) {
+        processReceiveTextChunk(m_buffer.mid(startIdx, headerPos - startIdx));
     }
 
     if (!m_adcSampleSyncBytes.isEmpty() &&
@@ -1438,43 +1519,77 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
     }
 
     nextStartIdx = headerPos + layout.totalLength;
-    const QStringList errorNames = getErrorNames(errorCode);
-    emit errorReceived(errorCode, errorNames);
-    emit packetStatusReceived(errorCode,
-                              errorNames,
-                              controlMode,
-                              getControlModeName(controlMode),
-                              isControlModeKnown(controlMode));
-    emit maskReceived(mask1, mask2);
+    maybeEmitPacketMetadata(errorCode, controlMode, mask1, mask2);
     return result;
 }
 
 bool DataParser::tryParseAdcPacket(int headerPos, int &nextStartIdx)
 {
     nextStartIdx = headerPos;
-    const std::optional<PacketLayout> maybeLayout = buildAdcPacketLayout(m_buffer, headerPos, true);
+    const std::optional<PacketLayout> maybeLayout = buildAdcPacketLayout(m_buffer, headerPos, false);
     if (!maybeLayout.has_value()) {
+        if (m_buffer.size() >= headerPos + minimumAdcFrameSize()) {
+            qWarning() << "Invalid ADC sample packet metadata; resynchronising";
+            nextStartIdx = headerPos + 1;
+        }
         return false;
     }
     const PacketLayout layout = maybeLayout.value();
-    if (!validatePacketCrc(m_buffer, layout)) {
-        nextStartIdx = headerPos + 1;
-        return false;
-    }
     if (layout.adcIdPos < 0 || layout.sampleCountPos < 0 || layout.resolutionBitPos < 0 ||
         layout.sequencePos < 0 || layout.shuntPos < 0 || layout.offsetPos < 0 ||
         layout.payloadPos < 0) {
+        qWarning() << "ADC sample packet is missing required fields; resynchronising";
+        nextStartIdx = headerPos + 1;
+        return false;
+    }
+    if (layout.totalLength <= 0 || layout.totalLength > MAX_FRAME_SIZE) {
+        qWarning() << "ADC sample packet length is invalid:" << layout.totalLength;
+        nextStartIdx = headerPos + 1;
+        return false;
+    }
+    const quint8 adcId = static_cast<quint8>(m_buffer.at(layout.adcIdPos));
+    const quint8 resolutionBit = static_cast<quint8>(m_buffer.at(layout.resolutionBitPos));
+    const quint16 sampleCount = qFromLittleEndian<quint16>(m_buffer.constData() + layout.sampleCountPos);
+    const float shunt = qFromLittleEndian<float>(m_buffer.constData() + layout.shuntPos);
+    const float offset = qFromLittleEndian<float>(m_buffer.constData() + layout.offsetPos);
+    if (adcId < 1 || adcId > 3 ||
+        resolutionBit == 0 || resolutionBit > 16 ||
+        sampleCount == 0 ||
+        !std::isfinite(shunt) || qFuzzyIsNull(static_cast<double>(shunt)) ||
+        !std::isfinite(offset)) {
+        qWarning() << "ADC sample packet metadata is out of range; resynchronising"
+                   << "adcId" << adcId
+                   << "resolutionBit" << resolutionBit
+                   << "sampleCount" << sampleCount
+                   << "shunt" << shunt
+                   << "offset" << offset;
+        nextStartIdx = headerPos + 1;
+        return false;
+    }
+    if (m_buffer.size() < headerPos + layout.totalLength) {
+        const int nextTelemetryPos = findNextValidTelemetryFrameHeader(m_buffer, headerPos + 1);
+        if (nextTelemetryPos > headerPos && nextTelemetryPos < headerPos + layout.totalLength) {
+            qWarning() << "Incomplete ADC sample packet followed by valid telemetry; resynchronising";
+            nextStartIdx = nextTelemetryPos;
+        } else if (m_buffer.size() - headerPos > MAX_FRAME_SIZE) {
+            qWarning() << "Incomplete ADC sample packet exceeded parser buffer; resynchronising";
+            nextStartIdx = headerPos + 1;
+        }
+        return false;
+    }
+    if (!validatePacketCrc(m_buffer, layout)) {
+        qWarning() << "ADC sample packet CRC mismatch; resynchronising";
         nextStartIdx = headerPos + 1;
         return false;
     }
 
     AdcSamplePacket packet;
     packet.version = layout.versionPos >= 0 ? static_cast<quint8>(m_buffer.at(layout.versionPos)) : 0;
-    packet.adcId = static_cast<quint8>(m_buffer.at(layout.adcIdPos));
-    packet.resolutionBit = static_cast<quint8>(m_buffer.at(layout.resolutionBitPos));
+    packet.adcId = adcId;
+    packet.resolutionBit = resolutionBit;
     packet.sequence = qFromLittleEndian<quint32>(m_buffer.constData() + layout.sequencePos);
-    packet.shunt = qFromLittleEndian<float>(m_buffer.constData() + layout.shuntPos);
-    packet.offset = qFromLittleEndian<float>(m_buffer.constData() + layout.offsetPos);
+    packet.shunt = shunt;
+    packet.offset = offset;
 
     if (layout.timeHighPos >= 0 && layout.timeLowPos >= 0) {
         const quint16 timeHigh = qFromLittleEndian<quint16>(m_buffer.constData() + layout.timeHighPos);
@@ -1491,7 +1606,6 @@ bool DataParser::tryParseAdcPacket(int headerPos, int &nextStartIdx)
                                                packet.hasTimestampTicks,
                                                packet.timestampTicks);
 
-    const quint16 sampleCount = qFromLittleEndian<quint16>(m_buffer.constData() + layout.sampleCountPos);
     packet.samples.reserve(sampleCount);
     for (int i = 0; i < sampleCount; ++i) {
         const int pos = layout.payloadPos + i * static_cast<int>(sizeof(quint16));
@@ -1502,8 +1616,232 @@ bool DataParser::tryParseAdcPacket(int headerPos, int &nextStartIdx)
     }
 
     nextStartIdx = headerPos + layout.totalLength;
-    emit adcSampleReceived(packet);
+    if (!m_adcActivityEmitTimer.isValid() || m_adcActivityEmitTimer.elapsed() >= 50) {
+        emit adcSampleActivityReceived();
+        m_adcActivityEmitTimer.restart();
+    }
+    if (m_isAdcLogging) {
+        writeAdcLogRows(packet);
+    }
     return true;
+}
+
+void DataParser::writeAdcLogRows(const AdcSamplePacket &packet)
+{
+    if (!m_isAdcLogging || !m_adcLogFile.isOpen() || packet.adcId < 1 || packet.adcId > 3) {
+        return;
+    }
+
+    const QString timestamp = packet.hasTimestampUs
+                                  ? QString::number(packet.timestampUs)
+                                  : QString::number(packet.timestampTicks);
+    const double resolution = std::pow(2.0, static_cast<int>(packet.resolutionBit)) - 1.0;
+    if (resolution <= 0.0 || qFuzzyIsNull(static_cast<double>(packet.shunt))) {
+        return;
+    }
+
+    PendingAdcSequence &pending = m_pendingAdcSequences[packet.sequence];
+    if (pending.time.isEmpty()) {
+        pending.time = timestamp;
+    }
+    pending.lastUpdateMs = QDateTime::currentMSecsSinceEpoch();
+    pending.receivedMask |= 1 << (packet.adcId - 1);
+    if (pending.rows.size() < packet.samples.size()) {
+        pending.rows.resize(packet.samples.size());
+    }
+
+    const int adcIndex = static_cast<int>(packet.adcId) - 1;
+    for (int i = 0; i < packet.samples.size(); ++i) {
+        const quint16 raw = packet.samples.at(i);
+        const double voltage = ((static_cast<double>(raw) / resolution) * 3.3 - (1.65 + packet.offset)) / 50.0;
+        const double current = voltage / packet.shunt;
+        pending.rows[i].hasAdc[adcIndex] = true;
+        pending.rows[i].raw[adcIndex] = raw;
+        pending.rows[i].current[adcIndex] = current;
+    }
+
+    if ((pending.receivedMask & 0b111) == 0b111) {
+        flushAdcSequence(packet.sequence);
+    }
+    flushStaleAdcSequences();
+}
+
+void DataParser::flushAdcSequence(quint32 sequence, const QString &reason)
+{
+    if (!m_adcLogFile.isOpen() || !m_pendingAdcSequences.contains(sequence)) {
+        return;
+    }
+
+    const PendingAdcSequence pending = m_pendingAdcSequences.take(sequence);
+    if (!reason.isEmpty() && (pending.receivedMask & 0b111) != 0b111) {
+        QStringList missingChannels;
+        for (int adc = 0; adc < 3; ++adc) {
+            if ((pending.receivedMask & (1 << adc)) == 0) {
+                missingChannels << QString("ADC%1").arg(adc + 1);
+            }
+        }
+        emit receivedTextLine(QString("ADC sequence %1 %2; missing %3, writing partial CSV rows")
+                                  .arg(sequence)
+                                  .arg(reason)
+                                  .arg(missingChannels.join(", ")));
+    }
+
+    for (const PendingAdcSampleRow &row : pending.rows) {
+        QStringList columns;
+        columns << pending.time << QString::number(sequence) << "" << "" << "" << "" << "" << "";
+        for (int adc = 0; adc < 3; ++adc) {
+            if (!row.hasAdc[adc]) {
+                continue;
+            }
+            columns[2 + adc] = QString::number(row.raw[adc]);
+            columns[5 + adc] = QString::number(row.current[adc], 'g', 17);
+        }
+        m_adcLogStream << columns.join(',') << "\n";
+    }
+}
+
+void DataParser::flushStaleAdcSequences()
+{
+    if (m_pendingAdcSequences.isEmpty()) {
+        return;
+    }
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    QList<quint32> timedOutSequences;
+    QList<quint32> oldSequences;
+    quint32 newestSequence = 0;
+    bool hasNewest = false;
+    for (auto it = m_pendingAdcSequences.cbegin(); it != m_pendingAdcSequences.cend(); ++it) {
+        if (!hasNewest || it.key() > newestSequence) {
+            newestSequence = it.key();
+            hasNewest = true;
+        }
+        if (nowMs - it.value().lastUpdateMs > 1000) {
+            timedOutSequences.append(it.key());
+        }
+    }
+
+    if (m_pendingAdcSequences.size() > 8 && hasNewest) {
+        for (auto it = m_pendingAdcSequences.cbegin(); it != m_pendingAdcSequences.cend(); ++it) {
+            if (it.key() + 2 < newestSequence) {
+                oldSequences.append(it.key());
+            }
+        }
+    }
+
+    std::sort(timedOutSequences.begin(), timedOutSequences.end());
+    timedOutSequences.erase(std::unique(timedOutSequences.begin(), timedOutSequences.end()), timedOutSequences.end());
+    for (quint32 sequence : timedOutSequences) {
+        flushAdcSequence(sequence, "timed out waiting for other channels");
+    }
+
+    std::sort(oldSequences.begin(), oldSequences.end());
+    oldSequences.erase(std::unique(oldSequences.begin(), oldSequences.end()), oldSequences.end());
+    for (quint32 sequence : oldSequences) {
+        flushAdcSequence(sequence, "was superseded by newer sequences");
+    }
+}
+
+void DataParser::maybeEmitParsedData(const QHash<QString, double> &values)
+{
+    emit parsedData(values);
+}
+
+void DataParser::maybeEmitPacketMetadata(quint32 errorCode,
+                                         quint8 controlMode,
+                                         quint32 mask1,
+                                         quint32 mask2)
+{
+    if (!m_hasLastPacketStatus ||
+        errorCode != m_lastStatusErrorCode ||
+        controlMode != m_lastStatusControlMode ||
+        isControlModeKnown(controlMode) != m_lastStatusControlModeKnown) {
+        const QStringList errorNames = getErrorNames(errorCode);
+        const bool controlModeKnown = isControlModeKnown(controlMode);
+        emit errorReceived(errorCode, errorNames);
+        emit packetStatusReceived(errorCode,
+                                  errorNames,
+                                  controlMode,
+                                  getControlModeName(controlMode),
+                                  controlModeKnown);
+        m_lastStatusErrorCode = errorCode;
+        m_lastStatusControlMode = controlMode;
+        m_lastStatusControlModeKnown = controlModeKnown;
+        m_hasLastPacketStatus = true;
+    }
+
+    if (!m_hasLastMask || mask1 != m_lastMask1 || mask2 != m_lastMask2) {
+        emit maskReceived(mask1, mask2);
+        m_lastMask1 = mask1;
+        m_lastMask2 = mask2;
+        m_hasLastMask = true;
+    }
+}
+
+bool DataParser::isReceiveTextByte(char byte)
+{
+    const uchar value = static_cast<uchar>(byte);
+    return byte == '\r' || byte == '\n' || byte == '\t' || (value >= 0x20 && value <= 0x7E);
+}
+
+void DataParser::processReceiveTextChunk(const QByteArray &chunk)
+{
+    for (char byte : chunk) {
+        if (isReceiveTextByte(byte)) {
+            m_textLineBuffer.append(byte);
+            if (byte == '\n') {
+                flushReceiveTextLines();
+            }
+            continue;
+        }
+
+        flushReceiveTextLines();
+        m_textLineBuffer.clear();
+    }
+
+    if (m_textLineBuffer.size() > 1024 && m_textLineBuffer.indexOf('\n') == -1) {
+        m_textLineBuffer.clear();
+    }
+}
+
+void DataParser::flushReceiveTextLines()
+{
+    int newlinePos = -1;
+    while ((newlinePos = m_textLineBuffer.indexOf('\n')) != -1) {
+        const QByteArray line = m_textLineBuffer.left(newlinePos + 1);
+        const QString text = QString::fromLatin1(line).trimmed();
+        if (!text.isEmpty() && isLikelyReceiveTextLine(line)) {
+            emit receivedTextLine(text);
+        }
+        m_textLineBuffer.remove(0, newlinePos + 1);
+    }
+}
+
+bool DataParser::isLikelyReceiveTextLine(const QByteArray &line)
+{
+    int letterCount = 0;
+    int digitCount = 0;
+    int whitespaceCount = 0;
+    int punctuationCount = 0;
+
+    for (char byte : line) {
+        if (byte == '\r' || byte == '\n' || byte == '\t' || byte == ' ') {
+            ++whitespaceCount;
+        } else if ((byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z')) {
+            ++letterCount;
+        } else if (byte >= '0' && byte <= '9') {
+            ++digitCount;
+        } else {
+            ++punctuationCount;
+        }
+    }
+
+    const int contentCount = letterCount + digitCount + punctuationCount;
+    if (contentCount == 0 || letterCount == 0) {
+        return false;
+    }
+
+    return punctuationCount <= letterCount + digitCount + whitespaceCount;
 }
 
 double DataParser::unpackValue(const QByteArray &data, const FieldDef &field) {
@@ -1676,8 +2014,35 @@ int DataParser::getFrameLength(const QByteArray &data, int startIdx) const
     if (!m_adcSampleSyncBytes.isEmpty() &&
         data.size() >= startIdx + m_adcSampleSyncBytes.size() &&
         data.mid(startIdx, m_adcSampleSyncBytes.size()) == m_adcSampleSyncBytes) {
-        const std::optional<PacketLayout> maybeLayout = buildAdcPacketLayout(data, startIdx, true);
-        return maybeLayout.has_value() ? maybeLayout->totalLength : -1;
+        const std::optional<PacketLayout> maybeLayout = buildAdcPacketLayout(data, startIdx, false);
+        if (!maybeLayout.has_value()) {
+            return data.size() >= startIdx + minimumAdcFrameSize() ? 1 : -1;
+        }
+        const PacketLayout layout = maybeLayout.value();
+        if (layout.adcIdPos < 0 || layout.sampleCountPos < 0 || layout.resolutionBitPos < 0 ||
+            layout.shuntPos < 0 || layout.offsetPos < 0) {
+            return 1;
+        }
+        const quint8 adcId = static_cast<quint8>(data.at(layout.adcIdPos));
+        const quint8 resolutionBit = static_cast<quint8>(data.at(layout.resolutionBitPos));
+        const quint16 sampleCount = qFromLittleEndian<quint16>(data.constData() + layout.sampleCountPos);
+        const float shunt = qFromLittleEndian<float>(data.constData() + layout.shuntPos);
+        const float offset = qFromLittleEndian<float>(data.constData() + layout.offsetPos);
+        if (adcId < 1 || adcId > 3 ||
+            resolutionBit == 0 || resolutionBit > 16 ||
+            sampleCount == 0 ||
+            !std::isfinite(shunt) || qFuzzyIsNull(static_cast<double>(shunt)) ||
+            !std::isfinite(offset)) {
+            return 1;
+        }
+        if (data.size() >= startIdx + layout.totalLength) {
+            return layout.totalLength;
+        }
+        const int nextTelemetryPos = findNextValidTelemetryFrameHeader(data, startIdx + 1);
+        if (nextTelemetryPos > startIdx && nextTelemetryPos < startIdx + layout.totalLength) {
+            return nextTelemetryPos - startIdx;
+        }
+        return -1;
     }
 
     // Check if the data is sufficient to contain the fixed frame metadata.
@@ -1708,6 +2073,25 @@ int DataParser::findNextFrameHeader(const QByteArray &data, int startIdx) const
         }
     }
     return best;
+}
+
+int DataParser::findNextValidTelemetryFrameHeader(const QByteArray &data, int startIdx) const
+{
+    if (m_telemetrySyncBytes.isEmpty()) {
+        return -1;
+    }
+
+    int pos = data.indexOf(m_telemetrySyncBytes, startIdx);
+    while (pos >= 0) {
+        if (data.size() < pos + minimumFrameSize()) {
+            return -1;
+        }
+        if (hasValidFrameMetadata(data, pos)) {
+            return pos;
+        }
+        pos = data.indexOf(m_telemetrySyncBytes, pos + 1);
+    }
+    return -1;
 }
 
 int DataParser::partialFrameHeaderLength(const QByteArray &data) const

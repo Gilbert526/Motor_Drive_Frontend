@@ -305,6 +305,7 @@ private:
     void flushAdcSequence(quint32 sequence);
     void flushStaleAdcSequences();
     void updateAdcSaveButtonState();
+    void handleAdcStatusText(const QString &text);
 
     // Target setting helpers
     void updateTargetSliderLimits();   // 根据 Speed/Torque 更新滑块范围和步进
