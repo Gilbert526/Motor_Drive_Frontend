@@ -457,6 +457,62 @@ bool parseGauges(const QJsonArray &array, QList<GaugeDef> *gauges, QString *erro
     return true;
 }
 
+bool parseTuning(const QJsonArray &array, QList<TuneSubsystemDef> *tuning, QString *errorMessage)
+{
+    QList<TuneSubsystemDef> parsed;
+    for (int i = 0; i < array.size(); ++i) {
+        if (!array[i].isObject()) {
+            if (errorMessage) {
+                *errorMessage = QString("tuning[%1] must be an object").arg(i);
+            }
+            return false;
+        }
+
+        const QJsonObject object = array[i].toObject();
+        TuneSubsystemDef subsystem;
+        if (!readRequiredString(object, "subsystem", &subsystem.name, errorMessage) ||
+            !readRequiredString(object, "command", &subsystem.command, errorMessage)) {
+            if (errorMessage) {
+                *errorMessage = QString("tuning[%1]: %2").arg(i).arg(*errorMessage);
+            }
+            return false;
+        }
+
+        QJsonArray parametersJson;
+        if (!readObjectArray(object, "parameters", &parametersJson, errorMessage)) {
+            if (errorMessage) {
+                *errorMessage = QString("tuning[%1]: %2").arg(i).arg(*errorMessage);
+            }
+            return false;
+        }
+
+        for (int j = 0; j < parametersJson.size(); ++j) {
+            if (!parametersJson[j].isObject()) {
+                if (errorMessage) {
+                    *errorMessage = QString("tuning[%1].parameters[%2] must be an object").arg(i).arg(j);
+                }
+                return false;
+            }
+
+            const QJsonObject parameterObject = parametersJson[j].toObject();
+            TuneParameterDef parameter;
+            if (!readRequiredString(parameterObject, "name", &parameter.name, errorMessage) ||
+                !readRequiredString(parameterObject, "command", &parameter.command, errorMessage)) {
+                if (errorMessage) {
+                    *errorMessage = QString("tuning[%1].parameters[%2]: %3").arg(i).arg(j).arg(*errorMessage);
+                }
+                return false;
+            }
+            subsystem.parameters.append(parameter);
+        }
+
+        parsed.append(subsystem);
+    }
+
+    *tuning = parsed;
+    return true;
+}
+
 bool parseUnsignedValue(const QJsonValue &value, quint32 *out)
 {
     if (value.isDouble()) {
@@ -991,13 +1047,15 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
     QJsonArray customFieldsJson;
     QJsonArray indicatorsJson;
     QJsonArray gaugesJson;
+    QJsonArray tuningJson;
     if (!readObjectArray(root, "errors", &errorsJson, errorMessage) ||
         !readObjectArray(root, "modes", &modesJson, errorMessage) ||
         !readObjectArray(root, "fields", &fieldsJson, errorMessage) ||
         !readObjectArray(root, "fields2", &fields2Json, errorMessage) ||
         !readOptionalObjectArray(root, "custom_fields", &customFieldsJson, errorMessage) ||
         !readOptionalObjectArray(root, "indicators", &indicatorsJson, errorMessage) ||
-        !readOptionalObjectArray(root, "gauges", &gaugesJson, errorMessage)) {
+        !readOptionalObjectArray(root, "gauges", &gaugesJson, errorMessage) ||
+        !readOptionalObjectArray(root, "tuning", &tuningJson, errorMessage)) {
         return false;
     }
 
@@ -1008,6 +1066,7 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
     QList<CustomFieldDef> customFields;
     QList<IndicatorDef> indicators;
     QList<GaugeDef> gauges;
+    QList<TuneSubsystemDef> tuning;
     QHash<QString, QString> commandMap;
     if (!parseErrors(errorsJson, &errors, errorMessage) ||
         !parseModes(modesJson, &modes, errorMessage) ||
@@ -1015,7 +1074,8 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
         !parseFields(fields2Json, &fields2, &commandMap, errorMessage) ||
         !parseCustomFields(customFieldsJson, &customFields, errorMessage) ||
         !parseIndicators(indicatorsJson, &indicators, errorMessage) ||
-        !parseGauges(gaugesJson, &gauges, errorMessage)) {
+        !parseGauges(gaugesJson, &gauges, errorMessage) ||
+        !parseTuning(tuningJson, &tuning, errorMessage)) {
         return false;
     }
 
@@ -1026,6 +1086,7 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
     m_customFields = customFields;
     m_indicators = indicators;
     m_gauges = gauges;
+    m_tuning = tuning;
     m_telemetryFields = telemetryFields;
     m_telemetryStructures = telemetryStructures;
     m_adcSampleFields = adcSampleFields;
@@ -1086,6 +1147,71 @@ void DataParser::flushStaleAdcCsvSequences()
 {
     if (m_isAdcLogging) {
         flushStaleAdcSequences();
+    }
+    if (m_isQuickAdcLogging) {
+        flushStaleQuickAdcSequences();
+    }
+}
+
+bool DataParser::startQuickCsvLogging(const QString &telemetryFileName,
+                                      const QString &adcFileName,
+                                      QString *errorMessage)
+{
+    if (m_isQuickTelemetryLogging || m_isQuickAdcLogging) {
+        return true;
+    }
+
+    if (!telemetryFileName.isEmpty()) {
+        if (!startTelemetryCsvLogging(&m_quickTelemetryLogFile,
+                                      &m_quickTelemetryLogStream,
+                                      &m_quickTelemetryLogFields,
+                                      telemetryFileName,
+                                      errorMessage)) {
+            return false;
+        }
+        m_isQuickTelemetryLogging = true;
+    }
+
+    if (!adcFileName.isEmpty()) {
+        m_quickAdcLogFile.setFileName(adcFileName);
+        if (!m_quickAdcLogFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            if (errorMessage) {
+                *errorMessage = m_quickAdcLogFile.errorString();
+            }
+            stopQuickCsvLogging();
+            return false;
+        }
+
+        m_quickAdcLogStream.setDevice(&m_quickAdcLogFile);
+        m_quickAdcLogStream << "time,sequence,adc1_raw,adc2_raw,adc3_raw,adc1_a,adc2_a,adc3_a\n";
+        m_quickPendingAdcSequences.clear();
+        m_isQuickAdcLogging = true;
+    }
+
+    return true;
+}
+
+void DataParser::stopQuickCsvLogging()
+{
+    if (m_isQuickTelemetryLogging || m_quickTelemetryLogFile.isOpen()) {
+        stopTelemetryCsvLogging(&m_quickTelemetryLogFile,
+                                &m_quickTelemetryLogStream,
+                                &m_quickTelemetryLogFields);
+        m_isQuickTelemetryLogging = false;
+    }
+
+    if (m_isQuickAdcLogging || m_quickAdcLogFile.isOpen()) {
+        const QList<quint32> pendingSequences = m_quickPendingAdcSequences.keys();
+        for (quint32 sequence : pendingSequences) {
+            flushQuickAdcSequence(sequence);
+        }
+        m_quickAdcLogStream.flush();
+        m_quickAdcLogStream.setDevice(nullptr);
+        if (m_quickAdcLogFile.isOpen()) {
+            m_quickAdcLogFile.close();
+        }
+        m_isQuickAdcLogging = false;
+        m_quickPendingAdcSequences.clear();
     }
 }
 
@@ -1623,7 +1749,67 @@ bool DataParser::tryParseAdcPacket(int headerPos, int &nextStartIdx)
     if (m_isAdcLogging) {
         writeAdcLogRows(packet);
     }
+    if (m_isQuickAdcLogging) {
+        writeQuickAdcLogRows(packet);
+    }
     return true;
+}
+
+bool DataParser::startTelemetryCsvLogging(QFile *file,
+                                          QTextStream *stream,
+                                          QStringList *fields,
+                                          const QString &fileName,
+                                          QString *errorMessage)
+{
+    file->setFileName(fileName);
+    if (!file->open(QIODevice::WriteOnly | QIODevice::Text)) {
+        if (errorMessage) {
+            *errorMessage = file->errorString();
+        }
+        return false;
+    }
+
+    *fields = getFieldNames();
+    stream->setDevice(file);
+    *stream << "time,error_code,error_flags,control_mode,control_mode_name";
+    for (const QString &field : *fields) {
+        *stream << "," << field;
+    }
+    *stream << "\n";
+    return true;
+}
+
+void DataParser::stopTelemetryCsvLogging(QFile *file,
+                                         QTextStream *stream,
+                                         QStringList *fields)
+{
+    stream->flush();
+    stream->setDevice(nullptr);
+    if (file->isOpen()) {
+        file->close();
+    }
+    fields->clear();
+}
+
+void DataParser::writeTelemetryLogRow(QTextStream *stream,
+                                      const QStringList &fields,
+                                      const QHash<QString, double> &values)
+{
+    const QString timestamp = values.contains(TIMESTAMP_US_FIELD)
+                                  ? QString::number(static_cast<quint64>(values.value(TIMESTAMP_US_FIELD, 0.0)))
+                                  : QString::number(static_cast<quint64>(values.value(TIMESTAMP_FIELD, 0.0)));
+    const QStringList errorNames = getErrorNames(m_lastStatusErrorCode);
+    const QString controlModeName = getControlModeName(m_lastStatusControlMode);
+
+    *stream << timestamp
+            << "," << m_lastStatusErrorCode
+            << "," << errorNames.join("|")
+            << "," << static_cast<int>(m_lastStatusControlMode)
+            << "," << controlModeName;
+    for (const QString &field : fields) {
+        *stream << "," << QString::number(values.value(field, 0.0), 'g', 17);
+    }
+    *stream << "\n";
 }
 
 void DataParser::writeAdcLogRows(const AdcSamplePacket &packet)
@@ -1742,8 +1928,127 @@ void DataParser::flushStaleAdcSequences()
     }
 }
 
+void DataParser::writeQuickAdcLogRows(const AdcSamplePacket &packet)
+{
+    if (!m_isQuickAdcLogging || !m_quickAdcLogFile.isOpen() || packet.adcId < 1 || packet.adcId > 3) {
+        return;
+    }
+
+    const QString timestamp = packet.hasTimestampUs
+                                  ? QString::number(packet.timestampUs)
+                                  : QString::number(packet.timestampTicks);
+    const double resolution = std::pow(2.0, static_cast<int>(packet.resolutionBit)) - 1.0;
+    if (resolution <= 0.0 || qFuzzyIsNull(static_cast<double>(packet.shunt))) {
+        return;
+    }
+
+    PendingAdcSequence &pending = m_quickPendingAdcSequences[packet.sequence];
+    if (pending.time.isEmpty()) {
+        pending.time = timestamp;
+    }
+    pending.lastUpdateMs = QDateTime::currentMSecsSinceEpoch();
+    pending.receivedMask |= 1 << (packet.adcId - 1);
+    if (pending.rows.size() < packet.samples.size()) {
+        pending.rows.resize(packet.samples.size());
+    }
+
+    const int adcIndex = static_cast<int>(packet.adcId) - 1;
+    for (int i = 0; i < packet.samples.size(); ++i) {
+        const quint16 raw = packet.samples.at(i);
+        const double voltage = ((static_cast<double>(raw) / resolution) * 3.3 - (1.65 + packet.offset)) / 50.0;
+        const double current = voltage / packet.shunt;
+        pending.rows[i].hasAdc[adcIndex] = true;
+        pending.rows[i].raw[adcIndex] = raw;
+        pending.rows[i].current[adcIndex] = current;
+    }
+
+    if ((pending.receivedMask & 0b111) == 0b111) {
+        flushQuickAdcSequence(packet.sequence);
+    }
+    flushStaleQuickAdcSequences();
+}
+
+void DataParser::flushQuickAdcSequence(quint32 sequence, const QString &reason)
+{
+    if (!m_quickAdcLogFile.isOpen() || !m_quickPendingAdcSequences.contains(sequence)) {
+        return;
+    }
+
+    const PendingAdcSequence pending = m_quickPendingAdcSequences.take(sequence);
+    if (!reason.isEmpty() && (pending.receivedMask & 0b111) != 0b111) {
+        QStringList missingChannels;
+        for (int adc = 0; adc < 3; ++adc) {
+            if ((pending.receivedMask & (1 << adc)) == 0) {
+                missingChannels << QString("ADC%1").arg(adc + 1);
+            }
+        }
+        emit receivedTextLine(QString("Quick ADC sequence %1 %2; missing %3, writing partial CSV rows")
+                                  .arg(sequence)
+                                  .arg(reason)
+                                  .arg(missingChannels.join(", ")));
+    }
+
+    for (const PendingAdcSampleRow &row : pending.rows) {
+        QStringList columns;
+        columns << pending.time << QString::number(sequence) << "" << "" << "" << "" << "" << "";
+        for (int adc = 0; adc < 3; ++adc) {
+            if (!row.hasAdc[adc]) {
+                continue;
+            }
+            columns[2 + adc] = QString::number(row.raw[adc]);
+            columns[5 + adc] = QString::number(row.current[adc], 'g', 17);
+        }
+        m_quickAdcLogStream << columns.join(',') << "\n";
+    }
+}
+
+void DataParser::flushStaleQuickAdcSequences()
+{
+    if (m_quickPendingAdcSequences.isEmpty()) {
+        return;
+    }
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    QList<quint32> timedOutSequences;
+    QList<quint32> oldSequences;
+    quint32 newestSequence = 0;
+    bool hasNewest = false;
+    for (auto it = m_quickPendingAdcSequences.cbegin(); it != m_quickPendingAdcSequences.cend(); ++it) {
+        if (!hasNewest || it.key() > newestSequence) {
+            newestSequence = it.key();
+            hasNewest = true;
+        }
+        if (nowMs - it.value().lastUpdateMs > 1000) {
+            timedOutSequences.append(it.key());
+        }
+    }
+
+    if (m_quickPendingAdcSequences.size() > 8 && hasNewest) {
+        for (auto it = m_quickPendingAdcSequences.cbegin(); it != m_quickPendingAdcSequences.cend(); ++it) {
+            if (it.key() + 2 < newestSequence) {
+                oldSequences.append(it.key());
+            }
+        }
+    }
+
+    std::sort(timedOutSequences.begin(), timedOutSequences.end());
+    timedOutSequences.erase(std::unique(timedOutSequences.begin(), timedOutSequences.end()), timedOutSequences.end());
+    for (quint32 sequence : timedOutSequences) {
+        flushQuickAdcSequence(sequence, "timed out waiting for other channels");
+    }
+
+    std::sort(oldSequences.begin(), oldSequences.end());
+    oldSequences.erase(std::unique(oldSequences.begin(), oldSequences.end()), oldSequences.end());
+    for (quint32 sequence : oldSequences) {
+        flushQuickAdcSequence(sequence, "was superseded by newer sequences");
+    }
+}
+
 void DataParser::maybeEmitParsedData(const QHash<QString, double> &values)
 {
+    if (m_isQuickTelemetryLogging && m_quickTelemetryLogFile.isOpen()) {
+        writeTelemetryLogRow(&m_quickTelemetryLogStream, m_quickTelemetryLogFields, values);
+    }
     emit parsedData(values);
 }
 

@@ -146,6 +146,76 @@
     }
   ],
 
+  "tuning": [
+    {
+      "subsystem": "Speed",
+      "command": "speed",
+      "parameters": [
+        { "name": "kp", "command": "p" },
+        { "name": "ki", "command": "i" }
+      ]
+    },
+    {
+      "subsystem": "FW",
+      "command": "fw",
+      "parameters": [
+        { "name": "kp", "command": "p" },
+        { "name": "ki", "command": "i" }
+      ]
+    },
+    {
+      "subsystem": "Id",
+      "command": "id",
+      "parameters": [
+        { "name": "kp", "command": "p" },
+        { "name": "ki", "command": "i" }
+      ]
+    },
+    {
+      "subsystem": "Iq",
+      "command": "iq",
+      "parameters": [
+        { "name": "kp", "command": "p" },
+        { "name": "ki", "command": "i" }
+      ]
+    },
+    {
+      "subsystem": "Gain",
+      "command": "gain",
+      "parameters": [
+        { "name": "Ia", "command": "ia" },
+        { "name": "Ib", "command": "ib" },
+        { "name": "Ic", "command": "ic" },
+        { "name": "Vab", "command": "va" },
+        { "name": "Vbc", "command": "vb" },
+        { "name": "Ibatt", "command": "ibatt" },
+        { "name": "Vbatt", "command": "vbatt" }
+      ]
+    },
+    {
+      "subsystem": "Offset",
+      "command": "offset",
+      "parameters": [
+        { "name": "Ia", "command": "ia" },
+        { "name": "Ib", "command": "ib" },
+        { "name": "Ic", "command": "ic" },
+        { "name": "Vab", "command": "va" },
+        { "name": "Vbc", "command": "vb" },
+        { "name": "Ibatt", "command": "ibatt" },
+        { "name": "Vbatt", "command": "vbatt" }
+      ]
+    },
+    {
+      "subsystem": "Optimal",
+      "command": "opt",
+      "parameters": [
+        { "name": "PhA", "command": "phase_advance" },
+        { "name": "Enter", "command": "six_enter" },
+        { "name": "Exit", "command": "six_exit" }
+      ]
+    }
+  ],
+
   "errors": [
     { "name": "ERROR_PWM_CONFIG", "type": "config", "bit": 0 },
     { "name": "ERROR_ADC_CONFIG", "type": "config", "bit": 1 },
@@ -208,12 +278,16 @@
     { "name": "FW", "size": 1, "format": "B", "bit": 2, "command": "fw" },
     { "name": "UMAG", "size": 4, "format": "f", "bit": 3, "command": "umag" },
     { "name": "IMAG", "size": 4, "format": "f", "bit": 4, "command": "imag" },
-    { "name": "FFT", "size": 4, "format": "f", "bit": 5, "command": "fft" }
+    { "name": "VALPHA", "size": 4, "format": "f", "bit": 5, "command": "valpha" },
+    { "name": "VBETA", "size": 4, "format": "f", "bit": 6, "command": "vbeta" },
+    { "name": "MOD", "size": 1, "format": "B", "bit": 7, "command": "mod" },
+    { "name": "MSIXSTEP", "size": 4, "format": "f", "bit": 8, "command": "msixstep" },
+    { "name": "REGION", "size": 1, "format": "B", "bit": 9, "command": "region" }
   ],
   "custom_fields": [
-    { "name": "VA", "expression": "VBATT / 3 * (2 * DUTY_A - DUTY_B - DUTY_C)" },
-    { "name": "VB", "expression": "VBATT / 3 * (2 * DUTY_B - DUTY_C - DUTY_A)" },
-    { "name": "VC", "expression": "VBATT / 3 * (2 * DUTY_C - DUTY_A - DUTY_B)" }
+    { "name": "VA_EST", "expression": "VBATT / 3 * (2 * DUTY_A - DUTY_B - DUTY_C)" },
+    { "name": "VB_EST", "expression": "VBATT / 3 * (2 * DUTY_B - DUTY_C - DUTY_A)" },
+    { "name": "VC_EST", "expression": "VBATT / 3 * (2 * DUTY_C - DUTY_A - DUTY_B)" }
   ],
   "indicators": [
     {
@@ -272,12 +346,21 @@
       ]
     },
     {
-      "name": "Coupling_Mode",
+      "name": "Modulation",
       "type": "mode",
       "indicator": 5,
-      "dataSource": "CP_MODE",
+      "dataSource": "MOD",
       "status": [
-        { "displayText": "Simulation", "color": "off" }
+        { "value": 0, "displayText": "SVPWM", "color": "lightblue" },
+        { "value": 1, "displayText": "SVPWM Comp", "color": "lightblue" },
+        { "value": 2, "displayText": "SVPWM_Super", "color": "lightblue" },
+        { "value": 3, "displayText": "SYM", "color": "lightblue" },
+        { "value": 4, "displayText": "DPWM0", "color": "lightblue" },
+        { "value": 5, "displayText": "DPWM1", "color": "lightblue" },
+        { "value": 6, "displayText": "DPWM2", "color": "lightblue" },
+        { "value": 7, "displayText": "DPWM3", "color": "lightblue" },
+        { "value": 8, "displayText": "Optimal", "color": "lightblue" },
+        { "displayText": "Modulation", "color": "off" }
       ]
     },
     {

@@ -77,6 +77,17 @@ struct GaugeDef {
     double hysteresis = 0.0;
 };
 
+struct TuneParameterDef {
+    QString name;
+    QString command;
+};
+
+struct TuneSubsystemDef {
+    QString name;
+    QString command;
+    QList<TuneParameterDef> parameters;
+};
+
 struct TelemetryFieldDef {
     QString name;
     int length = 0;
@@ -155,6 +166,7 @@ public:
     QString getCommandNameForField(const QString &displayName) const;
     const QList<IndicatorDef>& getIndicators() const { return m_indicators; }
     const QList<GaugeDef>& getGauges() const { return m_gauges; }
+    const QList<TuneSubsystemDef>& getTuningDefinitions() const { return m_tuning; }
 
     quint32 getMaskForField(const QString &fieldName) const;
 
@@ -189,6 +201,10 @@ public:
     bool startAdcCsvLogging(const QString &fileName, QString *errorMessage = nullptr);
     void stopAdcCsvLogging();
     void flushStaleAdcCsvSequences();
+    bool startQuickCsvLogging(const QString &telemetryFileName,
+                              const QString &adcFileName,
+                              QString *errorMessage = nullptr);
+    void stopQuickCsvLogging();
 
 signals:
     void parsedData(const QHash<QString, double> &values);
@@ -218,6 +234,7 @@ private:
     QList<CustomFieldDef> m_customFields;
     QList<IndicatorDef> m_indicators;
     QList<GaugeDef> m_gauges;
+    QList<TuneSubsystemDef> m_tuning;
     QHash<QString, TelemetryFieldDef> m_telemetryFields;
     QList<TelemetryStructureDef> m_telemetryStructures;
     QHash<QString, TelemetryFieldDef> m_adcSampleFields;
@@ -238,8 +255,15 @@ private:
     quint8 m_lastStatusControlMode = 0;
     bool m_lastStatusControlModeKnown = false;
     bool m_isAdcLogging = false;
+    bool m_isQuickTelemetryLogging = false;
+    bool m_isQuickAdcLogging = false;
     QFile m_adcLogFile;
     QTextStream m_adcLogStream;
+    QFile m_quickTelemetryLogFile;
+    QTextStream m_quickTelemetryLogStream;
+    QStringList m_quickTelemetryLogFields;
+    QFile m_quickAdcLogFile;
+    QTextStream m_quickAdcLogStream;
     struct PendingAdcSampleRow {
         bool hasAdc[3] = {false, false, false};
         quint16 raw[3] = {0, 0, 0};
@@ -252,6 +276,7 @@ private:
         qint64 lastUpdateMs = 0;
     };
     QHash<quint32, PendingAdcSequence> m_pendingAdcSequences;
+    QHash<quint32, PendingAdcSequence> m_quickPendingAdcSequences;
 
     QHash<QString, double> tryParsePacket(int startIdx, int &nextStartIdx);
 
@@ -262,9 +287,23 @@ private:
     void flushReceiveTextLines();
     static bool isReceiveTextByte(char byte);
     static bool isLikelyReceiveTextLine(const QByteArray &line);
+    bool startTelemetryCsvLogging(QFile *file,
+                                  QTextStream *stream,
+                                  QStringList *fields,
+                                  const QString &fileName,
+                                  QString *errorMessage);
+    void stopTelemetryCsvLogging(QFile *file,
+                                 QTextStream *stream,
+                                 QStringList *fields);
+    void writeTelemetryLogRow(QTextStream *stream,
+                              const QStringList &fields,
+                              const QHash<QString, double> &values);
     void writeAdcLogRows(const AdcSamplePacket &packet);
+    void writeQuickAdcLogRows(const AdcSamplePacket &packet);
     void flushAdcSequence(quint32 sequence, const QString &reason = QString());
+    void flushQuickAdcSequence(quint32 sequence, const QString &reason = QString());
     void flushStaleAdcSequences();
+    void flushStaleQuickAdcSequences();
     void addCommandMapping(const QString &displayName, const QString &commandName);
     bool loadDefaultConfiguration(QString *errorMessage = nullptr);
     static QStringList configurationSearchPaths();

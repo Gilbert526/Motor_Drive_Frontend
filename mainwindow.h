@@ -99,6 +99,7 @@ private slots:
     void on_pushButtonPause_clicked();
     void on_pushButtonSave_clicked();
     void on_pushButtonSaveAdc_clicked();
+    void on_pushButtonQuickSave_clicked();
     void on_pushButtonSelectConfig_clicked();
 
     void onFieldCheckStateChanged(QListWidgetItem *item);
@@ -209,11 +210,13 @@ private:
 
     // CSV ADC sample logging
     bool m_isAdcLogging;
+    bool m_isQuickSaving;
     bool m_adcPacketActive;
     QFile m_adcLogFile;
     QTextStream m_adcLogStream;
     qint64 m_lastAdcPacketMs;
     QTimer *m_adcActivityTimer;
+    QTimer *m_quickSaveTimer;
     struct PendingAdcSampleRow {
         bool hasAdc[3] = {false, false, false};
         quint16 raw[3] = {0, 0, 0};
@@ -264,6 +267,9 @@ private:
     void setupPlottingArea();           // 初始化动态示波器区域
     void setupGaugeArea();
     void addGauge(const GaugeDef &gauge);
+    void setupTuningArea();
+    QString currentTuneSubsystemCommand() const;
+    QString currentTuneParameterCommand() const;
     void deriveGaugeThresholds(const GaugeDef &gauge,
                                double *warningThreshold,
                                double *criticalThreshold) const;
@@ -304,6 +310,9 @@ private:
     void writeAdcLogRows(const AdcSamplePacket &packet);
     void flushAdcSequence(quint32 sequence);
     void flushStaleAdcSequences();
+    bool startQuickSave();
+    void stopQuickSave();
+    QString quickSaveFilePath(const QString &timestamp, const QString &fileStem) const;
     void updateAdcSaveButtonState();
     void handleAdcStatusText(const QString &text);
 

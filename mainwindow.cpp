@@ -26,7 +26,8 @@
 namespace {
 constexpr const char *kSaveButtonStyle =
     "QPushButton#pushButtonSave:checked,"
-    "QPushButton#pushButtonSaveAdc:checked {"
+    "QPushButton#pushButtonSaveAdc:checked,"
+    "QPushButton#pushButtonQuickSave:checked {"
     " background-color: #31e63a;"
     " border: 1px solid #0a8a1f;"
     "}"
@@ -47,6 +48,27 @@ void refreshStyle(QWidget *widget)
     widget->style()->unpolish(widget);
     widget->style()->polish(widget);
     widget->update();
+}
+
+QString uniqueFilePath(const QString &filePath)
+{
+    if (!QFileInfo::exists(filePath)) {
+        return filePath;
+    }
+
+    const QFileInfo info(filePath);
+    const QDir dir = info.dir();
+    const QString baseName = info.completeBaseName();
+    const QString suffix = info.suffix();
+    for (int i = 1; ; ++i) {
+        const QString candidate = dir.filePath(QString("%1_%2.%3")
+                                                   .arg(baseName)
+                                                   .arg(i)
+                                                   .arg(suffix));
+        if (!QFileInfo::exists(candidate)) {
+            return candidate;
+        }
+    }
 }
 }
 
@@ -69,9 +91,11 @@ MainWindow::MainWindow(QWidget *parent):
     m_faultAutoCapturePacketsRemaining(0),
     m_isLogging(false),
     m_isAdcLogging(false),
+    m_isQuickSaving(false),
     m_adcPacketActive(false),
     m_lastAdcPacketMs(0),
     m_adcActivityTimer(nullptr),
+    m_quickSaveTimer(nullptr),
     m_syncingFromMask(false),
     m_lastSpeedValue(0.0),
     m_lastTorqueValue(0.0),
@@ -122,6 +146,7 @@ MainWindow::MainWindow(QWidget *parent):
             updateFaultAutoCaptureMask();
             loadAvailableFields();
             setupGaugeArea();
+            setupTuningArea();
             syncFieldCheckStates();
             updateStatusIndicators();
         });
@@ -181,8 +206,16 @@ MainWindow::MainWindow(QWidget *parent):
         ui->pushButtonSaveAdc->setToolTip("Start or stop saving ADC samples to CSV");
         ui->pushButtonSaveAdc->setStyleSheet(kSaveButtonStyle);
         ui->pushButtonSaveAdc->setProperty("adcRecent", false);
+        ui->pushButtonQuickSave->setCheckable(true);
+        ui->pushButtonQuickSave->setToolTip("Start quick logging for the selected data");
+        ui->pushButtonQuickSave->setStyleSheet(kSaveButtonStyle);
+        ui->lineEditSaveTime->setToolTip("Quick log duration in seconds");
         updateAdcSaveButtonState();
         ui->plainTextEditReceive->setReadOnly(true);
+
+        m_quickSaveTimer = new QTimer(this);
+        m_quickSaveTimer->setSingleShot(true);
+        connect(m_quickSaveTimer, &QTimer::timeout, this, &MainWindow::stopQuickSave);
 
         // Command line features
         ui->lineEditSend->installEventFilter(this);
@@ -217,15 +250,11 @@ MainWindow::MainWindow(QWidget *parent):
         on_timeSlider_valueChanged(0);
 
         /*--- Tuning ---*/
-        // Populate subsystem combo box
-        ui->comboBoxTuneSubsystem->addItems({"speed", "id", "iq", "fw", "gain", "offset"});
-
         // Connect tuning parameter signals
         connect(ui->comboBoxTuneSubsystem, QOverload<int>::of(&QComboBox::currentIndexChanged),
         this, &MainWindow::on_comboBoxTuneSubsystem_currentIndexChanged);
 
-        // Initialize tuning parameters for the first subsystem
-        on_comboBoxTuneSubsystem_currentIndexChanged(0);
+        setupTuningArea();
 
         // Initialize increment slider with predefined step values
         const QVector<double> stepValues = {0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0};
@@ -245,6 +274,7 @@ MainWindow::MainWindow(QWidget *parent):
     }
 
 MainWindow::~MainWindow() {
+    stopQuickSave();
     stopTelemetryLogging();
     stopAdcLogging();
     if (m_serialThread->isRunning()) {
@@ -1478,6 +1508,55 @@ void MainWindow::sendCommand(const QString &cmd) {
     ui->plainTextEditReceive->appendPlainText(">> " + cmd);
 }
 
+void MainWindow::setupTuningArea()
+{
+    const QList<TuneSubsystemDef> &tuning = m_dataParser->getTuningDefinitions();
+    const QString previousSubsystemCommand = currentTuneSubsystemCommand();
+    const QString previousParameterCommand = currentTuneParameterCommand();
+
+    ui->comboBoxTuneSubsystem->blockSignals(true);
+    ui->comboBoxTuneParameter->blockSignals(true);
+    ui->comboBoxTuneSubsystem->clear();
+    ui->comboBoxTuneParameter->clear();
+
+    for (const TuneSubsystemDef &subsystem : tuning) {
+        ui->comboBoxTuneSubsystem->addItem(subsystem.name, subsystem.command);
+    }
+
+    int subsystemIndex = ui->comboBoxTuneSubsystem->findData(previousSubsystemCommand);
+    if (subsystemIndex < 0 && ui->comboBoxTuneSubsystem->count() > 0) {
+        subsystemIndex = 0;
+    }
+    if (subsystemIndex >= 0) {
+        ui->comboBoxTuneSubsystem->setCurrentIndex(subsystemIndex);
+    }
+
+    ui->comboBoxTuneSubsystem->blockSignals(false);
+    ui->comboBoxTuneParameter->blockSignals(false);
+    on_comboBoxTuneSubsystem_currentIndexChanged(subsystemIndex);
+
+    const int parameterIndex = ui->comboBoxTuneParameter->findData(previousParameterCommand);
+    if (parameterIndex >= 0) {
+        ui->comboBoxTuneParameter->setCurrentIndex(parameterIndex);
+    }
+}
+
+QString MainWindow::currentTuneSubsystemCommand() const
+{
+    const QVariant command = ui->comboBoxTuneSubsystem->currentData();
+    return command.toString().isEmpty()
+               ? ui->comboBoxTuneSubsystem->currentText()
+               : command.toString();
+}
+
+QString MainWindow::currentTuneParameterCommand() const
+{
+    const QVariant command = ui->comboBoxTuneParameter->currentData();
+    return command.toString().isEmpty()
+               ? ui->comboBoxTuneParameter->currentText()
+               : command.toString();
+}
+
 void MainWindow::on_pushButtonStartToggle_clicked() {
     if (m_serialManager->thread() == nullptr) return;
 
@@ -1700,8 +1779,8 @@ void MainWindow::on_pushButtonTargetSend_clicked() {
 }
 
 void MainWindow::on_pushButtonTuneSend_clicked() {
-    QString subsys = ui->comboBoxTuneSubsystem->currentText();
-    QString param = ui->comboBoxTuneParameter->currentText();
+    QString subsys = currentTuneSubsystemCommand();
+    QString param = currentTuneParameterCommand();
     QString valueStr = ui->lineEditTune->text();
     bool ok;
     double value = valueStr.toDouble(&ok);
@@ -1723,8 +1802,8 @@ void MainWindow::on_pushButtonTuneUndo_clicked() {
     double oldVal = m_currentParamHistory.undoStack.pop();
     // Send tuning command to revert value, but disable history recording for this action to avoid loops
     m_recordHistory = false;
-    QString subsys = ui->comboBoxTuneSubsystem->currentText();
-    QString param = ui->comboBoxTuneParameter->currentText();
+    QString subsys = currentTuneSubsystemCommand();
+    QString param = currentTuneParameterCommand();
     QString cmd = QString("tune %1 %2 %3\r\n").arg(subsys, param, QString::number(oldVal, 'f', 4));
     sendCommand(cmd);
     // Note: The slave will return the new value (i.e., oldVal) and its previous value (i.e., currentValue),
@@ -1732,8 +1811,8 @@ void MainWindow::on_pushButtonTuneUndo_clicked() {
 }
 
 void MainWindow::on_pushButtonTuneEnquire_clicked() {
-    QString subsys = ui->comboBoxTuneSubsystem->currentText();
-    QString param = ui->comboBoxTuneParameter->currentText();
+    QString subsys = currentTuneSubsystemCommand();
+    QString param = currentTuneParameterCommand();
     QString cmd = QString("tune %1 %2 ?\r\n").arg(subsys, param);
     m_recordHistory = false;
     sendCommand(cmd);
@@ -1741,8 +1820,8 @@ void MainWindow::on_pushButtonTuneEnquire_clicked() {
 
 void MainWindow::on_pushButtonIncrement_clicked() {
     double step = m_stepValues[ui->incrementSlider->value()];
-    QString subsys = ui->comboBoxTuneSubsystem->currentText();
-    QString param = ui->comboBoxTuneParameter->currentText();
+    QString subsys = currentTuneSubsystemCommand();
+    QString param = currentTuneParameterCommand();
     // Set flag to record this change in history when the response comes back
     m_recordHistory = true;
     QString cmd = QString("increment %1 %2 %3\r\n").arg(subsys, param, QString::number(step, 'f', 6));
@@ -1751,8 +1830,8 @@ void MainWindow::on_pushButtonIncrement_clicked() {
 
 void MainWindow::on_pushButtonDecrement_clicked() {
     double step = -m_stepValues[ui->incrementSlider->value()];
-    QString subsys = ui->comboBoxTuneSubsystem->currentText();
-    QString param = ui->comboBoxTuneParameter->currentText();
+    QString subsys = currentTuneSubsystemCommand();
+    QString param = currentTuneParameterCommand();
     // Set flag to record this change in history when the response comes back
     m_recordHistory = true;
     QString cmd = QString("increment %1 %2 %3\r\n").arg(subsys, param, QString::number(step, 'f', 6));
@@ -1770,23 +1849,26 @@ void MainWindow::on_comboBoxTuneSubsystem_currentIndexChanged(int index) {
     Q_UNUSED(index);
     // Clear history stack when switching subsystem
     m_currentParamHistory.undoStack.clear();
-    // Update parameter combo box based on selected subsystem
-    QString subsys = ui->comboBoxTuneSubsystem->currentText();
+
+    const QString previousParameterCommand = currentTuneParameterCommand();
+    const QString subsys = currentTuneSubsystemCommand();
+
     ui->comboBoxTuneParameter->clear();
-    // Define parameters for each subsystem
-    if (subsys == "speed") {
-        ui->comboBoxTuneParameter->addItems({"p", "i"});
-    } else if (subsys == "id") {
-        ui->comboBoxTuneParameter->addItems({"p", "i"});
-    } else if (subsys == "iq") {
-        ui->comboBoxTuneParameter->addItems({"p", "i"});
-    } else if (subsys == "fw") {
-        ui->comboBoxTuneParameter->addItems({"p", "i"});
-    } else if (subsys == "gain") {
-        ui->comboBoxTuneParameter->addItems({"ia", "ib", "ic", "va", "vb", "ibatt", "vbatt"});
-    } else if (subsys == "offset") {
-        ui->comboBoxTuneParameter->addItems({"ia", "ib", "ic", "va", "vb", "ibatt", "vbatt"});
+    for (const TuneSubsystemDef &definition : m_dataParser->getTuningDefinitions()) {
+        if (definition.command != subsys) {
+            continue;
+        }
+        for (const TuneParameterDef &parameter : definition.parameters) {
+            ui->comboBoxTuneParameter->addItem(parameter.name, parameter.command);
+        }
+        break;
     }
+
+    const int previousParameterIndex = ui->comboBoxTuneParameter->findData(previousParameterCommand);
+    if (previousParameterIndex >= 0) {
+        ui->comboBoxTuneParameter->setCurrentIndex(previousParameterIndex);
+    }
+
     // Display last known value for the first parameter of the new subsystem, if available
     QString key = getCurrentParamKey();
     if (m_paramLastValue.contains(key)) {
@@ -1846,6 +1928,17 @@ void MainWindow::on_pushButtonSaveAdc_clicked() {
         ui->pushButtonSaveAdc->setChecked(false);
     }
     updateAdcSaveButtonState();
+}
+
+void MainWindow::on_pushButtonQuickSave_clicked() {
+    if (m_isQuickSaving) {
+        stopQuickSave();
+        return;
+    }
+
+    if (!startQuickSave()) {
+        ui->pushButtonQuickSave->setChecked(false);
+    }
 }
 
 void MainWindow::on_pushButtonLogAdc_clicked() {
@@ -2102,6 +2195,81 @@ void MainWindow::flushStaleAdcSequences() {
     }
 }
 
+bool MainWindow::startQuickSave() {
+    if (m_isQuickSaving) {
+        return true;
+    }
+
+    const bool saveTelemetry = ui->checkBoxTelemetry && ui->checkBoxTelemetry->isChecked();
+    const bool saveAdc = ui->checkBoxAdc && ui->checkBoxAdc->isChecked();
+    if (!saveTelemetry && !saveAdc) {
+        QMessageBox::warning(this, "Quick Save", "Select Telemetry, ADC, or both before starting quick save.");
+        return false;
+    }
+
+    bool ok = false;
+    const double seconds = ui->lineEditSaveTime->text().trimmed().toDouble(&ok);
+    if (!ok || seconds <= 0.0 ||
+        seconds > static_cast<double>(std::numeric_limits<int>::max()) / 1000.0) {
+        QMessageBox::warning(this, "Quick Save", "Enter a positive quick save duration in seconds.");
+        return false;
+    }
+
+    const int durationMs = static_cast<int>(std::llround(seconds * 1000.0));
+    const QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd-hh.mm.ss");
+    const QString telemetryPath = saveTelemetry ? quickSaveFilePath(timestamp, "_log_data") : QString();
+    const QString adcPath = saveAdc ? quickSaveFilePath(timestamp, "_adc_sample") : QString();
+
+    bool started = false;
+    QString errorMessage;
+    QMetaObject::invokeMethod(m_dataParser, [this, telemetryPath, adcPath, &started, &errorMessage]() {
+        started = m_dataParser->startQuickCsvLogging(telemetryPath, adcPath, &errorMessage);
+    }, Qt::BlockingQueuedConnection);
+    if (!started) {
+        QMessageBox::critical(this, "Error", "Failed to create quick save file: " + errorMessage);
+        return false;
+    }
+
+    m_isQuickSaving = true;
+    ui->pushButtonQuickSave->setChecked(true);
+    QStringList files;
+    if (!telemetryPath.isEmpty()) {
+        files << QFileInfo(telemetryPath).fileName();
+    }
+    if (!adcPath.isEmpty()) {
+        files << QFileInfo(adcPath).fileName();
+    }
+    ui->pushButtonQuickSave->setToolTip("Quick saving to " + files.join(", "));
+    if (m_quickSaveTimer) {
+        m_quickSaveTimer->start(durationMs);
+    }
+    return true;
+}
+
+void MainWindow::stopQuickSave() {
+    const bool wasQuickSaving = m_isQuickSaving;
+    if (m_quickSaveTimer) {
+        m_quickSaveTimer->stop();
+    }
+
+    if (wasQuickSaving && m_dataParser) {
+        QMetaObject::invokeMethod(m_dataParser, [this]() {
+            m_dataParser->stopQuickCsvLogging();
+        }, Qt::BlockingQueuedConnection);
+    }
+    m_isQuickSaving = false;
+
+    if (ui && ui->pushButtonQuickSave) {
+        ui->pushButtonQuickSave->setChecked(false);
+        ui->pushButtonQuickSave->setToolTip("Start quick logging for the selected data");
+    }
+}
+
+QString MainWindow::quickSaveFilePath(const QString &timestamp, const QString &fileStem) const {
+    const QString fileName = timestamp + fileStem + ui->lineEditSaveSuffix->text() + ".csv";
+    return uniqueFilePath(QDir::current().filePath(fileName));
+}
+
 void MainWindow::updateAdcSaveButtonState() {
     if (!ui || !ui->pushButtonSaveAdc) {
         return;
@@ -2331,7 +2499,7 @@ void MainWindow::parseTuneResponse(const QString &line) {
 }
 
 QString MainWindow::getCurrentParamKey() const {
-    return ui->comboBoxTuneSubsystem->currentText() + ":" + ui->comboBoxTuneParameter->currentText();
+    return currentTuneSubsystemCommand() + ":" + currentTuneParameterCommand();
 }
 
 QString MainWindow::formatStepValue(double step) const
