@@ -19,7 +19,7 @@ OscilloscopeWidget::OscilloscopeWidget(QWidget *parent):
 }
 
 void OscilloscopeWidget::setupUi() {
-    // 标题栏
+    // Title/control strip.
     m_titleLabel = new QLabel("Oscilloscope", this);
     m_titleLabel->setAlignment(Qt::AlignCenter);
     
@@ -69,14 +69,14 @@ void OscilloscopeWidget::setupUi() {
     titleLayout->addWidget(m_moveDownBtn);
     titleLayout->addWidget(m_configBtn);
     
-    // 绘图区域
+    // Plotting area.
     m_plot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
     m_plot->axisRect()->setRangeDrag(Qt::Vertical);
     m_plot->axisRect()->setRangeZoom(Qt::Vertical);
     m_plot->xAxis->setLabel("Time (s)");
-    m_plot->xAxis->setNumberFormat("gbc"); // 自动选择格式
+    m_plot->xAxis->setNumberFormat("gbc"); // Let QCustomPlot choose a compact format.
     m_plot->xAxis->setNumberFormat("f");
-    m_plot->xAxis->setNumberPrecision(2);  // 3 位小数
+    m_plot->xAxis->setNumberPrecision(2);  // Two decimal places.
     m_plot->yAxis->setLabel("Value");
     m_plot->legend->setVisible(true);
     m_plot->legend->setFont(QFont("Arial", 7));
@@ -85,7 +85,7 @@ void OscilloscopeWidget::setupUi() {
     m_plot->setPlottingHint(QCP::phFastPolylines, true);
     applyTheme();
     
-    // 主布局
+    // Main layout.
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->addLayout(titleLayout);
     layout->addWidget(m_plot);
@@ -109,6 +109,8 @@ void OscilloscopeWidget::setTitle(const QString &title) {
 }
 
 void OscilloscopeWidget::setFields(const QStringList &fields) {
+    // Rebuild graphs from scratch so removed fields, legends, and render buffers
+    // cannot leave stale state behind.
     m_fields = fields;
     m_plot->clearGraphs();
     m_graphs.clear();
@@ -122,7 +124,8 @@ void OscilloscopeWidget::setFields(const QStringList &fields) {
         m_graphs[m_fields[i]] = graph;
     }
     m_plot->legend->setVisible(!m_fields.isEmpty());
-    // 注意：不发射 fieldsChanged，避免循环
+    // Do not emit fieldsChanged here; MainWindow may have called setFields in
+    // response to that signal, so emitting again would create a feedback loop.
     emit refreshRequested();
 }
 
@@ -138,6 +141,8 @@ void OscilloscopeWidget::updatePlot(const QHash<QString, QVector<double>> &dataP
 
     const double xMin = timeStamps[startIdx];
     const double xMax = timeStamps[totalPoints - 1];
+    // Render at most about two samples per horizontal pixel. Large captures keep
+    // local min/max pairs per bucket so spikes remain visible after downsampling.
     const int targetSamples = qMax(200, m_plot->viewport().width() * 2);
     const bool shouldDownsample = pointsToShow > targetSamples;
     const int stride = shouldDownsample ? qMax(1, pointsToShow / targetSamples) : 1;
@@ -322,7 +327,7 @@ void OscilloscopeWidget::dropEvent(QDropEvent *event) {
 }
 
 void OscilloscopeWidget::onConfigure() {
-    // 通知主窗口弹出配置对话框
+    // Ask MainWindow to open the field/color configuration dialog for this scope.
     emit fieldsChanged();
 }
 
@@ -374,6 +379,8 @@ void OscilloscopeWidget::applyTheme()
 }
 
 void OscilloscopeWidget::onToggleYLock() {
+    // Unlocking immediately recalculates the range from the currently rendered
+    // buffers so the plot returns to autoscale without waiting for new telemetry.
     m_yLocked = m_yLockBtn->isChecked();
     m_yLockBtn->setText(m_yLocked ? "🔓" : "🔒");
     if (!m_yLocked) {

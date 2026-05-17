@@ -12,6 +12,9 @@ SimulationOptionsDialog::SimulationOptionsDialog(QWidget *parent)
     , ui(new Ui::SimulationOptionsDialog)
 {
     ui->setupUi(this);
+
+    // The combo boxes store zero-based column indexes internally while showing
+    // one-based labels to match what users see in the preview table.
     ui->comboBoxServerTargetType->addItems({"speed", "torque"});
     ui->comboBoxClientTargetType->addItems({"speed", "torque"});
     ui->comboBoxTimeUnit->addItems({"s", "ms", "us"});
@@ -34,6 +37,8 @@ SimulationOptionsDialog::~SimulationOptionsDialog()
 
 void SimulationOptionsDialog::setCsvPreview(const QStringList &headers, const QVector<QStringList> &rows)
 {
+    // Rebuild all selectors from the CSV header so their indexes stay aligned
+    // with the table columns and the SimulationMapping structure.
     ui->comboBoxServerValueColumn->clear();
     ui->comboBoxClientValueColumn->clear();
     ui->comboBoxTimeColumn->clear();
@@ -74,6 +79,8 @@ void SimulationOptionsDialog::setMapping(const QString &serverTargetType,
                                          const QString &timeUnit,
                                          int startRow)
 {
+    // Invalid saved indexes are ignored, letting the dialog keep a safe default
+    // when a different CSV file has fewer columns than the previous one.
     ui->comboBoxServerTargetType->setCurrentText(serverTargetType);
     ui->comboBoxClientTargetType->setCurrentText(clientTargetType);
 
@@ -128,6 +135,8 @@ int SimulationOptionsDialog::startRow() const
 
 void SimulationOptionsDialog::updateColumnHighlights()
 {
+    // Highlighting is purely presentational: overlapping selections use a shared
+    // color so the user can spot ambiguous mappings before accepting the dialog.
     const int serverColumn = ui->comboBoxServerValueColumn->currentIndex();
     const int clientColumn = ui->comboBoxClientValueColumn->currentIndex();
     const int timeColumnIndex = ui->comboBoxTimeColumn->currentIndex();

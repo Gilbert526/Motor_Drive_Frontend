@@ -26,6 +26,14 @@ class QTcpServer;
 class QTcpSocket;
 class QUdpSocket;
 
+/**
+ * @brief Dialog that coordinates synchronized simulation playback over TCP/UDP.
+ *
+ * The dialog can act as a server or a client. The server loads CSV targets,
+ * schedules fire messages, and broadcasts synchronization data. Clients discover
+ * servers over UDP, estimate clock offset through ping/pong messages, execute
+ * staged commands at server-specified times, and report progress for plotting.
+ */
 class simulationDialog : public QDialog
 {
     Q_OBJECT
@@ -35,7 +43,14 @@ public:
     ~simulationDialog();
 
 signals:
+    /**
+     * @brief Ask MainWindow to send a target command through the serial port.
+     */
     void serialCommandRequested(const QString &command);
+
+    /**
+     * @brief Publish compact connection/simulation status for the main window.
+     */
     void mainStatusChanged(const QString &connectionText,
                            const QString &connectionColor,
                            const QString &simulationText,
@@ -73,6 +88,9 @@ private slots:
     void runNextSimulationLine();
 
 private:
+    /**
+     * @brief Command prepared from a CSV row and executed after a fire message.
+     */
     struct StagedCommand {
         QString targetType;
         double targetValue = 0.0;
@@ -80,6 +98,9 @@ private:
         bool valid = false;
     };
 
+    /**
+     * @brief User-selected CSV column mapping for local and peer targets.
+     */
     struct SimulationMapping {
         QString serverTargetType = "speed";
         int serverValueColumn = -1;
@@ -136,9 +157,11 @@ private:
     int m_clientExpectedLineCount;
     QString m_clientReceivedTargetType;
 
+    // UI setup and palette-sensitive refresh helpers.
     void initializeConnectionUi();
     void initializeSimulationUi();
     void applyScopeTheme();
+    // CSV parsing, mapping, and row timing helpers.
     qint64 monotonicNowMs() const;
     QStringList parseCsvLine(const QString &line) const;
     bool loadCsvFile(const QString &filePath);
@@ -148,6 +171,7 @@ private:
     double numericValue(int row, int column) const;
     double timeValueSeconds(int row) const;
     int nextSimulationDelayMs(int completedRow) const;
+    // Simulation/scope state refresh helpers.
     void updateSimulationControls();
     void updateSimulationProgress();
     void updateScopeControls();
@@ -160,12 +184,14 @@ private:
     void resetSimulationToStart();
     void sendFireForPendingSimulation();
     void scheduleLocalFire(int id, qint64 executeAtServerMs);
+    // Simulation lifecycle and peer coordination helpers.
     QTcpSocket *firstConnectedServerClient() const;
     int simulatableLineCount() const;
     void handleReadyDeadlineExpired();
     void restartClientWatchdog();
     void handleClientWatchdogExpired();
     void sendFinishToPeers();
+    // UDP discovery and address-selection helpers.
     void bindDiscoverySocketForClient();
     void bindDiscoverySocketForServer(quint16 port);
     QString firstLanIpv4Address() const;
@@ -173,6 +199,7 @@ private:
     QHostAddress selectedListenAddress() const;
     quint16 readPortLineEdit(const QString &text, bool *ok) const;
     QString socketDescription(const QTcpSocket *socket) const;
+    // Line-delimited JSON protocol helpers.
     void sendProtocolMessage(QTcpSocket *socket,
                              const QString &type,
                              const QJsonObject &payload = QJsonObject());
@@ -188,6 +215,7 @@ private:
     void handleFire(const QJsonObject &message);
     void handleStarter(const QJsonObject &message);
     void handleAbort();
+    // Command execution, logging, teardown, and status helpers.
     QString buildTargetCommand(const StagedCommand &command) const;
     void executeStagedCommand(int id);
     void appendTcpMessage(const QString &message);

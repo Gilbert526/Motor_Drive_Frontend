@@ -26,6 +26,9 @@ DataParser::DataParser(QObject *parent): QObject{parent} {
 }
 
 namespace {
+// Configuration-file helpers return false with a user-facing error string rather
+// than throwing. That keeps DataParser usable from Qt signal handlers and lets
+// MainWindow display a precise configuration problem to the operator.
 bool readObjectArray(const QJsonObject &root, const QString &key, QJsonArray *array, QString *errorMessage)
 {
     const QJsonValue value = root.value(key);
@@ -985,6 +988,8 @@ QStringList DataParser::configurationSearchPaths()
 
 bool DataParser::loadDefaultConfiguration(QString *errorMessage)
 {
+    // Search beside the executable and in common development locations so the
+    // same binary works both from a build tree and from a packaged application.
     QString lastError;
     for (const QString &path : configurationSearchPaths()) {
         if (!QFileInfo::exists(path)) {
@@ -1005,6 +1010,9 @@ bool DataParser::loadDefaultConfiguration(QString *errorMessage)
 
 bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessage)
 {
+    // Load into temporary containers first. Member state is replaced only after
+    // the whole configuration validates, so a failed reload does not corrupt the
+    // parser currently serving telemetry.
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         if (errorMessage) {
@@ -1229,10 +1237,11 @@ void DataParser::parseData(const QByteArray &newData) {
             maybeEmitParsedData(values);
             idx = nextIdx;
         } else {
-            break;  // 数据不足，等待更多数据
+            break;  // Not enough data yet; wait for more bytes.
         }
     }
-    // 保留未处理的部分（最多保留一帧的最大长度，避免无限增长）
+    // Keep only the unprocessed tail, capped to one maximum frame so the buffer
+    // cannot grow without bound while waiting for the next valid frame.
     if (idx > 0) {
         m_buffer = m_buffer.mid(idx);
         if (m_buffer.size() > MAX_FRAME_SIZE)
@@ -1297,6 +1306,9 @@ std::optional<PacketLayout> DataParser::buildPacketLayout(const QByteArray &data
                                                           int startIdx,
                                                           bool requireComplete) const
 {
+    // The active JSON structure defines packet field order. This pass converts
+    // that declarative shape into concrete byte offsets and dynamic payload
+    // lengths, optionally requiring the entire frame to be available.
     const int headerLength = m_telemetryFields.value("header").length;
     const int versionLength = m_telemetryFields.value("version").length;
     if (headerLength <= 0 || versionLength != 1 ||
@@ -1549,10 +1561,11 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
     QHash<QString, double> result;
     nextStartIdx = startIdx;
 
-    // 查找帧头
+    // Locate the next telemetry or ADC frame header from the current scan point.
     int headerPos = findNextFrameHeader(m_buffer, startIdx);
     if (headerPos == -1) {
-        // 没有找到帧头，跳过所有已扫描的数据（但保留最后几个字节防止跨边界）
+        // No header was found. Skip scanned bytes but keep a short suffix in case
+        // sync bytes are split across adjacent serial chunks.
         nextStartIdx = m_buffer.size() - qMax(m_telemetrySyncBytes.size(), m_adcSampleSyncBytes.size()) + 1;
         if (nextStartIdx < startIdx) nextStartIdx = m_buffer.size();
         if (nextStartIdx > startIdx) {
@@ -1571,7 +1584,7 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
         return result;
     }
 
-    // 帧头位置确定了，检查是否有足够空间读取固定帧元数据
+    // Header is known; check whether enough bytes exist to read fixed metadata.
     if (m_buffer.size() < headerPos + minimumFrameSize())
         return result;
 
@@ -1610,21 +1623,22 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
     }
     result[TIMESTAMP_SECONDS_FIELD] = timestampSeconds(hasTimestampUs, timestampUs, hasTimestampTicks, timestampTicks);
 
-    // 按字段定义顺序解析
+    // Parse enabled fields in configuration order so the payload cursor advances
+    // exactly as the firmware packed the variable telemetry payload.
     for (const FieldDef &field : m_fields) {
         if (mask1 & field.maskBit) {
-            // 该字段存在，检查缓冲区长度是否足够
+            // Field is present; verify the fixed-length value is available.
             if (m_buffer.size() < currentPos + field.size)
-                return result;  // 数据不足
+                return result;  // Insufficient data.
             QByteArray raw = m_buffer.mid(currentPos, field.size);
             double value = unpackValue(raw, field);
             result[field.name] = value;
             currentPos += field.size;
         }
-        // 如果字段不存在，不移动指针，继续下一个字段
+        // If the field is absent, leave the cursor unchanged and continue.
     }
 
-    // 成功解析一个完整包
+    // A complete packet was decoded successfully.
     for (const FieldDef &field : m_fields2) {
         if (mask2 & field.maskBit) {
             if (m_buffer.size() < currentPos + field.size)
@@ -1651,6 +1665,8 @@ QHash<QString, double> DataParser::tryParsePacket(int startIdx, int &nextStartId
 
 bool DataParser::tryParseAdcPacket(int headerPos, int &nextStartIdx)
 {
+    // Decode one ADC frame and emit it immediately. Multi-ADC row alignment for
+    // CSV output is handled separately by sequence-number aggregation.
     nextStartIdx = headerPos;
     const std::optional<PacketLayout> maybeLayout = buildAdcPacketLayout(m_buffer, headerPos, false);
     if (!maybeLayout.has_value()) {
@@ -2046,6 +2062,8 @@ void DataParser::flushStaleQuickAdcSequences()
 
 void DataParser::maybeEmitParsedData(const QHash<QString, double> &values)
 {
+    // Quick telemetry logging receives every decoded packet before the UI signal
+    // is emitted, keeping the CSV path independent of any later display work.
     if (m_isQuickTelemetryLogging && m_quickTelemetryLogFile.isOpen()) {
         writeTelemetryLogRow(&m_quickTelemetryLogStream, m_quickTelemetryLogFields, values);
     }
@@ -2091,6 +2109,8 @@ bool DataParser::isReceiveTextByte(char byte)
 
 void DataParser::processReceiveTextChunk(const QByteArray &chunk)
 {
+    // Binary and text share the same serial stream. Bytes that are not part of a
+    // recognized frame are accumulated as printable status lines.
     for (char byte : chunk) {
         if (isReceiveTextByte(byte)) {
             m_textLineBuffer.append(byte);
@@ -2154,9 +2174,9 @@ double DataParser::unpackValue(const QByteArray &data, const FieldDef &field) {
     switch (field.format) {
     case 'B': // unsigned char
         return static_cast<double>(static_cast<quint8>(data[0]));
-    case 'H': // unsigned short (小端)
+    case 'H': // unsigned short, little-endian
         return static_cast<double>(qFromLittleEndian<quint16>(data.data()));
-    case 'f': // float (小端)
+    case 'f': // float, little-endian
         return static_cast<double>(qFromLittleEndian<float>(data.data()));
     default:
         return 0.0;
@@ -2164,7 +2184,8 @@ double DataParser::unpackValue(const QByteArray &data, const FieldDef &field) {
 }
 
 QVector<double> DataParser::getWaveform(const QString &fieldName) const {
-    // 此函数暂不实现，由 MainWindow 自己维护波形队列
+    // MainWindow currently maintains waveform queues itself, so this legacy
+    // accessor intentionally returns an empty vector.
     return QVector<double>();
 }
 
@@ -2189,7 +2210,7 @@ quint32 DataParser::getMaskForField(const QString &fieldName) const {
             return field.maskBit;
         }
     }
-    return 0;   // 未找到
+    return 0;   // Not found.
 }
 
 bool DataParser::isFieldEnabled(const QString &fieldName, quint32 mask1, quint32 mask2) const {

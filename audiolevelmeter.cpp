@@ -25,6 +25,8 @@ AudioLevelMeter::AudioLevelMeter(QWidget *parent)
       m_peakHoldMs(1000),
       m_peakHoldRemainingMs(0)
 {
+    // Two lightweight timers decouple incoming telemetry from visual behavior:
+    // one handles peak-hold decay and one throttles the displayed numeric value.
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setMinimumSize(92, 180);
 
@@ -89,6 +91,8 @@ void AudioLevelMeter::setRange(double minimum, double maximum)
         return;
     }
 
+    // Changing range also rebuilds default thresholds as percentages of the new
+    // span, then clamps all retained values so painting remains well-defined.
     m_minimum = minimum;
     m_maximum = maximum;
     m_value = clampedValue(m_value);
@@ -138,6 +142,8 @@ void AudioLevelMeter::setValue(double value)
     m_value = clampedValue(value);
     updateColorState(m_value);
 
+    // Peak value is based on magnitude, allowing bipolar gauges to hold the
+    // largest positive or negative excursion until decay begins.
     if (qAbs(m_value) > qAbs(m_peakValue)) {
         m_peakValue = m_value;
         m_peakHoldRemainingMs = m_peakHoldMs;
@@ -243,6 +249,8 @@ void AudioLevelMeter::paintEvent(QPaintEvent *event)
         painter.fillRect(fillRect, fillColorForValue(m_value));
     }
 
+    // Build evenly spaced major ticks and add a zero tick when the configured
+    // range crosses zero but the regular divisions do not land exactly on it.
     QVector<double> tickValues;
     tickValues.reserve(m_divisionCount + 2);
     for (int i = 0; i <= m_divisionCount; ++i) {
@@ -334,6 +342,8 @@ double AudioLevelMeter::hysteresisAmount() const
 
 void AudioLevelMeter::updateColorState(double value)
 {
+    // Hysteresis applies only when leaving Warning/Critical states. Entering a
+    // higher state remains immediate so dangerous values are highlighted quickly.
     const double level = levelForThreshold(value);
     const double warning = qMin(m_warningThreshold, m_criticalThreshold);
     const double critical = qMax(m_warningThreshold, m_criticalThreshold);

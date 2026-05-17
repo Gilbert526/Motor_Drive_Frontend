@@ -32,11 +32,22 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
+/**
+ * @brief Main application window and coordinator for serial telemetry UI.
+ *
+ * MainWindow owns the visible controls, the serial worker thread, parser, live
+ * waveform buffers, dashboard gauges/indicators, CSV logging, tuning controls,
+ * and simulation dialog integration. Protocol parsing and serial I/O are
+ * delegated to DataParser and SerialManager respectively.
+ */
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
 public:
+    /**
+     * @brief Latest decoded telemetry status shared by indicators and logging.
+     */
     struct TelemetryStatus {
         quint32 errorCode = 0;
         QStringList errorNames;
@@ -104,11 +115,11 @@ private slots:
 
     void onFieldCheckStateChanged(QListWidgetItem *item);
 
-    // 串口状态处理
+    // Serial port state handlers.
     void handleSerialPortOpened(bool success, const QString &errorMsg);
     void handleSerialPortClosed();
 
-    // 数据解析
+    // Parsed telemetry and packet-status handlers.
     void handleNewData(const QHash<QString, double> &values);
     void handleAdcSample(const AdcSamplePacket &packet);
     void handlePacketStatus(quint32 errorCode,
@@ -120,16 +131,16 @@ private slots:
     // Update Field List on Mask Received
     void onMaskReceived(quint32 mask1, quint32 mask2);
 
-    // 定时刷新波形
+    // Timer-driven plot refresh.
     void updatePlot();
 
-    // 采样点数滑动条
+    // Visible sample count slider.
     void on_sampleSlider_valueChanged(int value);
 
-    // 字段列表双击：创建新示波器并添加该字段
+    // Field-list double click: create a new scope containing that field.
     void on_fieldList_itemDoubleClicked(QListWidgetItem *item);
 
-    // 配置某个示波器（弹出对话框选择字段）
+    // Scope configuration dialog for choosing fields and colors.
     void on_oscilloscopeConfigRequested(OscilloscopeWidget *osc);
 
     // Scope move up/down
@@ -151,11 +162,11 @@ private:
     QStringList m_sendHistory;
     int m_historyIndex;
 
-    // 波形数据存储（所有字段的历史数据）
+    // Waveform data storage for all telemetry fields.
     QHash<QString, QVector<double>> m_waveData;
-    int m_maxWavePoints;   // 内部存储最大点数（与滑动条值独立，用于限制存储）
+    int m_maxWavePoints;   // Internal storage limit, independent of the display slider.
 
-    // 多示波器相关
+    // Multi-oscilloscope UI and model state.
     QListWidget *m_fieldList;
     QScrollArea *m_scrollArea;
     QWidget     *m_oscContainer;
@@ -173,15 +184,15 @@ private:
     QList<GaugeBinding> m_gaugeBindings;
     QHash<QString, double> m_latestTelemetryValues;
 
-    int m_currentMaxPoints;   // 当前显示的点数（滑动条值）
+    int m_currentMaxPoints;   // Current visible point count from the slider.
 
-    // 定时器
+    // Refresh/activity timers.
     QTimer *m_plotTimer;
     QTimer *m_gaugeTimer;
     bool m_plotUpdatesSuspended;
 
     // Timer
-    QVector<double> m_timeStamps;        // 每个采样点的时间（秒，相对）
+    QVector<double> m_timeStamps;        // Sample timestamps in relative seconds.
     quint64 m_lastTimestampTicks;
     bool m_hasLastTimestamp;
 
@@ -248,23 +259,23 @@ private:
 
     // Tuning parameter history for undo functionality
     struct TuneParamHistory {
-        QStack<double> undoStack;  // 历史值栈（旧值）
-        double currentValue;       // 当前值（用于显示）
+        QStack<double> undoStack;  // Previous values available for undo.
+        double currentValue;       // Current displayed value.
     };
-    TuneParamHistory m_currentParamHistory;   // 当前参数的历史（切换参数时清空）
-    QMap<QString, double> m_paramLastValue;   // 所有参数的最后已知值（用于切换后显示）
-    bool m_recordHistory;                     // 当前响应是否应记录历史（true: 记录, false: 不记录）
+    TuneParamHistory m_currentParamHistory;   // History for the selected parameter; reset when selection changes.
+    QMap<QString, double> m_paramLastValue;   // Last known value for each parameter, used when switching selections.
+    bool m_recordHistory;                     // Whether the next firmware response should be pushed to undo history.
 
     // For incremental adjustments
     QVector<double> m_stepValues;
 
-    // 辅助函数
+    // Helper functions.
     void sendCurrentLineEditCommand();
 
     void refreshSerialPorts();
     void updateUiForSerialState(bool isOpen);
     void sendCommand(const QString &cmd);
-    void setupPlottingArea();           // 初始化动态示波器区域
+    void setupPlottingArea();           // Initialize the dynamic oscilloscope area.
     void setupGaugeArea();
     void addGauge(const GaugeDef &gauge);
     void setupTuningArea();
@@ -287,8 +298,8 @@ private:
     void addOscilloscope(const QString &title = QString(), int index = -1);
     void removeOscilloscope(OscilloscopeWidget *osc);
     void updateAllMoveButtons();        // Update state of move up/down buttons for oscilloscopes
-    void loadAvailableFields();         // 从 DataParser 加载字段列表到左侧
-    void updateAllPlots();              // 刷新所有示波器
+    void loadAvailableFields();         // Load DataParser fields into the left-hand field list.
+    void updateAllPlots();              // Refresh every oscilloscope.
     void syncFieldCheckStates();
     void capturePausedPlotSnapshot();
     void setPlotPaused(bool paused);
@@ -300,7 +311,7 @@ private:
     bool isLikelyReceiveTextLine(const QByteArray &line) const;
     void updatePlotRefreshState();
 
-    void addTimeStamp(double offsetSec); // 添加时间戳
+    void addTimeStamp(double offsetSec); // Append a relative timestamp.
 
     bool startTelemetryLogging();
     void stopTelemetryLogging();
@@ -317,13 +328,13 @@ private:
     void handleAdcStatusText(const QString &text);
 
     // Target setting helpers
-    void updateTargetSliderLimits();   // 根据 Speed/Torque 更新滑块范围和步进
+    void updateTargetSliderLimits();   // Update slider range and step mapping for Speed/Torque.
     double getCurrentTargetValue() const;
     void setTargetValue(double val, bool markAsEdited = true);
 
     // Tuning parameter handling
-    void parseTuneResponse(const QString &line);   // 解析下位机返回
-    QString getCurrentParamKey() const;            // 获取当前参数的唯一键
+    void parseTuneResponse(const QString &line);   // Parse a firmware tuning response line.
+    QString getCurrentParamKey() const;            // Return the unique key for the selected parameter.
 
     QString formatStepValue(double step) const;    // Format step increment into a string
 };

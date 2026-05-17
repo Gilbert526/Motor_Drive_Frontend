@@ -11,6 +11,12 @@
 #include <QVector>
 #include <optional>
 
+/**
+ * @brief Definition of a telemetry payload field controlled by a mask bit.
+ *
+ * size and format describe how to consume the field from the binary payload once
+ * the corresponding mask bit is present.
+ */
 struct FieldDef {
     QString name;
     int size;
@@ -18,22 +24,37 @@ struct FieldDef {
     quint32 maskBit;
 };
 
+/**
+ * @brief Named error bit loaded from the telemetry configuration.
+ */
 struct ErrorDef {
     QString name;
     QString type;
     quint32 maskBit;
 };
 
+/**
+ * @brief Numeric control-mode value and its display name.
+ */
 struct ModeDef {
     QString name;
     quint8 value;
 };
 
+/**
+ * @brief Derived field definition evaluated from parsed telemetry values.
+ */
 struct CustomFieldDef {
     QString name;
     QString expression;
 };
 
+/**
+ * @brief One visual state rule for a status indicator.
+ *
+ * A status can match by named mode, exact numeric value, bit value, or numeric
+ * range. The display text/color are applied while the rule is active.
+ */
 struct IndicatorStatusDef {
     bool hasValue = false;
     QString valueName;
@@ -49,6 +70,9 @@ struct IndicatorStatusDef {
     double timeSec = 0.5;
 };
 
+/**
+ * @brief Configuration for one dashboard indicator label.
+ */
 struct IndicatorDef {
     QString name;
     QString type;
@@ -57,6 +81,9 @@ struct IndicatorDef {
     QList<IndicatorStatusDef> statuses;
 };
 
+/**
+ * @brief Optional color threshold range for a gauge.
+ */
 struct GaugeThresholdDef {
     bool hasLowerBound = false;
     double lowerBound = 0.0;
@@ -65,6 +92,9 @@ struct GaugeThresholdDef {
     QString color;
 };
 
+/**
+ * @brief Configuration for one live AudioLevelMeter gauge.
+ */
 struct GaugeDef {
     QString name;
     int gauge = 0;
@@ -77,17 +107,29 @@ struct GaugeDef {
     double hysteresis = 0.0;
 };
 
+/**
+ * @brief One tunable parameter exposed by the firmware command interface.
+ */
 struct TuneParameterDef {
     QString name;
     QString command;
 };
 
+/**
+ * @brief Group of tuning parameters that share a firmware command prefix.
+ */
 struct TuneSubsystemDef {
     QString name;
     QString command;
     QList<TuneParameterDef> parameters;
 };
 
+/**
+ * @brief Low-level packet field definition from the JSON configuration.
+ *
+ * These definitions support fixed-length fields, variable payload fields, and
+ * CRC fields with configurable polynomials.
+ */
 struct TelemetryFieldDef {
     QString name;
     int length = 0;
@@ -98,11 +140,20 @@ struct TelemetryFieldDef {
     QByteArray value;
 };
 
+/**
+ * @brief Ordered field list for one packet version.
+ */
 struct TelemetryStructureDef {
     quint8 version = 0;
     QStringList fields;
 };
 
+/**
+ * @brief Calculated byte offsets for one complete or partial packet.
+ *
+ * buildPacketLayout/buildAdcPacketLayout fill this structure so parsing code can
+ * read named fields without hard-coding a specific wire layout.
+ */
 struct PacketLayout {
     const TelemetryStructureDef *structure = nullptr;
     int startPos = 0;
@@ -131,6 +182,9 @@ struct PacketLayout {
     int totalLength = 0;
 };
 
+/**
+ * @brief Parsed ADC sample frame emitted to the UI and logging layers.
+ */
 struct AdcSamplePacket {
     quint8 version = 0;
     quint8 adcId = 0;
@@ -148,19 +202,45 @@ struct AdcSamplePacket {
 
 Q_DECLARE_METATYPE(AdcSamplePacket)
 
+/**
+ * @brief Incremental parser for mixed telemetry, ADC sample, and text serial data.
+ *
+ * DataParser owns the binary receive buffer, loads the JSON protocol
+ * configuration, validates frame metadata/CRC, extracts enabled telemetry fields,
+ * emits throttled UI updates, and optionally writes CSV logs. It is deliberately
+ * separate from MainWindow so the protocol rules can evolve independently of the
+ * presentation layer.
+ */
 class DataParser : public QObject {
     Q_OBJECT
 
 public:
     explicit DataParser(QObject *parent = nullptr);
 
+    /**
+     * @brief Append newly received serial bytes and extract all complete frames.
+     *
+     * The method also forwards printable text lines, preserves incomplete binary
+     * frames across calls, and caps the buffer to avoid unbounded growth.
+     */
     void parseData(const QByteArray &newData);
 
+    /**
+     * @brief Load field, packet, gauge, indicator, and tuning definitions.
+     */
     bool loadConfiguration(const QString &filePath, QString *errorMessage = nullptr);
     QString configurationPath() const { return m_configurationPath; }
     
+    /**
+     * @brief Legacy waveform accessor retained for callers that expect it.
+     *
+     * MainWindow currently maintains the live waveform buffers itself.
+     */
     QVector<double> getWaveform(const QString &fieldName) const;
 
+    /**
+     * @brief Return all displayable telemetry and custom field names.
+     */
     QStringList getFieldNames() const;
 
     QString getCommandNameForField(const QString &displayName) const;
@@ -168,8 +248,14 @@ public:
     const QList<GaugeDef>& getGauges() const { return m_gauges; }
     const QList<TuneSubsystemDef>& getTuningDefinitions() const { return m_tuning; }
 
+    /**
+     * @brief Resolve a field name to its configured telemetry mask bit.
+     */
     quint32 getMaskForField(const QString &fieldName) const;
 
+    /**
+     * @brief Test whether a field is present in the two telemetry mask words.
+     */
     bool isFieldEnabled(const QString &fieldName, quint32 mask1, quint32 mask2) const;
 
     QStringList getErrorNames(quint32 errorCode) const;

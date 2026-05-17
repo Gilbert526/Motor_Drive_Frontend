@@ -10,6 +10,14 @@
 class QLabel;
 class QPushButton;
 
+/**
+ * @brief Self-contained multi-trace oscilloscope panel.
+ *
+ * Each instance owns one QCustomPlot, a small control strip, and the list of
+ * telemetry fields it should render. MainWindow supplies shared time stamps and
+ * field data; this widget handles color assignment, downsampled rendering,
+ * drag-and-drop field additions, theme changes, and optional Y-axis locking.
+ */
 class OscilloscopeWidget : public QWidget
 {
     Q_OBJECT
@@ -17,8 +25,18 @@ class OscilloscopeWidget : public QWidget
 public:
     explicit OscilloscopeWidget(QWidget *parent = nullptr);
 
+    /**
+     * @brief Replace the plotted field list and rebuild matching graph objects.
+     */
     void setFields(const QStringList &fields);
     QStringList getFields() const { return m_fields; }
+
+    /**
+     * @brief Render the latest visible window of all selected fields.
+     *
+     * dataPool stores one vector per field, timeStamps is the shared sample time
+     * axis, and maxPoints limits how much of the tail of the capture is visible.
+     */
     void updatePlot(const QHash<QString, QVector<double>> &dataPool,
                     const QVector<double> &timeStamps, int maxPoints);
     void clear();
@@ -31,6 +49,7 @@ public:
     void setColorList(const QList<QColor> &colors);
 
 protected:
+    // UI and drag/drop event hooks used for theme refresh and field assignment.
     void changeEvent(QEvent *event) override;
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dragMoveEvent(QDragMoveEvent *event) override;
@@ -49,6 +68,12 @@ private slots:
     void onToggleYLock();
 
 private:
+    /**
+     * @brief Reusable x/y storage for a rendered graph.
+     *
+     * Keeping buffers as members avoids repeated heap churn during timer-driven
+     * plot refreshes, especially when high-rate telemetry is downsampled.
+     */
     struct RenderBuffers {
         QVector<double> x;
         QVector<double> y;

@@ -27,6 +27,8 @@
 #include <limits>
 
 namespace {
+// Use one monotonic process-local clock for protocol timestamps. Wall-clock time
+// can jump, but synchronization offsets and scheduled fire times must not.
 QElapsedTimer &protocolClock()
 {
     static QElapsedTimer timer;
@@ -71,6 +73,10 @@ simulationDialog::simulationDialog(QWidget *parent)
     , m_clientExpectedLineCount(0)
 {
     ui->setupUi(this);
+
+    // The dialog is long-lived and can switch between server and client roles.
+    // Timers are configured once here; role-specific setup happens when the user
+    // starts a server, connects a client, or loads a simulation file.
     initializeConnectionUi();
     initializeSimulationUi();
 
@@ -148,6 +154,8 @@ void simulationDialog::showEvent(QShowEvent *event)
 
 void simulationDialog::initializeConnectionUi()
 {
+    // Connection controls cover both roles: server listening, client discovery,
+    // selected peer details, and compact status labels shared with MainWindow.
     m_lanAddress = firstLanIpv4Address();
 
     ui->radioButtonLocalhost->setText("Local only - 127.0.0.1");
@@ -182,6 +190,8 @@ void simulationDialog::initializeConnectionUi()
 
 void simulationDialog::initializeSimulationUi()
 {
+    // Simulation controls stay disabled until a CSV is loaded and a valid mapping
+    // is selected, then update as local or synchronized playback progresses.
     m_scopePlot = new QCustomPlot(ui->scopeWidget);
     auto *scopeLayout = new QVBoxLayout(ui->scopeWidget);
     scopeLayout->setContentsMargins(0, 0, 0, 0);
@@ -299,6 +309,9 @@ QStringList simulationDialog::parseCsvLine(const QString &line) const
 
 bool simulationDialog::loadCsvFile(const QString &filePath)
 {
+    // The CSV is stored both as original text cells for preview and as parsed
+    // numeric rows for fast playback. Invalid numeric cells become NaN so row
+    // validity checks can reject them later without losing preview content.
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QMessageBox::warning(this, "CSV Error", QString("Failed to open CSV file: %1").arg(file.errorString()));
@@ -465,6 +478,8 @@ int simulationDialog::nextSimulationDelayMs(int completedRow) const
 
 bool simulationDialog::showSimulationOptionsDialog()
 {
+    // Mapping changes are staged through a modal dialog; only an accepted dialog
+    // updates m_mapping and refreshes the simulation controls.
     if (m_csvHeaders.isEmpty()) {
         QMessageBox::information(this, "Simulation Options", "Load a CSV file before selecting simulation mappings.");
         return false;
@@ -990,6 +1005,8 @@ void simulationDialog::sendProtocolMessage(QTcpSocket *socket,
                                            const QString &type,
                                            const QJsonObject &payload)
 {
+    // Messages are newline-delimited JSON objects. The receiver accumulates bytes
+    // until a newline so TCP packet boundaries do not matter.
     if (!socket || socket->state() != QAbstractSocket::ConnectedState) {
         return;
     }
@@ -1046,6 +1063,8 @@ void simulationDialog::handleProtocolLine(QTcpSocket *socket,
                                           const QByteArray &line,
                                           bool socketIsServerClient)
 {
+    // Dispatch protocol messages by type after minimal JSON validation. Unknown
+    // types are ignored so newer peers can add optional messages safely.
     const QJsonDocument document = QJsonDocument::fromJson(line);
     if (!document.isObject()) {
         return;
@@ -1146,6 +1165,8 @@ void simulationDialog::handleSyncPong(QTcpSocket *socket, const QJsonObject &mes
 
 void simulationDialog::handlePrepare(QTcpSocket *socket, const QJsonObject &message)
 {
+    // Prepare messages stage a command on the client but do not execute it until
+    // a later fire message supplies the synchronized execution time.
     if (!socket) {
         return;
     }
@@ -1240,6 +1261,8 @@ void simulationDialog::handleReady(QTcpSocket *socket, const QJsonObject &messag
 
 void simulationDialog::handleFire(const QJsonObject &message)
 {
+    // Fire is the synchronization point for clients. It converts server time to
+    // local monotonic time using the latest estimated clock offset.
     const int id = message.value("id").toInt(-1);
     if (id < 0 || !m_stagedCommands.contains(id) || !m_stagedCommands[id].valid) {
         return;
@@ -1523,6 +1546,8 @@ QTcpSocket *simulationDialog::firstConnectedServerClient() const
 
 void simulationDialog::runNextSimulationLine()
 {
+    // Server-side playback walks the mapped CSV rows, emits its own command, and
+    // optionally prepares connected clients for the same logical simulation step.
     if (!m_simulationRunning || m_simulationPaused || m_pendingSimulationId >= 0) {
         return;
     }
@@ -1583,6 +1608,8 @@ void simulationDialog::runNextSimulationLine()
 
 void simulationDialog::sendFireForPendingSimulation()
 {
+    // Once every connected client reports ready, the server broadcasts one fire
+    // time so all clients execute their staged command together.
     if (m_pendingSimulationId < 0) {
         return;
     }
@@ -1785,6 +1812,8 @@ void simulationDialog::updateScopeControls()
 
 void simulationDialog::updateScopePlot()
 {
+    // The scope plot shows server target commands and client-reported received
+    // values on separate axes so timing drift is easy to inspect.
     if (!m_scopePlot) {
         return;
     }

@@ -2,6 +2,8 @@
 #include <QDebug>
 
 SerialManager::SerialManager(QObject *parent) : QObject(parent), m_serial(nullptr) {
+    // QSerialPort is parented to this worker object so it lives in the same
+    // thread after MainWindow moves SerialManager to m_serialThread.
     m_serial = new QSerialPort(this);
     connect(m_serial, &QSerialPort::readyRead, this, &SerialManager::handleReadyRead);
 }
@@ -16,6 +18,8 @@ void SerialManager::openSerialPort(const QString &portName, qint32 baudRate) {
         emit portOpened(false, "Serial port already open");
         return;
     }
+
+    // Use the fixed 8-N-1/no-flow-control format expected by the motor drive.
     m_serial->setPortName(portName);
     m_serial->setBaudRate(baudRate);
     m_serial->setDataBits(QSerialPort::Data8);
@@ -44,6 +48,8 @@ void SerialManager::sendData(const QByteArray &data) {
 }
 
 void SerialManager::handleReadyRead() {
+    // Forward complete chunks as received; DataParser owns buffering and frame
+    // boundary detection because serial reads can split packets arbitrarily.
     QByteArray data = m_serial->readAll();
     if (!data.isEmpty()) {
         emit rawDataReceived(data);

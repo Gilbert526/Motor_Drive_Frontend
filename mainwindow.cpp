@@ -40,6 +40,9 @@ constexpr const char *kSaveButtonStyle =
     " border: 1px solid #0a8a1f;"
     "}";
 
+// Apply the current Qt style recursively after palette/theme-sensitive widgets
+// are changed. This is used instead of rebuilding widgets so existing state,
+// signal connections, and layout ownership remain untouched.
 void refreshStyle(QWidget *widget)
 {
     if (!widget) {
@@ -52,6 +55,8 @@ void refreshStyle(QWidget *widget)
 
 QString uniqueFilePath(const QString &filePath)
 {
+    // Preserve the requested path when available; otherwise append a numeric
+    // suffix before the extension so quick-save/logging never overwrites data.
     if (!QFileInfo::exists(filePath)) {
         return filePath;
     }
@@ -79,7 +84,7 @@ MainWindow::MainWindow(QWidget *parent):
     m_dataParser(nullptr),
     m_serialThread(nullptr),
     m_historyIndex(-1),
-    m_maxWavePoints(20000),     // 最多存储20000点
+    m_maxWavePoints(20000),     // Store up to 20,000 samples per field.
     m_currentMaxPoints(500),
     m_plotPaused(false),
     m_plotDirty(false),
@@ -110,19 +115,19 @@ MainWindow::MainWindow(QWidget *parent):
         ui->setupUi(this);
         setWindowTitle("Tuning Master");
 
-        // 初始化串口管理线程
+        // Initialize the serial manager thread.
         m_serialManager = new SerialManager();
         m_serialThread = new QThread(this);
         m_serialManager->moveToThread(m_serialThread);
         connect(m_serialThread, &QThread::finished, m_serialManager, &QObject::deleteLater);
 
-        // 创建数据解析器（主线程）
+        // Create the data parser in the main thread.
         m_dataParser = new DataParser();
         m_dataParser->moveToThread(m_serialThread);
         connect(m_serialThread, &QThread::finished, m_dataParser, &QObject::deleteLater);
         updateFaultAutoCaptureMask();
 
-        // 信号连接
+        // Signal connections.
         connect(m_serialManager, &SerialManager::portOpened, this, &MainWindow::handleSerialPortOpened);
         connect(m_serialManager, &SerialManager::portClosed, this, &MainWindow::handleSerialPortClosed);
         connect(m_serialManager, &SerialManager::rawDataReceived, m_dataParser, &DataParser::parseData);
@@ -153,20 +158,20 @@ MainWindow::MainWindow(QWidget *parent):
 
         connect(m_dataParser, &DataParser::maskReceived, this, &MainWindow::onMaskReceived);
 
-        // 启动串口线程
+        // Start the serial worker thread.
         m_serialThread->start(QThread::HighPriority);
 
-        // 初始化示波器区域
+        // Initialize the oscilloscope area.
         setupPlottingArea();
         setupGaugeArea();
         updateStatusIndicators();
         applyIndicatorStatus(ui->labelServerStatus, "Disconnected", "off");
         applyIndicatorStatus(ui->labelSimStatus, "N/A", "off");
 
-        // 加载字段列表到左侧
+        // Load the field list into the left panel.
         loadAvailableFields();
 
-        // 定时器刷新波形
+        // Timer-driven waveform refresh.
         m_plotTimer = new QTimer(this);
         connect(m_plotTimer, &QTimer::timeout, this, &MainWindow::updatePlot);
         m_plotTimer->start(50);
@@ -175,7 +180,7 @@ MainWindow::MainWindow(QWidget *parent):
         m_adcActivityTimer->setSingleShot(true);
         connect(m_adcActivityTimer, &QTimer::timeout, this, &MainWindow::updateAdcSaveButtonState);
 
-        // 串口UI初始化
+        // Initialize the serial UI.
         refreshSerialPorts();
         ui->comboBaud->addItems({"9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600"});
         ui->comboBaud->setCurrentText("115200");
@@ -259,7 +264,7 @@ MainWindow::MainWindow(QWidget *parent):
         // Initialize increment slider with predefined step values
         const QVector<double> stepValues = {0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0};
         ui->incrementSlider->setRange(0, stepValues.size() - 1);
-        ui->incrementSlider->setValue(10); // 默认 1.0
+        ui->incrementSlider->setValue(10); // Default 1.0.
         on_incrementSlider_valueChanged(10);
 
         ui->pushButtonTuneEnquire->setToolTip("Enquire current parameter value and display in tuning value box");
@@ -301,8 +306,10 @@ QStringList MainWindow::getColorNames()
             "Mikan", "Purple", "Pink"};
 }
 
-// ==================== 波形区域初始化 ====================
+// ==================== Waveform Area Initialization ====================
 void MainWindow::setupPlottingArea() {
+    // This area is dynamic: the left field list supplies selectable telemetry
+    // names, while the right scroll area owns a variable number of scopes.
     // Obtain pointers to UI elements
     m_fieldList = ui->fieldListWidget;
     m_scrollArea = ui->scrollArea;
@@ -355,6 +362,8 @@ void MainWindow::setupPlottingArea() {
 
 void MainWindow::setupGaugeArea()
 {
+    // Gauge definitions come from the parser configuration. Rebuilding the area
+    // on configuration changes keeps the UI in sync with the loaded protocol.
     QLayout *existingLayout = ui->gaugeArea->layout();
     QHBoxLayout *gaugeLayout = qobject_cast<QHBoxLayout*>(existingLayout);
     if (!gaugeLayout) {
@@ -464,6 +473,8 @@ void MainWindow::flushGaugeUpdates()
 
 void MainWindow::updateStatusIndicators()
 {
+    // Indicators are declarative: each one resolves a data source and then picks
+    // the first configured status rule that matches the current telemetry state.
     if (!m_dataParser) {
         return;
     }
@@ -741,6 +752,8 @@ bool MainWindow::resolveIndicatorDataSourceValue(const QString &dataSource, doub
 }
 
 void MainWindow::addOscilloscope(const QString &title, int index) {
+    // Scope ownership is transferred to the layout/container. The parallel
+    // m_oscilloscopes list records visual order for move up/down operations.
     OscilloscopeWidget *osc = new OscilloscopeWidget;
     osc->setColorList(getPresetColors());
     if (!title.isEmpty())
@@ -748,7 +761,7 @@ void MainWindow::addOscilloscope(const QString &title, int index) {
     else
         osc->setTitle(QString("Scope %1").arg(m_oscilloscopes.size() + 1));
 
-    // 连接配置请求信号（点击齿轮按钮时）
+    // Connect configuration requests from the scope gear button.
     connect(osc, &OscilloscopeWidget::fieldsChanged, this, [this, osc]() {
         on_oscilloscopeConfigRequested(osc);
     });
@@ -813,13 +826,15 @@ void MainWindow::loadAvailableFields() {
 }
 
 void MainWindow::on_fieldList_itemDoubleClicked(QListWidgetItem *item) {
-    // 双击字段：创建新示波器并添加该字段
+    // Double-clicking a field creates a new oscilloscope and adds that field.
     addOscilloscope();
     OscilloscopeWidget *newOsc = m_oscilloscopes.last();
     newOsc->setFields({item->text()});
 }
 
 void MainWindow::on_oscilloscopeConfigRequested(OscilloscopeWidget *osc) {
+    // The configuration dialog mirrors the current scope field list. Applying
+    // changes replaces that field list and then reapplies chosen graph colors.
     QDialog dialog(this);
     dialog.setWindowTitle("Configure Fields to Plot");
     dialog.setMinimumWidth(350);
@@ -827,7 +842,7 @@ void MainWindow::on_oscilloscopeConfigRequested(OscilloscopeWidget *osc) {
     QTableWidget *table = new QTableWidget(&dialog);
     table->setColumnCount(2);
     table->setHorizontalHeaderLabels({"Field", "Color"});
-    table->setColumnWidth(0, 180); // 设置第一列宽度为 180 像素
+    table->setColumnWidth(0, 180); // Set the first column width to 180 pixels.
     table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     table->verticalHeader()->setVisible(false);
@@ -835,11 +850,11 @@ void MainWindow::on_oscilloscopeConfigRequested(OscilloscopeWidget *osc) {
     QStringList allFields = m_dataParser->getFieldNames();
     QStringList currentFields = osc->getFields();
 
-    // 预设颜色列表（与 OscilloscopeWidget 中一致）
+    // Preset color list, kept consistent with OscilloscopeWidget.
     QList<QColor> presetColors = MainWindow::getPresetColors();
     QStringList colorNames = MainWindow::getColorNames();
 
-    // 存储每个字段的颜色下拉框指针
+    // Store a color combo-box pointer for each field.
     QHash<int, QComboBox*> colorCombos;
 
     table->setRowCount(allFields.size());
@@ -847,25 +862,25 @@ void MainWindow::on_oscilloscopeConfigRequested(OscilloscopeWidget *osc) {
         QString field = allFields[i];
         bool checked = currentFields.contains(field);
 
-        // 第一列：字段名 + 复选框（不可编辑）
+        // First column: field name plus checkbox, not editable.
         QTableWidgetItem *item = new QTableWidgetItem(field);
-        item->setFlags(item->flags() & ~Qt::ItemIsEditable);   // 禁止编辑
+        item->setFlags(item->flags() & ~Qt::ItemIsEditable);   // Disable editing.
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
         table->setItem(i, 0, item);
 
-        // 第二列：如果已勾选，创建颜色下拉框；否则留空
+        // Second column: create a color combo box only for checked fields.
         if (checked) {
             QComboBox *combo = new QComboBox();
-            // 添加预设颜色（带图标）
+            // Add preset colors with swatch icons.
             for (int j = 0; j < presetColors.size(); ++j) {
                 QPixmap pixmap(16, 16);
                 pixmap.fill(presetColors[j]);
                 combo->addItem(QIcon(pixmap), colorNames[j], presetColors[j]);
             }
-            combo->addItem("Custom...");   // 自定义选项
+            combo->addItem("Custom...");   // Custom color option.
 
-            // 尝试获取当前字段的现有颜色
+            // Try to preserve the current color for this field.
             QColor currentColor = osc->getFieldColor(field);
             if (currentColor.isValid()) {
                 int index = presetColors.indexOf(currentColor);
@@ -874,26 +889,26 @@ void MainWindow::on_oscilloscopeConfigRequested(OscilloscopeWidget *osc) {
                 else
                     combo->setCurrentIndex(presetColors.size()); // Custom...
             } else {
-                // 默认：根据字段在 currentFields 中的索引分配预设颜色
+                // Default: assign a preset color by current field index.
                 int idx = currentFields.indexOf(field);
                 if (idx >= 0 && idx < presetColors.size())
                     combo->setCurrentIndex(idx);
             }
 
-            // 处理 Custom... 选项：弹出颜色对话框
+            // Handle Custom... by opening the color dialog.
             connect(combo, QOverload<int>::of(&QComboBox::activated), this, [combo, field, this](int index) {
-                if (index == combo->count() - 1) { // 最后一项是 "Custom..."
+                if (index == combo->count() - 1) { // The last item is "Custom..."
                     QColor newColor = QColorDialog::getColor(combo->palette().button().color(), nullptr,
                                                              QString("Select Color for %1").arg(field));
                     if (newColor.isValid()) {
-                        // 将自定义颜色存储为用户数据，并改变按钮图标显示
+                        // Store the custom color as user data and update its icon.
                         QPixmap pixmap(16, 16);
                         pixmap.fill(newColor);
                         combo->setItemIcon(index, QIcon(pixmap));
                         combo->setItemData(index, newColor, Qt::UserRole);
                         combo->setCurrentIndex(index);
                     } else {
-                        // 取消选择，恢复之前的选择
+                        // Selection was cancelled; restore the previous choice.
                         int prev = combo->property("prevIndex").toInt();
                         combo->setCurrentIndex(prev);
                     }
@@ -901,7 +916,7 @@ void MainWindow::on_oscilloscopeConfigRequested(OscilloscopeWidget *osc) {
                 combo->setProperty("prevIndex", combo->currentIndex());
             });
 
-            // 存储当前索引以便取消时恢复
+            // Store the current index so cancellation can restore it.
             combo->setProperty("prevIndex", combo->currentIndex());
 
             table->setCellWidget(i, 1, combo);
@@ -911,7 +926,7 @@ void MainWindow::on_oscilloscopeConfigRequested(OscilloscopeWidget *osc) {
         }
     }
 
-    // 双击字段行：切换勾选状态
+    // Double-clicking a field row toggles its checked state.
     connect(table, &QTableWidget::cellDoubleClicked, this, [table](int row, int column) {
         Q_UNUSED(column);
         QTableWidgetItem *item = table->item(row, 0);
@@ -921,7 +936,7 @@ void MainWindow::on_oscilloscopeConfigRequested(OscilloscopeWidget *osc) {
         }
     });
 
-    // 响应复选框状态变化：动态添加/删除颜色下拉框
+    // React to checkbox changes by adding/removing color combo boxes dynamically.
     connect(table, &QTableWidget::itemChanged, this, [table, &colorCombos, presetColors, colorNames](QTableWidgetItem *item) {
         if (item->column() != 0) return;
         int row = item->row();
@@ -929,7 +944,7 @@ void MainWindow::on_oscilloscopeConfigRequested(OscilloscopeWidget *osc) {
         QString field = item->text();
 
         if (checked && !colorCombos.contains(row)) {
-            // 创建颜色下拉框
+            // Create a color combo box.
             QComboBox *combo = new QComboBox();
             for (int j = 0; j < presetColors.size(); ++j) {
                 QPixmap pixmap(16, 16);
@@ -940,7 +955,7 @@ void MainWindow::on_oscilloscopeConfigRequested(OscilloscopeWidget *osc) {
             combo->setCurrentIndex(0);
             combo->setProperty("prevIndex", 0);
 
-            // 处理 Custom... 选项
+            // Handle the Custom... option.
             connect(combo, QOverload<int>::of(&QComboBox::activated), [combo, field](int index) {
                 if (index == combo->count() - 1) {
                     QColor newColor = QColorDialog::getColor(Qt::white, nullptr,
@@ -996,7 +1011,7 @@ void MainWindow::on_oscilloscopeConfigRequested(OscilloscopeWidget *osc) {
                     if (idx >= 0 && idx < presetColors.size()) {
                         color = presetColors[idx];
                     } else if (idx == presetColors.size()) {
-                        // Custom... 选项：从 item data 中取自定义颜色
+                        // Custom... option: read the stored custom color from item data.
                         color = combo->itemData(idx, Qt::UserRole).value<QColor>();
                         if (!color.isValid())
                             color = Qt::black; // fallback
@@ -1020,20 +1035,19 @@ void MainWindow::onMoveUpRequested() {
     int idx = m_oscilloscopes.indexOf(osc);
     if (idx <= 0) return;
 
-    // 交换列表中的指针
-    m_oscilloscopes.swapItemsAt(idx, idx - 1);  // 或 qSwap(m_oscilloscopes[idx], m_oscilloscopes[idx-1]);
+    // Swap pointers in the list.
+    m_oscilloscopes.swapItemsAt(idx, idx - 1);  // Equivalent to swapping adjacent oscilloscope pointers.
 
-    // 交换布局中的位置
-    // 获取两个 widget 在布局中的索引（实际上与列表顺序一致，但布局可能因隐藏等原因不同，此处假设一致）
-    // 更可靠：直接取布局中的两个 item，交换它们的位置
+    // Swap positions in the layout by taking the two adjacent layout items and
+    // reinserting their widgets in the opposite order.
     QLayoutItem *itemUp = m_oscLayout->takeAt(idx - 1);
-    QLayoutItem *itemDown = m_oscLayout->takeAt(idx - 1); // 注意：取走第一个后，原 idx 位置变为 idx-1
+    QLayoutItem *itemDown = m_oscLayout->takeAt(idx - 1); // After taking the first item, the original idx shifts to idx - 1.
     if (itemUp && itemDown) {
-        // 重新插入，顺序互换
+        // Reinsert in the opposite order.
         m_oscLayout->insertWidget(idx - 1, itemDown->widget());
         m_oscLayout->insertWidget(idx, itemUp->widget());
     }
-    // 删除临时 item 对象（不删除 widget）
+    // Delete temporary layout items without deleting their widgets.
     delete itemUp;
     delete itemDown;
 
@@ -1048,9 +1062,9 @@ void MainWindow::onMoveDownRequested() {
 
     m_oscilloscopes.swapItemsAt(idx, idx + 1);
 
-    // 交换布局中的位置
+    // Swap positions in the layout.
     QLayoutItem *itemCurrent = m_oscLayout->takeAt(idx);
-    QLayoutItem *itemNext = m_oscLayout->takeAt(idx); // 此时原 idx+1 移动到 idx
+    QLayoutItem *itemNext = m_oscLayout->takeAt(idx); // The original idx + 1 item has shifted to idx.
     if (itemCurrent && itemNext) {
         m_oscLayout->insertWidget(idx, itemNext->widget());
         m_oscLayout->insertWidget(idx + 1, itemCurrent->widget());
@@ -1065,21 +1079,21 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
     if (obj == ui->lineEditSend && event->type() == QEvent::KeyPress) {
         QKeyEvent *keyEvent = static_cast<QKeyEvent*>(event);
         if (keyEvent->key() == Qt::Key_Up) {
-            // 上键：浏览上一条历史
+            // Up arrow: browse the previous command-history entry.
             if (!m_sendHistory.isEmpty() && m_historyIndex > 0) {
                 m_historyIndex--;
                 ui->lineEditSend->setText(m_sendHistory[m_historyIndex]);
             }
             return true;
         } else if (keyEvent->key() == Qt::Key_Down) {
-            // 下键：浏览下一条历史
+            // Down arrow: browse the next command-history entry.
             if (!m_sendHistory.isEmpty() && m_historyIndex < m_sendHistory.size() - 1) {
                 m_historyIndex++;
                 ui->lineEditSend->setText(m_sendHistory[m_historyIndex]);
             } else if (m_historyIndex == m_sendHistory.size() - 1) {
-                // 已经到最后一条，清空输入框
+                // Already at the newest entry; clear the input box.
                 ui->lineEditSend->clear();
-                m_historyIndex = m_sendHistory.size(); // 指向末尾之后
+                m_historyIndex = m_sendHistory.size(); // Point just after the end.
             }
             return true;
         }
@@ -1173,8 +1187,10 @@ void MainWindow::updatePlot() {
     updateAllPlots();
 }
 
-// ==================== 数据处理 ====================
+// ==================== Data Handling ====================
 void MainWindow::handleNewData(const QHash<QString, double> &values) {
+    // This slot is the central telemetry fan-out: it logs raw values, maintains
+    // plot buffers, updates dashboard widgets, and services fault auto-capture.
     const double currentTime = values.value(DataParser::TIMESTAMP_SECONDS_FIELD,
                                             static_cast<double>(static_cast<quint64>(values.value(DataParser::TIMESTAMP_FIELD, 0.0))) / 275000000.0);
     const quint64 timestampTicks = values.contains(DataParser::TIMESTAMP_US_FIELD)
@@ -1214,7 +1230,7 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
             m_latestTelemetryValues[it.key()] = it.value();
         }
     }
-    // 追加到波形缓冲区
+    // Append values to waveform buffers.
     for (auto it = values.begin(); it != values.end(); ++it) {
         const QString &field = it.key();
         if (field == DataParser::TIMESTAMP_FIELD ||
@@ -1234,7 +1250,7 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
     m_plotDirty = true;
     advanceFaultAutoCapture();
     updateGauges(values);
-    // 可选：在接收区显示关键数值（调试用，可注释）
+    // Optional debug display for key values in the receive area.
     writeTelemetryLogRow(values);
     // if (values.contains("RPM")) {
     //     ui->plainTextEditReceive->appendPlainText(QString("RPM: %1").arg(values["RPM"], 0, 'f', 1));
@@ -1247,6 +1263,8 @@ void MainWindow::handleAdcSample(const AdcSamplePacket &packet) {
 
 void MainWindow::capturePausedPlotSnapshot()
 {
+    // Pause mode freezes a copy of the currently visible buffers while the live
+    // buffers continue receiving data in the background.
     m_pausedTimeStamps.clear();
     m_pausedWaveData.clear();
 
@@ -1294,6 +1312,8 @@ void MainWindow::setPlotPaused(bool paused)
 
 void MainWindow::startFaultAutoCapture(quint32 triggeredMask)
 {
+    // Fault auto-capture freezes the display shortly after a configured fault so
+    // pre-trigger and post-trigger samples are both visible for diagnosis.
     Q_UNUSED(triggeredMask);
 
     if (m_plotPaused) {
@@ -1391,17 +1411,17 @@ void MainWindow::onMaskReceived(quint32 mask1, quint32 mask2) {
     static quint32 lastMask1 = 0;
     static quint32 lastMask2 = 0;
     if (mask1 == lastMask1 && mask2 == lastMask2) {
-        m_syncingFromMask = false;   // 关键：必须重置标志
+        m_syncingFromMask = false;   // Important: always reset the guard flag.
         return;
     }
     lastMask1 = mask1;
     lastMask2 = mask2;
 
-    // 遍历字段列表中的每个项
+    // Walk every item in the field list.
     for (int i = 0; i < m_fieldList->count(); ++i) {
         QListWidgetItem *item = m_fieldList->item(i);
         if (!item) continue;
-        // 获取字段名对应的掩码位（需要字段定义信息）
+        // Resolve the mask bit for this field name from DataParser definitions.
         QString fieldName = item->text();
         bool shouldCheck = m_dataParser->isFieldEnabled(fieldName, mask1, mask2);
         if (shouldCheck != (item->checkState() == Qt::Checked)) {
@@ -1412,7 +1432,7 @@ void MainWindow::onMaskReceived(quint32 mask1, quint32 mask2) {
     m_syncingFromMask = false;
 }
 
-// ==================== 串口处理 ====================
+// ==================== Serial Handling ====================
 bool MainWindow::isReceiveTextByte(char byte) const {
     const uchar value = static_cast<uchar>(byte);
     return byte == '\r' || byte == '\n' || byte == '\t' || (value >= 0x20 && value <= 0x7E);
@@ -1500,6 +1520,8 @@ void MainWindow::updateUiForSerialState(bool isOpen) {
 }
 
 void MainWindow::sendCommand(const QString &cmd) {
+    // All serial command paths funnel through this helper so threading,
+    // connection checks, and byte conversion stay consistent.
     if (!m_serialManager) return;
     QByteArray data = cmd.toUtf8();
     QMetaObject::invokeMethod(m_serialManager, "sendData",
@@ -2000,6 +2022,8 @@ void MainWindow::on_pushButtonSelectConfig_clicked() {
 }
 
 bool MainWindow::startTelemetryLogging() {
+    // Telemetry CSV uses the parser's current field list as the header. Status
+    // columns are appended first so fault/mode context is available per row.
     if (m_isLogging) {
         return true;
     }
@@ -2196,6 +2220,8 @@ void MainWindow::flushStaleAdcSequences() {
 }
 
 bool MainWindow::startQuickSave() {
+    // Quick save starts telemetry and/or ADC logging and then relies on a
+    // timeout to stop collection automatically after a short capture window.
     if (m_isQuickSaving) {
         return true;
     }
@@ -2316,15 +2342,15 @@ void MainWindow::sendCurrentLineEditCommand() {
     if (sendStr.isEmpty())
         return;
 
-    // 存入历史（避免与上一条重复）
+    // Store command history, avoiding duplicates of the immediately previous entry.
     if (m_sendHistory.isEmpty() || m_sendHistory.last() != sendStr) {
         m_sendHistory.append(sendStr);
         if (m_sendHistory.size() > 64)
             m_sendHistory.removeFirst();
     }
-    m_historyIndex = m_sendHistory.size(); // 指向末尾之后
+    m_historyIndex = m_sendHistory.size(); // Point just after the end.
 
-    // 发送数据（自动添加换行）
+    // Send data, automatically adding a newline.
     QString cmd = sendStr;
     if (!cmd.endsWith("\r\n"))
         cmd += "\r\n";
@@ -2333,10 +2359,10 @@ void MainWindow::sendCurrentLineEditCommand() {
                               Qt::QueuedConnection,
                               Q_ARG(QByteArray, data));
 
-    // 显示回显
+    // Display local echo.
     ui->plainTextEditReceive->appendPlainText(">> " + sendStr.trimmed());
 
-    // 清空输入框
+    // Clear the input box.
     ui->lineEditSend->clear();
 }
 
@@ -2346,14 +2372,14 @@ void MainWindow::onFieldCheckStateChanged(QListWidgetItem *item) {
     QString fieldName = item->text();
     bool checked = (item->checkState() == Qt::Checked);
     
-    // 构造命令字符串
+    // Build the command string.
     QString cmdName = m_dataParser->getCommandNameForField(fieldName);
     if (cmdName.isEmpty()) {
         return;
     }
     QString cmd = checked ? QString("log add %1\r\n").arg(cmdName)
                           : QString("log rm %1\r\n").arg(cmdName);
-    sendCommand(cmd);   // 复用已有的 sendCommand
+    sendCommand(cmd);   // Reuse the existing sendCommand path.
 }
 
 void MainWindow::handleSerialPortOpened(bool success, const QString &errorMsg) {
@@ -2449,6 +2475,8 @@ void MainWindow::setTargetValue(double val, bool markAsEdited) {
 }
 
 void MainWindow::parseTuneResponse(const QString &line) {
+    // Firmware replies are plain text. Set/enquire responses update the current
+    // parameter display, remember last known values, and maintain undo history.
     // Format: "speed p set to 100.000000 (was 50.000000)"
     QRegularExpression setRegex(R"((\w+)\s+(\w+)\s+set to\s+([0-9.-]+)\s+\(was\s+([0-9.-]+)\))");
     QRegularExpressionMatch setMatch = setRegex.match(line);
