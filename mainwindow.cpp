@@ -1698,7 +1698,7 @@ void MainWindow::on_lineEditTarget_editingFinished() {
     if (isSpeed) {
         val = qBound(-9000.0, val, 9000.0);
     } else {
-        val = qBound(0.0, val, 0.1);
+        val = qBound(0.0, val, 0.15);
     }
 
     // Move the slider to the nearest step value (speed in hundreds, torque in 0.001 increments)
@@ -1751,7 +1751,7 @@ void MainWindow::on_pushButtonTargetSend_clicked() {
         if (mode == "speed") {
             target = qBound(-9000.0, target, 9000.0);
         } else {
-            target = qBound(0.0, target, 0.1);
+            target = qBound(0.0, target, 0.15);
         }
     } else {
         // Use the value from the slider
@@ -2401,7 +2401,7 @@ void MainWindow::updateTargetSliderLimits() {
         ui->targetSlider->setSingleStep(100);
         ui->targetLabelPrefix->setText("Speed");
     } else {
-        ui->targetSlider->setRange(0, 100);   // 0 -> 0.0, 100 -> 0.100
+        ui->targetSlider->setRange(0, 150);   // 0 -> 0.0, 150 -> 0.150
         ui->targetSlider->setSingleStep(1);
         ui->targetLabelPrefix->setText("Torque");
     }
@@ -2434,7 +2434,7 @@ void MainWindow::setTargetValue(double val, bool markAsEdited) {
         int sliderVal = static_cast<int>(qRound(val / 100.0) * 100);
         ui->targetSlider->setValue(sliderVal);
     } else {
-        val = qBound(0.0, val, 0.1);
+        val = qBound(0.0, val, 0.15);
         int sliderVal = static_cast<int>(qRound(val * 1000.0));
         ui->targetSlider->setValue(sliderVal);
     }
