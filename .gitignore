@@ -82,6 +82,7 @@ CMakeLists.txt.user*
 /build*/
 
 *.csv
+*.cmake
 
 *compile_commands.json
 
