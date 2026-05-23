@@ -1,6 +1,8 @@
 C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/out/build/qt-x86/Motor_Drive_Frontend_autogen/EWIEGA46WW/moc_audiolevelmeter.cpp: C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/audiolevelmeter.h \
   C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/out/build/qt-x86/Motor_Drive_Frontend_autogen/moc_predefs.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/QPointF \
   D:/Qt/6.11.0/mingw_64/include/QtCore/QTimer \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/QVector \
   D:/Qt/6.11.0/mingw_64/include/QtCore/q17memory.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/q20bit.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/q20functional.h \
@@ -131,6 +133,7 @@ C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Proj
   D:/Qt/6.11.0/mingw_64/include/QtCore/qutf8stringview.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qvariant.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qvarlengtharray.h \
+  D:/Qt/6.11.0/mingw_64/include/QtCore/qvector.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qversiontagging.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qxptype_traits.h \
   D:/Qt/6.11.0/mingw_64/include/QtCore/qyieldcpu.h \

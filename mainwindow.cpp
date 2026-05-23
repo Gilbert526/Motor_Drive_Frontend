@@ -9,6 +9,7 @@
 #include <QSerialPortInfo>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QBoxLayout>
 #include <QHBoxLayout>
 #include <QListWidgetItem>
 #include <QDateTime>
@@ -85,6 +86,11 @@ MainWindow::MainWindow(QWidget *parent):
     m_serialThread(nullptr),
     m_historyIndex(-1),
     m_maxWavePoints(20000),     // Store up to 20,000 samples per field.
+    m_gaugeCircularMode(false),
+    m_gaugeTestTimer(nullptr),
+    m_gaugeTestResetTimer(nullptr),
+    m_gaugeTestPhase(0),
+    m_gaugeTestTick(0),
     m_currentMaxPoints(500),
     m_plotPaused(false),
     m_plotDirty(false),
@@ -203,6 +209,13 @@ MainWindow::MainWindow(QWidget *parent):
         ui->pushButtonAudible->setToolTip("Toggle audible PWM frequencies");
         ui->pushButtonReset->setText("Reset");
         ui->pushButtonReset->setToolTip("Reset motor state");
+        ui->pushButtonGaugeToggle->setText("◷");
+        ui->pushButtonGaugeToggle->setToolTip("Show circular gauges");
+        ui->pushButtonGaugeToggle->setCheckable(true);
+        ui->pushButtonGaugeToggle->setChecked(false);
+        ui->pushButtonGaugeTest->setText("↻");
+        ui->pushButtonGaugeTest->setToolTip("Sweep gauges for visual testing");
+        ui->pushButtonGaugeTest->setCheckable(true);
         ui->pushButtonPause->setText("⏸️");
         ui->pushButtonSave->setCheckable(true);
         ui->pushButtonSave->setToolTip("Start or stop saving telemetry to CSV");
@@ -221,6 +234,16 @@ MainWindow::MainWindow(QWidget *parent):
         m_quickSaveTimer = new QTimer(this);
         m_quickSaveTimer->setSingleShot(true);
         connect(m_quickSaveTimer, &QTimer::timeout, this, &MainWindow::stopQuickSave);
+
+        m_gaugeTestTimer = new QTimer(this);
+        m_gaugeTestTimer->setInterval(16);
+        connect(m_gaugeTestTimer, &QTimer::timeout, this, &MainWindow::advanceGaugeTest);
+
+        m_gaugeTestResetTimer = new QTimer(this);
+        m_gaugeTestResetTimer->setSingleShot(true);
+        m_gaugeTestResetTimer->setInterval(3000);
+        connect(m_gaugeTestResetTimer, &QTimer::timeout, this, &MainWindow::resetGaugesAfterTest);
+        updateGaugeModeControls();
 
         // Command line features
         ui->lineEditSend->installEventFilter(this);
@@ -365,14 +388,20 @@ void MainWindow::setupGaugeArea()
     // Gauge definitions come from the parser configuration. Rebuilding the area
     // on configuration changes keeps the UI in sync with the loaded protocol.
     QLayout *existingLayout = ui->gaugeArea->layout();
-    QHBoxLayout *gaugeLayout = qobject_cast<QHBoxLayout*>(existingLayout);
+    QBoxLayout *gaugeLayout = qobject_cast<QBoxLayout*>(existingLayout);
     if (!gaugeLayout) {
         delete existingLayout;
-        gaugeLayout = new QHBoxLayout(ui->gaugeArea);
+        gaugeLayout = new QBoxLayout(m_gaugeCircularMode
+                                         ? QBoxLayout::TopToBottom
+                                         : QBoxLayout::LeftToRight,
+                                     ui->gaugeArea);
         gaugeLayout->setContentsMargins(6, 0, 6, 0);
-        gaugeLayout->setSpacing(18);
         ui->gaugeArea->setLayout(gaugeLayout);
     }
+    gaugeLayout->setDirection(m_gaugeCircularMode
+                                  ? QBoxLayout::TopToBottom
+                                  : QBoxLayout::LeftToRight);
+    gaugeLayout->setSpacing(m_gaugeCircularMode ? 2 : 18);
 
     gaugeLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
     m_gaugeBindings.clear();
@@ -383,12 +412,18 @@ void MainWindow::setupGaugeArea()
         delete item;
     }
 
-    gaugeLayout->setAlignment(Qt::AlignCenter);
-    gaugeLayout->addStretch(1);
+    gaugeLayout->setAlignment(m_gaugeCircularMode
+                                  ? (Qt::AlignHCenter | Qt::AlignTop)
+                                  : Qt::AlignCenter);
+    if (!m_gaugeCircularMode) {
+        gaugeLayout->addStretch(1);
+    }
     for (const GaugeDef &gauge : m_dataParser->getGauges()) {
         addGauge(gauge);
     }
-    gaugeLayout->addStretch(1);
+    if (!m_gaugeCircularMode) {
+        gaugeLayout->addStretch(1);
+    }
 
     if (!m_gaugeTimer) {
         m_gaugeTimer = new QTimer(this);
@@ -399,7 +434,7 @@ void MainWindow::setupGaugeArea()
 
 void MainWindow::addGauge(const GaugeDef &gauge)
 {
-    QHBoxLayout *gaugeLayout = qobject_cast<QHBoxLayout*>(ui->gaugeArea->layout());
+    QBoxLayout *gaugeLayout = qobject_cast<QBoxLayout*>(ui->gaugeArea->layout());
     if (!gaugeLayout) {
         return;
     }
@@ -415,18 +450,25 @@ void MainWindow::addGauge(const GaugeDef &gauge)
     meter->setThresholds(warningThreshold, criticalThreshold);
     meter->setThresholdHysteresisPercent(gauge.hysteresis);
     meter->setDivisionCount(gauge.divisions);
+    meter->setValueDecimals(gauge.valueDecimals);
     meter->setPeakHoldMs(1000);
+    meter->setDisplayMode(m_gaugeCircularMode
+                              ? AudioLevelMeter::DisplayMode::Circular
+                              : AudioLevelMeter::DisplayMode::VerticalBar);
 
     const QString secondarySource = gauge.secondaryDataSource.trimmed();
     const bool secondaryUsesPeakHold = secondarySource.isEmpty() ||
         secondarySource.compare("MAXVAL", Qt::CaseInsensitive) == 0;
     meter->setPeakTrackingEnabled(secondaryUsesPeakHold);
+    meter->setSecondaryColorTracksPrimary(secondaryUsesPeakHold);
 
     gaugeLayout->addWidget(meter, 0);
     m_gaugeBindings.append({gauge.dataSource,
                             secondaryUsesPeakHold ? QString() : secondarySource,
                             secondaryUsesPeakHold,
-                            meter});
+                            meter,
+                            gauge.minimum,
+                            gauge.maximum});
 }
 
 void MainWindow::deriveGaugeThresholds(const GaugeDef &gauge,
@@ -461,10 +503,14 @@ void MainWindow::updateGauges(const QHash<QString, double> &values)
 {
     for (GaugeBinding &binding : m_gaugeBindings) {
         if (values.contains(binding.fieldName)) {
+            binding.currentValue = values.value(binding.fieldName);
+            binding.hasCurrentValue = true;
             binding.pendingValue = values.value(binding.fieldName);
             binding.hasPendingValue = true;
         }
         if (!binding.secondaryUsesPeakHold && values.contains(binding.secondaryFieldName)) {
+            binding.currentSecondaryValue = values.value(binding.secondaryFieldName);
+            binding.hasCurrentSecondaryValue = true;
             binding.pendingSecondaryValue = values.value(binding.secondaryFieldName);
             binding.hasPendingSecondaryValue = true;
         }
@@ -473,6 +519,12 @@ void MainWindow::updateGauges(const QHash<QString, double> &values)
 
 void MainWindow::flushGaugeUpdates()
 {
+    if ((m_gaugeTestTimer && m_gaugeTestTimer->isActive()) ||
+        (m_gaugeTestResetTimer && m_gaugeTestResetTimer->isActive())) {
+        updateStatusIndicators();
+        return;
+    }
+
     for (GaugeBinding &binding : m_gaugeBindings) {
         if (binding.meter && binding.hasPendingValue) {
             binding.meter->setValue(binding.pendingValue);
@@ -485,6 +537,116 @@ void MainWindow::flushGaugeUpdates()
     }
 
     updateStatusIndicators();
+}
+
+void MainWindow::updateGaugeModeControls()
+{
+    if (!ui) {
+        return;
+    }
+
+    ui->pushButtonGaugeToggle->setText(m_gaugeCircularMode ? "▥" : "◷");
+    ui->pushButtonGaugeToggle->setToolTip(m_gaugeCircularMode
+                                              ? "Show vertical bar gauges"
+                                              : "Show circular gauges");
+    const bool testActive = m_gaugeTestTimer && m_gaugeTestTimer->isActive();
+    ui->pushButtonGaugeTest->setText(testActive ? "■" : "↻");
+    ui->pushButtonGaugeTest->setToolTip(testActive
+                                            ? "Stop gauge test sweep"
+                                            : "Sweep gauges for visual testing");
+}
+
+void MainWindow::startGaugeTest()
+{
+    if (m_gaugeBindings.isEmpty()) {
+        ui->pushButtonGaugeTest->setChecked(false);
+        return;
+    }
+
+    m_gaugeTestPhase = 0;
+    m_gaugeTestTick = 0;
+    if (m_gaugeTestResetTimer) {
+        m_gaugeTestResetTimer->stop();
+    }
+    for (GaugeBinding &binding : m_gaugeBindings) {
+        if (!binding.meter) {
+            continue;
+        }
+        binding.meter->setPeakTrackingEnabled(false);
+        binding.meter->setValue(binding.minimum);
+        binding.meter->setPeakValue(binding.minimum);
+    }
+
+    if (m_gaugeTestTimer) {
+        m_gaugeTestTimer->start();
+    }
+    updateGaugeModeControls();
+}
+
+void MainWindow::stopGaugeTest(bool scheduleReset)
+{
+    if (m_gaugeTestTimer) {
+        m_gaugeTestTimer->stop();
+    }
+
+    ui->pushButtonGaugeTest->setChecked(false);
+    if (scheduleReset && m_gaugeTestResetTimer) {
+        m_gaugeTestResetTimer->start();
+    } else {
+        resetGaugesAfterTest();
+    }
+    updateGaugeModeControls();
+}
+
+void MainWindow::advanceGaugeTest()
+{
+    constexpr int kTicksPerPhase = 100;
+    const double progress = qMin(1.0, m_gaugeTestTick / double(kTicksPerPhase - 1));
+
+    for (GaugeBinding &binding : m_gaugeBindings) {
+        if (!binding.meter) {
+            continue;
+        }
+
+        const double sweptValue = binding.minimum + (binding.maximum - binding.minimum) * progress;
+        if (m_gaugeTestPhase == 0) {
+            binding.meter->setValue(sweptValue);
+            binding.meter->setPeakValue(binding.minimum);
+        } else {
+            binding.meter->setValue(binding.maximum);
+            binding.meter->setPeakValue(sweptValue);
+        }
+    }
+
+    ++m_gaugeTestTick;
+    if (m_gaugeTestTick >= kTicksPerPhase) {
+        m_gaugeTestTick = 0;
+        ++m_gaugeTestPhase;
+        if (m_gaugeTestPhase > 1) {
+            stopGaugeTest();
+        }
+    }
+}
+
+void MainWindow::resetGaugesAfterTest()
+{
+    for (GaugeBinding &binding : m_gaugeBindings) {
+        if (!binding.meter) {
+            continue;
+        }
+
+        const double restoredValue = qBound(binding.minimum, 0.0, binding.maximum);
+        const double restoredSecondaryValue = restoredValue;
+        binding.meter->setPeakTrackingEnabled(false);
+        binding.meter->setValue(restoredValue);
+        binding.meter->setPeakValue(binding.secondaryUsesPeakHold
+                                        ? restoredValue
+                                        : restoredSecondaryValue);
+        binding.meter->setPeakTrackingEnabled(binding.secondaryUsesPeakHold);
+        binding.hasPendingValue = false;
+        binding.hasPendingSecondaryValue = false;
+    }
+    updateGaugeModeControls();
 }
 
 void MainWindow::updateStatusIndicators()
@@ -1931,6 +2093,31 @@ void MainWindow::on_comboBoxTuneParameter_currentIndexChanged(int index) {
     } else {
         m_currentParamHistory.currentValue = 0.0;
         ui->lineEditTune->clear();
+    }
+}
+
+void MainWindow::on_pushButtonGaugeToggle_clicked()
+{
+    const bool restartGaugeTest = m_gaugeTestTimer && m_gaugeTestTimer->isActive();
+    if (restartGaugeTest) {
+        stopGaugeTest(false);
+    }
+
+    m_gaugeCircularMode = ui->pushButtonGaugeToggle->isChecked();
+    setupGaugeArea();
+    if (restartGaugeTest) {
+        ui->pushButtonGaugeTest->setChecked(true);
+        startGaugeTest();
+    }
+    updateGaugeModeControls();
+}
+
+void MainWindow::on_pushButtonGaugeTest_clicked()
+{
+    if (ui->pushButtonGaugeTest->isChecked()) {
+        startGaugeTest();
+    } else {
+        stopGaugeTest();
     }
 }
 

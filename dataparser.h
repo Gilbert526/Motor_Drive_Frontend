@@ -104,6 +104,7 @@ struct GaugeDef {
     double minimum = 0.0;
     double maximum = 100.0;
     int divisions = 5;
+    int valueDecimals = 2;
     QList<GaugeThresholdDef> thresholds;
     double hysteresis = 0.0;
 };

@@ -428,6 +428,13 @@ bool parseGauges(const QJsonArray &array, QList<GaugeDef> *gauges, QString *erro
             }
             return false;
         }
+        if (object.contains("valueDecimals") &&
+            !readIntRange(object, "valueDecimals", 0, 6, &gauge.valueDecimals, errorMessage)) {
+            if (errorMessage) {
+                *errorMessage = QString("gauges[%1]: %2").arg(i).arg(*errorMessage);
+            }
+            return false;
+        }
         gauge.hysteresis = qMax(0.0, object.value("hysteresis").toDouble(0.0));
 
         QJsonArray thresholdsJson;

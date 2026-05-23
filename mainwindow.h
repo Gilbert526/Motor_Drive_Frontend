@@ -112,6 +112,8 @@ private slots:
     void on_pushButtonSaveAdc_clicked();
     void on_pushButtonQuickSave_clicked();
     void on_pushButtonSelectConfig_clicked();
+    void on_pushButtonGaugeToggle_clicked();
+    void on_pushButtonGaugeTest_clicked();
 
     void onFieldCheckStateChanged(QListWidgetItem *item);
 
@@ -180,13 +182,24 @@ private:
         QString secondaryFieldName;
         bool secondaryUsesPeakHold = true;
         AudioLevelMeter *meter = nullptr;
+        double minimum = 0.0;
+        double maximum = 100.0;
+        double currentValue = 0.0;
+        double currentSecondaryValue = 0.0;
         double pendingValue = 0.0;
         double pendingSecondaryValue = 0.0;
+        bool hasCurrentValue = false;
+        bool hasCurrentSecondaryValue = false;
         bool hasPendingValue = false;
         bool hasPendingSecondaryValue = false;
     };
     QList<GaugeBinding> m_gaugeBindings;
     QHash<QString, double> m_latestTelemetryValues;
+    bool m_gaugeCircularMode;
+    QTimer *m_gaugeTestTimer;
+    QTimer *m_gaugeTestResetTimer;
+    int m_gaugeTestPhase;
+    int m_gaugeTestTick;
 
     int m_currentMaxPoints;   // Current visible point count from the slider.
 
@@ -290,6 +303,11 @@ private:
                                double *criticalThreshold) const;
     void updateGauges(const QHash<QString, double> &values);
     void flushGaugeUpdates();
+    void updateGaugeModeControls();
+    void startGaugeTest();
+    void stopGaugeTest(bool scheduleReset = true);
+    void advanceGaugeTest();
+    void resetGaugesAfterTest();
     void updateStatusIndicators();
     void updateFaultAutoCaptureMask();
     void applyIndicatorStatus(QLabel *label, const QString &text, const QString &colorName);

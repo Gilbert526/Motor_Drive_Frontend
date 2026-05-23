@@ -281,6 +281,7 @@
   // dataSource is the telemetry or custom field driving the gauge.
   // secondaryDataSource controls the marker bar: "MAXVAL" keeps rolling max behavior,
   // or set it to another displayable field name.
+  // valueDecimals controls digits after the decimal point on gauge value displays.
   // thresholds are interpreted as green/yellow/red operating regions.
   "gauges": [
     {
@@ -289,6 +290,7 @@
       "dataSource": "VBATT",
       "secondaryDataSource": "MAXVAL",
       "topDisplayUnit": "V",
+      "valueDecimals": 2,
       "min": 0.0,
       "max": 30.0,
       "divisions": 6,
@@ -305,6 +307,7 @@
       "dataSource": "RPM",
       "secondaryDataSource": "MAXVAL",
       "topDisplayUnit": "RPM",
+      "valueDecimals": 0,
       "min": -10000.0,
       "max": 10000.0,
       "divisions": 20,
@@ -323,6 +326,7 @@
       "dataSource": "M_INDEX",
       "secondaryDataSource": "MAXVAL",
       "topDisplayUnit": "",
+      "valueDecimals": 2,
       "min": 0.0,
       "max": 1.2,
       "divisions": 12,
