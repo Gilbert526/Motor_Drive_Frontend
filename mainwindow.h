@@ -177,9 +177,13 @@ private:
 
     struct GaugeBinding {
         QString fieldName;
+        QString secondaryFieldName;
+        bool secondaryUsesPeakHold = true;
         AudioLevelMeter *meter = nullptr;
         double pendingValue = 0.0;
+        double pendingSecondaryValue = 0.0;
         bool hasPendingValue = false;
+        bool hasPendingSecondaryValue = false;
     };
     QList<GaugeBinding> m_gaugeBindings;
     QHash<QString, double> m_latestTelemetryValues;

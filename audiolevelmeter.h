@@ -37,6 +37,8 @@ public:
     void setDivisionCount(int divisionCount);
     void setMajorTickCount(int tickCount);
     void setPeakHoldMs(int holdMs);
+    void setPeakTrackingEnabled(bool enabled);
+    void setPeakValue(double value);
     void setValue(double value);
 
     double value() const { return m_value; }
@@ -76,6 +78,7 @@ private:
     ColorState m_colorState;
     int m_peakHoldMs;
     int m_peakHoldRemainingMs;
+    bool m_peakTrackingEnabled;
     QTimer m_peakDecayTimer;
     QTimer m_valueDisplayTimer;
 };

@@ -279,12 +279,15 @@
   // Gauge definitions map the vertical meters in the gauge area.
   // gauge controls display ordering.
   // dataSource is the telemetry or custom field driving the gauge.
+  // secondaryDataSource controls the marker bar: "MAXVAL" keeps rolling max behavior,
+  // or set it to another displayable field name.
   // thresholds are interpreted as green/yellow/red operating regions.
   "gauges": [
     {
       "name": "Voltage",
       "gauge": 0,
       "dataSource": "VBATT",
+      "secondaryDataSource": "MAXVAL",
       "topDisplayUnit": "V",
       "min": 0.0,
       "max": 30.0,
@@ -300,6 +303,7 @@
       "name": "Speed",
       "gauge": 1,
       "dataSource": "RPM",
+      "secondaryDataSource": "MAXVAL",
       "topDisplayUnit": "RPM",
       "min": -10000.0,
       "max": 10000.0,
@@ -317,6 +321,7 @@
       "name": "Modulation",
       "gauge": 2,
       "dataSource": "M_INDEX",
+      "secondaryDataSource": "MAXVAL",
       "topDisplayUnit": "",
       "min": 0.0,
       "max": 1.2,

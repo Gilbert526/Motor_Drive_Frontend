@@ -23,7 +23,8 @@ AudioLevelMeter::AudioLevelMeter(QWidget *parent)
       m_divisionCount(5),
       m_colorState(ColorState::Normal),
       m_peakHoldMs(1000),
-      m_peakHoldRemainingMs(0)
+      m_peakHoldRemainingMs(0),
+      m_peakTrackingEnabled(true)
 {
     // Two lightweight timers decouple incoming telemetry from visual behavior:
     // one handles peak-hold decay and one throttles the displayed numeric value.
@@ -137,6 +138,30 @@ void AudioLevelMeter::setPeakHoldMs(int holdMs)
     m_peakHoldMs = qMax(0, holdMs);
 }
 
+void AudioLevelMeter::setPeakTrackingEnabled(bool enabled)
+{
+    if (m_peakTrackingEnabled == enabled) {
+        return;
+    }
+
+    m_peakTrackingEnabled = enabled;
+    if (!m_peakTrackingEnabled) {
+        m_peakDecayTimer.stop();
+        m_peakHoldRemainingMs = 0;
+        m_peakValue = clampedValue(m_value);
+    }
+    update();
+}
+
+void AudioLevelMeter::setPeakValue(double value)
+{
+    m_peakValue = clampedValue(value);
+    if (!m_peakTrackingEnabled) {
+        m_peakDecayTimer.stop();
+    }
+    update();
+}
+
 void AudioLevelMeter::setValue(double value)
 {
     m_value = clampedValue(value);
@@ -144,12 +169,14 @@ void AudioLevelMeter::setValue(double value)
 
     // Peak value is based on magnitude, allowing bipolar gauges to hold the
     // largest positive or negative excursion until decay begins.
-    if (qAbs(m_value) > qAbs(m_peakValue)) {
-        m_peakValue = m_value;
-        m_peakHoldRemainingMs = m_peakHoldMs;
-    }
-    if (!m_peakDecayTimer.isActive()) {
-        m_peakDecayTimer.start();
+    if (m_peakTrackingEnabled) {
+        if (qAbs(m_value) > qAbs(m_peakValue)) {
+            m_peakValue = m_value;
+            m_peakHoldRemainingMs = m_peakHoldMs;
+        }
+        if (!m_peakDecayTimer.isActive()) {
+            m_peakDecayTimer.start();
+        }
     }
 
     update();

@@ -417,8 +417,16 @@ void MainWindow::addGauge(const GaugeDef &gauge)
     meter->setDivisionCount(gauge.divisions);
     meter->setPeakHoldMs(1000);
 
+    const QString secondarySource = gauge.secondaryDataSource.trimmed();
+    const bool secondaryUsesPeakHold = secondarySource.isEmpty() ||
+        secondarySource.compare("MAXVAL", Qt::CaseInsensitive) == 0;
+    meter->setPeakTrackingEnabled(secondaryUsesPeakHold);
+
     gaugeLayout->addWidget(meter, 0);
-    m_gaugeBindings.append({gauge.dataSource, meter});
+    m_gaugeBindings.append({gauge.dataSource,
+                            secondaryUsesPeakHold ? QString() : secondarySource,
+                            secondaryUsesPeakHold,
+                            meter});
 }
 
 void MainWindow::deriveGaugeThresholds(const GaugeDef &gauge,
@@ -456,6 +464,10 @@ void MainWindow::updateGauges(const QHash<QString, double> &values)
             binding.pendingValue = values.value(binding.fieldName);
             binding.hasPendingValue = true;
         }
+        if (!binding.secondaryUsesPeakHold && values.contains(binding.secondaryFieldName)) {
+            binding.pendingSecondaryValue = values.value(binding.secondaryFieldName);
+            binding.hasPendingSecondaryValue = true;
+        }
     }
 }
 
@@ -465,6 +477,10 @@ void MainWindow::flushGaugeUpdates()
         if (binding.meter && binding.hasPendingValue) {
             binding.meter->setValue(binding.pendingValue);
             binding.hasPendingValue = false;
+        }
+        if (binding.meter && binding.hasPendingSecondaryValue) {
+            binding.meter->setPeakValue(binding.pendingSecondaryValue);
+            binding.hasPendingSecondaryValue = false;
         }
     }
 

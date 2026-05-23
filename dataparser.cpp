@@ -401,6 +401,10 @@ bool parseGauges(const QJsonArray &array, QList<GaugeDef> *gauges, QString *erro
             return false;
         }
 
+        gauge.secondaryDataSource = object.value("secondaryDataSource").toString("MAXVAL").trimmed();
+        if (gauge.secondaryDataSource.isEmpty()) {
+            gauge.secondaryDataSource = "MAXVAL";
+        }
         gauge.topDisplayUnit = object.value("topDisplayUnit").toString();
         const QJsonValue minValue = object.value("min");
         const QJsonValue maxValue = object.value("max");

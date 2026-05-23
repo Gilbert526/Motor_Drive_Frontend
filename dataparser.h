@@ -99,6 +99,7 @@ struct GaugeDef {
     QString name;
     int gauge = 0;
     QString dataSource;
+    QString secondaryDataSource = "MAXVAL";
     QString topDisplayUnit;
     double minimum = 0.0;
     double maximum = 100.0;
