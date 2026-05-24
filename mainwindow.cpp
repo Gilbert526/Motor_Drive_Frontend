@@ -86,14 +86,20 @@ MainWindow::MainWindow(QWidget *parent):
     m_serialThread(nullptr),
     m_historyIndex(-1),
     m_maxWavePoints(20000),     // Store up to 20,000 samples per field.
+    m_faultCaptureDrainArmed(false),
+    m_faultCaptureDrainQueued(false),
     m_gaugeCircularMode(false),
     m_gaugeTestTimer(nullptr),
     m_gaugeTestResetTimer(nullptr),
+    m_indicatorTestTimer(nullptr),
     m_gaugeTestPhase(0),
     m_gaugeTestTick(0),
+    m_indicatorTestStep(0),
+    m_indicatorTestMaxSteps(0),
     m_currentMaxPoints(500),
     m_plotPaused(false),
     m_plotDirty(false),
+    m_latestTelemetryChanged(false),
     m_faultAutoCaptureTriggerMask(0),
     m_faultAutoCaptureDisplayPoints(5000),
     m_faultAutoCapturePacketsAfterTrigger(50),
@@ -137,7 +143,13 @@ MainWindow::MainWindow(QWidget *parent):
         connect(m_serialManager, &SerialManager::portOpened, this, &MainWindow::handleSerialPortOpened);
         connect(m_serialManager, &SerialManager::portClosed, this, &MainWindow::handleSerialPortClosed);
         connect(m_serialManager, &SerialManager::rawDataReceived, m_dataParser, &DataParser::parseData);
-        connect(m_dataParser, &DataParser::parsedData, this, &MainWindow::handleNewData);
+        connect(m_dataParser,
+                &DataParser::parsedData,
+                this,
+                [this](const QHash<QString, double> &values) {
+                    enqueueTelemetryValues(values);
+                },
+                Qt::DirectConnection);
         connect(m_dataParser, &DataParser::adcSampleReceived, this, &MainWindow::handleAdcSample);
         connect(m_dataParser, &DataParser::adcSampleActivityReceived, this, [this]() {
             m_lastAdcPacketMs = QDateTime::currentMSecsSinceEpoch();
@@ -179,8 +191,9 @@ MainWindow::MainWindow(QWidget *parent):
 
         // Timer-driven waveform refresh.
         m_plotTimer = new QTimer(this);
+        m_plotTimer->setTimerType(Qt::PreciseTimer);
         connect(m_plotTimer, &QTimer::timeout, this, &MainWindow::updatePlot);
-        m_plotTimer->start(50);
+        m_plotTimer->start(16);
 
         m_adcActivityTimer = new QTimer(this);
         m_adcActivityTimer->setSingleShot(true);
@@ -243,6 +256,10 @@ MainWindow::MainWindow(QWidget *parent):
         m_gaugeTestResetTimer->setSingleShot(true);
         m_gaugeTestResetTimer->setInterval(3000);
         connect(m_gaugeTestResetTimer, &QTimer::timeout, this, &MainWindow::resetGaugesAfterTest);
+
+        m_indicatorTestTimer = new QTimer(this);
+        m_indicatorTestTimer->setInterval(500);
+        connect(m_indicatorTestTimer, &QTimer::timeout, this, &MainWindow::advanceIndicatorTest);
         updateGaugeModeControls();
 
         // Command line features
@@ -425,10 +442,10 @@ void MainWindow::setupGaugeArea()
         gaugeLayout->addStretch(1);
     }
 
-    if (!m_gaugeTimer) {
-        m_gaugeTimer = new QTimer(this);
-        connect(m_gaugeTimer, &QTimer::timeout, this, &MainWindow::flushGaugeUpdates);
-        m_gaugeTimer->start(16);
+    if (m_gaugeTimer) {
+        m_gaugeTimer->stop();
+        m_gaugeTimer->deleteLater();
+        m_gaugeTimer = nullptr;
     }
 }
 
@@ -502,41 +519,44 @@ void MainWindow::deriveGaugeThresholds(const GaugeDef &gauge,
 void MainWindow::updateGauges(const QHash<QString, double> &values)
 {
     for (GaugeBinding &binding : m_gaugeBindings) {
-        if (values.contains(binding.fieldName)) {
-            binding.currentValue = values.value(binding.fieldName);
-            binding.hasCurrentValue = true;
-            binding.pendingValue = values.value(binding.fieldName);
-            binding.hasPendingValue = true;
+        if (!values.contains(binding.fieldName)) {
+            continue;
         }
+        const double primaryValue = values.value(binding.fieldName);
+        std::optional<double> secondaryValue;
         if (!binding.secondaryUsesPeakHold && values.contains(binding.secondaryFieldName)) {
-            binding.currentSecondaryValue = values.value(binding.secondaryFieldName);
-            binding.hasCurrentSecondaryValue = true;
-            binding.pendingSecondaryValue = values.value(binding.secondaryFieldName);
-            binding.hasPendingSecondaryValue = true;
+            secondaryValue = values.value(binding.secondaryFieldName);
         }
+        applyGaugeValues(binding, primaryValue, secondaryValue);
     }
 }
 
 void MainWindow::flushGaugeUpdates()
 {
-    if ((m_gaugeTestTimer && m_gaugeTestTimer->isActive()) ||
-        (m_gaugeTestResetTimer && m_gaugeTestResetTimer->isActive())) {
-        updateStatusIndicators();
+    updateStatusIndicators();
+}
+
+void MainWindow::applyGaugeValues(GaugeBinding &binding,
+                                  double primaryValue,
+                                  std::optional<double> secondaryValue)
+{
+    binding.currentValue = primaryValue;
+    binding.hasCurrentValue = true;
+    if (secondaryValue.has_value()) {
+        binding.currentSecondaryValue = secondaryValue.value();
+        binding.hasCurrentSecondaryValue = true;
+    }
+
+    if (!binding.meter) {
         return;
     }
 
-    for (GaugeBinding &binding : m_gaugeBindings) {
-        if (binding.meter && binding.hasPendingValue) {
-            binding.meter->setValue(binding.pendingValue);
-            binding.hasPendingValue = false;
-        }
-        if (binding.meter && binding.hasPendingSecondaryValue) {
-            binding.meter->setPeakValue(binding.pendingSecondaryValue);
-            binding.hasPendingSecondaryValue = false;
-        }
+    binding.meter->setValue(primaryValue);
+    if (secondaryValue.has_value()) {
+        binding.meter->setPeakValue(secondaryValue.value());
+    } else if (!binding.secondaryUsesPeakHold) {
+        binding.meter->setPeakValue(primaryValue);
     }
-
-    updateStatusIndicators();
 }
 
 void MainWindow::updateGaugeModeControls()
@@ -549,7 +569,8 @@ void MainWindow::updateGaugeModeControls()
     ui->pushButtonGaugeToggle->setToolTip(m_gaugeCircularMode
                                               ? "Show vertical bar gauges"
                                               : "Show circular gauges");
-    const bool testActive = m_gaugeTestTimer && m_gaugeTestTimer->isActive();
+    const bool testActive = (m_gaugeTestTimer && m_gaugeTestTimer->isActive()) ||
+        (m_indicatorTestTimer && m_indicatorTestTimer->isActive());
     ui->pushButtonGaugeTest->setText(testActive ? "■" : "↻");
     ui->pushButtonGaugeTest->setToolTip(testActive
                                             ? "Stop gauge test sweep"
@@ -558,29 +579,105 @@ void MainWindow::updateGaugeModeControls()
 
 void MainWindow::startGaugeTest()
 {
-    if (m_gaugeBindings.isEmpty()) {
+    const bool testGauges = !m_gaugeBindings.isEmpty();
+    const bool testIndicators = hasTestableIndicators();
+    if (!testGauges && !testIndicators) {
         ui->pushButtonGaugeTest->setChecked(false);
         return;
     }
 
-    m_gaugeTestPhase = 0;
-    m_gaugeTestTick = 0;
+    if (testGauges) {
+        m_gaugeTestPhase = 0;
+        m_gaugeTestTick = 0;
+    }
     if (m_gaugeTestResetTimer) {
         m_gaugeTestResetTimer->stop();
     }
-    for (GaugeBinding &binding : m_gaugeBindings) {
-        if (!binding.meter) {
-            continue;
+    if (testGauges) {
+        for (GaugeBinding &binding : m_gaugeBindings) {
+            if (binding.meter) {
+                binding.meter->setPeakTrackingEnabled(false);
+            }
+            applyGaugeValues(binding, binding.minimum, binding.minimum);
         }
-        binding.meter->setPeakTrackingEnabled(false);
-        binding.meter->setValue(binding.minimum);
-        binding.meter->setPeakValue(binding.minimum);
-    }
 
-    if (m_gaugeTestTimer) {
-        m_gaugeTestTimer->start();
+        if (m_gaugeTestTimer) {
+            m_gaugeTestTimer->start();
+        }
+    }
+    if (testIndicators) {
+        startIndicatorTest();
     }
     updateGaugeModeControls();
+}
+
+void MainWindow::startIndicatorTest()
+{
+    if (!hasTestableIndicators()) {
+        return;
+    }
+
+    m_indicatorTestStep = 0;
+    m_indicatorTestMaxSteps = 0;
+    for (const IndicatorDef &indicator : m_dataParser->getIndicators()) {
+        m_indicatorTestMaxSteps = qMax(m_indicatorTestMaxSteps, indicator.statuses.size());
+    }
+
+    advanceIndicatorTest();
+    if (m_indicatorTestTimer) {
+        m_indicatorTestTimer->start();
+    }
+}
+
+void MainWindow::stopIndicatorTest(bool restoreLiveState)
+{
+    if (m_indicatorTestTimer) {
+        m_indicatorTestTimer->stop();
+    }
+    m_indicatorTestStep = 0;
+    m_indicatorTestMaxSteps = 0;
+    if (restoreLiveState) {
+        updateStatusIndicators();
+    }
+    if (!m_gaugeTestTimer || !m_gaugeTestTimer->isActive()) {
+        ui->pushButtonGaugeTest->setChecked(false);
+    }
+}
+
+void MainWindow::advanceIndicatorTest()
+{
+    if (!m_dataParser || m_indicatorTestMaxSteps <= 0) {
+        stopIndicatorTest();
+        return;
+    }
+    if (m_indicatorTestStep >= m_indicatorTestMaxSteps) {
+        stopIndicatorTest();
+        updateGaugeModeControls();
+        return;
+    }
+
+    for (const IndicatorDef &indicator : m_dataParser->getIndicators()) {
+        if (m_indicatorTestStep < indicator.statuses.size()) {
+            const IndicatorStatusDef &status = indicator.statuses.at(m_indicatorTestStep);
+            applyIndicatorState(indicator, &status);
+        }
+    }
+
+    ++m_indicatorTestStep;
+}
+
+bool MainWindow::hasTestableIndicators() const
+{
+    if (!m_dataParser) {
+        return false;
+    }
+
+    for (const IndicatorDef &indicator : m_dataParser->getIndicators()) {
+        if (!indicator.statuses.isEmpty()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void MainWindow::stopGaugeTest(bool scheduleReset)
@@ -588,6 +685,7 @@ void MainWindow::stopGaugeTest(bool scheduleReset)
     if (m_gaugeTestTimer) {
         m_gaugeTestTimer->stop();
     }
+    stopIndicatorTest(true);
 
     ui->pushButtonGaugeTest->setChecked(false);
     if (scheduleReset && m_gaugeTestResetTimer) {
@@ -610,11 +708,9 @@ void MainWindow::advanceGaugeTest()
 
         const double sweptValue = binding.minimum + (binding.maximum - binding.minimum) * progress;
         if (m_gaugeTestPhase == 0) {
-            binding.meter->setValue(sweptValue);
-            binding.meter->setPeakValue(binding.minimum);
+            applyGaugeValues(binding, sweptValue, binding.minimum);
         } else {
-            binding.meter->setValue(binding.maximum);
-            binding.meter->setPeakValue(sweptValue);
+            applyGaugeValues(binding, binding.maximum, sweptValue);
         }
     }
 
@@ -623,7 +719,16 @@ void MainWindow::advanceGaugeTest()
         m_gaugeTestTick = 0;
         ++m_gaugeTestPhase;
         if (m_gaugeTestPhase > 1) {
-            stopGaugeTest();
+            if (m_gaugeTestTimer) {
+                m_gaugeTestTimer->stop();
+            }
+            if (m_gaugeTestResetTimer) {
+                m_gaugeTestResetTimer->start();
+            }
+            if (!m_indicatorTestTimer || !m_indicatorTestTimer->isActive()) {
+                ui->pushButtonGaugeTest->setChecked(false);
+            }
+            updateGaugeModeControls();
         }
     }
 }
@@ -637,14 +742,13 @@ void MainWindow::resetGaugesAfterTest()
 
         const double restoredValue = qBound(binding.minimum, 0.0, binding.maximum);
         const double restoredSecondaryValue = restoredValue;
-        binding.meter->setPeakTrackingEnabled(false);
-        binding.meter->setValue(restoredValue);
-        binding.meter->setPeakValue(binding.secondaryUsesPeakHold
-                                        ? restoredValue
-                                        : restoredSecondaryValue);
-        binding.meter->setPeakTrackingEnabled(binding.secondaryUsesPeakHold);
-        binding.hasPendingValue = false;
-        binding.hasPendingSecondaryValue = false;
+        if (binding.meter) {
+            binding.meter->setPeakTrackingEnabled(false);
+        }
+        applyGaugeValues(binding, restoredValue, restoredSecondaryValue);
+        if (binding.meter) {
+            binding.meter->setPeakTrackingEnabled(binding.secondaryUsesPeakHold);
+        }
     }
     updateGaugeModeControls();
 }
@@ -656,25 +760,20 @@ void MainWindow::updateStatusIndicators()
     if (!m_dataParser) {
         return;
     }
+    if (m_indicatorTestTimer && m_indicatorTestTimer->isActive()) {
+        return;
+    }
 
     QSet<int> configuredIndicators;
     for (const IndicatorDef &indicator : m_dataParser->getIndicators()) {
         configuredIndicators.insert(indicator.indicator);
-        QLabel *label = findChild<QLabel*>(QString("statusLed%1").arg(indicator.indicator));
-        if (!label) {
-            continue;
-        }
 
         const IndicatorStatusDef *status = resolveIndicatorStatus(indicator);
         if (!status) {
             status = defaultIndicatorStatus(indicator);
         }
 
-        if (status) {
-            applyIndicatorStatus(label, status->displayText, status->color);
-        } else {
-            applyIndicatorStatus(label, indicator.name, "off");
-        }
+        applyIndicatorState(indicator, status);
     }
 
     for (int i = 0; i <= 8; ++i) {
@@ -694,6 +793,20 @@ void MainWindow::updateFaultAutoCaptureMask()
 
     m_faultAutoCaptureTriggerMask = m_dataParser->getErrorMaskForType("overcurrent") |
                                     m_dataParser->getErrorMaskForType("undervoltage");
+}
+
+void MainWindow::applyIndicatorState(const IndicatorDef &indicator, const IndicatorStatusDef *status)
+{
+    if (!status) {
+        return;
+    }
+
+    QLabel *label = findChild<QLabel*>(QString("statusLed%1").arg(indicator.indicator));
+    if (!label) {
+        return;
+    }
+
+    applyIndicatorStatus(label, status->displayText, status->color);
 }
 
 void MainWindow::applyIndicatorStatus(QLabel *label, const QString &text, const QString &colorName)
@@ -1326,11 +1439,9 @@ void MainWindow::updatePlotRefreshState()
         m_plotTimer->stop();
     } else {
         if (!m_plotTimer->isActive()) {
-            m_plotTimer->start(50);
+            m_plotTimer->start(16);
         }
-        if (!m_plotPaused && m_plotDirty) {
-            updateAllPlots();
-        }
+        drainPendingTelemetry(true);
     }
 }
 
@@ -1361,14 +1472,85 @@ void MainWindow::updateAllPlots() {
 }
 
 void MainWindow::updatePlot() {
-    if (m_plotUpdatesSuspended || m_plotPaused || !m_plotDirty) return;
-    updateAllPlots();
+    if (m_plotUpdatesSuspended) {
+        return;
+    }
+
+    drainPendingTelemetry(false);
+    updateStatusIndicators();
 }
 
 // ==================== Data Handling ====================
-void MainWindow::handleNewData(const QHash<QString, double> &values) {
-    // This slot is the central telemetry fan-out: it logs raw values, maintains
-    // plot buffers, updates dashboard widgets, and services fault auto-capture.
+void MainWindow::enqueueTelemetryValues(const QHash<QString, double> &values)
+{
+    {
+        QMutexLocker locker(&m_pendingTelemetryMutex);
+        m_pendingTelemetryPackets.append(values);
+        if (m_pendingTelemetryPackets.size() > m_maxWavePoints) {
+            m_pendingTelemetryPackets.remove(0, m_pendingTelemetryPackets.size() - m_maxWavePoints);
+        }
+    }
+
+    if (!m_faultCaptureDrainArmed.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    bool expected = false;
+    if (!m_faultCaptureDrainQueued.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+        return;
+    }
+
+    QMetaObject::invokeMethod(this, [this]() {
+        m_faultCaptureDrainQueued.store(false, std::memory_order_release);
+        drainPendingTelemetry(true);
+    }, Qt::QueuedConnection);
+}
+
+QVector<QHash<QString, double>> MainWindow::takePendingTelemetryPackets()
+{
+    QMutexLocker locker(&m_pendingTelemetryMutex);
+    QVector<QHash<QString, double>> packets;
+    packets.swap(m_pendingTelemetryPackets);
+    return packets;
+}
+
+void MainWindow::clearPendingTelemetryPackets()
+{
+    QMutexLocker locker(&m_pendingTelemetryMutex);
+    m_pendingTelemetryPackets.clear();
+    m_faultCaptureDrainQueued.store(false, std::memory_order_release);
+}
+
+bool MainWindow::drainPendingTelemetry(bool forcePlotUpdate)
+{
+    const QVector<QHash<QString, double>> packets = takePendingTelemetryPackets();
+    if (packets.isEmpty()) {
+        if (forcePlotUpdate && !m_plotPaused && m_plotDirty) {
+            updateAllPlots();
+        }
+        return false;
+    }
+
+    for (const QHash<QString, double> &values : packets) {
+        ingestTelemetryPacket(values);
+    }
+
+    if (m_latestTelemetryChanged) {
+        updateGauges(m_latestTelemetryValues);
+        m_latestTelemetryChanged = false;
+    }
+
+    if ((forcePlotUpdate || m_plotDirty) && !m_plotPaused) {
+        updateAllPlots();
+    }
+
+    return true;
+}
+
+void MainWindow::ingestTelemetryPacket(const QHash<QString, double> &values)
+{
+    // This is the central telemetry fan-out for buffered packets: maintain plot
+    // buffers and latest-value state, while rendering happens on the UI cadence.
     const double currentTime = values.value(DataParser::TIMESTAMP_SECONDS_FIELD,
                                             static_cast<double>(static_cast<quint64>(values.value(DataParser::TIMESTAMP_FIELD, 0.0))) / 275000000.0);
     const quint64 timestampTicks = values.contains(DataParser::TIMESTAMP_US_FIELD)
@@ -1381,6 +1563,7 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
         m_pausedTimeStamps.clear();
         m_pausedWaveData.clear();
         m_latestTelemetryValues.clear();
+        m_latestTelemetryChanged = true;
     }
 
     m_lastTimestampTicks = timestampTicks;
@@ -1406,6 +1589,7 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
             it.key() != DataParser::TIMESTAMP_US_FIELD &&
             it.key() != DataParser::TIMESTAMP_SECONDS_FIELD) {
             m_latestTelemetryValues[it.key()] = it.value();
+            m_latestTelemetryChanged = true;
         }
     }
     // Append values to waveform buffers.
@@ -1427,12 +1611,6 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
     }
     m_plotDirty = true;
     advanceFaultAutoCapture();
-    updateGauges(values);
-    // Optional debug display for key values in the receive area.
-    writeTelemetryLogRow(values);
-    // if (values.contains("RPM")) {
-    //     ui->plainTextEditReceive->appendPlainText(QString("RPM: %1").arg(values["RPM"], 0, 'f', 1));
-    // }
 }
 
 void MainWindow::handleAdcSample(const AdcSamplePacket &packet) {
@@ -1505,6 +1683,7 @@ void MainWindow::startFaultAutoCapture(quint32 triggeredMask)
     m_faultAutoCapturePending = true;
     m_faultAutoCaptureSkipCurrentPacket = true;
     m_faultAutoCapturePacketsRemaining = qMax(0, m_faultAutoCapturePacketsAfterTrigger);
+    m_faultCaptureDrainArmed.store(true, std::memory_order_release);
 
     if (m_currentMaxPoints != requestedPoints) {
         m_sampleSlider->setValue(requestedPoints);
@@ -1512,6 +1691,8 @@ void MainWindow::startFaultAutoCapture(quint32 triggeredMask)
         m_plotDirty = true;
         updateAllPlots();
     }
+
+    drainPendingTelemetry(true);
 }
 
 void MainWindow::advanceFaultAutoCapture()
@@ -1532,6 +1713,7 @@ void MainWindow::advanceFaultAutoCapture()
     if (m_faultAutoCapturePacketsRemaining <= 0) {
         m_faultAutoCapturePending = false;
         m_faultAutoCaptureSkipCurrentPacket = false;
+        m_faultCaptureDrainArmed.store(false, std::memory_order_release);
         setPlotPaused(true);
     }
 }
@@ -2126,6 +2308,7 @@ void MainWindow::on_pushButtonPause_clicked() {
         m_faultAutoCapturePending = false;
         m_faultAutoCaptureSkipCurrentPacket = false;
         m_faultAutoCapturePacketsRemaining = 0;
+        m_faultCaptureDrainArmed.store(false, std::memory_order_release);
     }
 
     setPlotPaused(!m_plotPaused);
@@ -2212,6 +2395,9 @@ void MainWindow::on_pushButtonSelectConfig_clicked() {
     m_pausedTimeStamps.clear();
     m_pausedWaveData.clear();
     m_latestTelemetryValues.clear();
+    clearPendingTelemetryPackets();
+    m_latestTelemetryChanged = false;
+    m_faultCaptureDrainArmed.store(false, std::memory_order_release);
     m_hasLastTimestamp = false;
     updateAllPlots();
     if (restartLogging && !startTelemetryLogging()) {
@@ -2225,43 +2411,38 @@ void MainWindow::on_pushButtonSelectConfig_clicked() {
 }
 
 bool MainWindow::startTelemetryLogging() {
-    // Telemetry CSV uses the parser's current field list as the header. Status
-    // columns are appended first so fault/mode context is available per row.
+    // Telemetry CSV logging runs in the parser worker so file I/O follows the
+    // packet stream without blocking the UI refresh loop.
     if (m_isLogging) {
         return true;
     }
 
     const QString fileName = QDateTime::currentDateTime().toString("yyyy-MM-dd-hh.mm.ss'_log_data.csv'");
-    m_logFile.setFileName(QDir::current().filePath(fileName));
-    if (!m_logFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::critical(this, "Error", "Failed to create telemetry log file: " + m_logFile.errorString());
+    const QString filePath = QDir::current().filePath(fileName);
+    bool started = false;
+    QString errorMessage;
+    QMetaObject::invokeMethod(m_dataParser, [this, filePath, &started, &errorMessage]() {
+        started = m_dataParser->startTelemetryCsvLogging(filePath, &errorMessage);
+    }, Qt::BlockingQueuedConnection);
+    if (!started) {
+        QMessageBox::critical(this, "Error", "Failed to create telemetry log file: " + errorMessage);
         return false;
     }
 
-    m_logFields = m_dataParser->getFieldNames();
-    m_logStream.setDevice(&m_logFile);
-    m_logStream << "time,error_code,error_flags,control_mode,control_mode_name";
-    for (const QString &field : m_logFields) {
-        m_logStream << "," << field;
-    }
-    m_logStream << "\n";
-
     m_isLogging = true;
     ui->pushButtonSave->setChecked(true);
-    ui->pushButtonSave->setToolTip("Saving telemetry to " + m_logFile.fileName());
+    ui->pushButtonSave->setToolTip("Saving telemetry to " + filePath);
     return true;
 }
 
 void MainWindow::stopTelemetryLogging() {
-    if (!m_isLogging && !m_logFile.isOpen()) {
+    if (!m_isLogging) {
         return;
     }
 
-    m_logStream.flush();
-    m_logStream.setDevice(nullptr);
-    if (m_logFile.isOpen()) {
-        m_logFile.close();
-    }
+    QMetaObject::invokeMethod(m_dataParser, [this]() {
+        m_dataParser->stopTelemetryCsvLogging();
+    }, Qt::BlockingQueuedConnection);
     m_isLogging = false;
     if (ui && ui->pushButtonSave) {
         ui->pushButtonSave->setChecked(false);

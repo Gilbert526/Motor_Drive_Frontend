@@ -289,6 +289,8 @@ public:
     bool startAdcCsvLogging(const QString &fileName, QString *errorMessage = nullptr);
     void stopAdcCsvLogging();
     void flushStaleAdcCsvSequences();
+    bool startTelemetryCsvLogging(const QString &fileName, QString *errorMessage = nullptr);
+    void stopTelemetryCsvLogging();
     bool startQuickCsvLogging(const QString &telemetryFileName,
                               const QString &adcFileName,
                               QString *errorMessage = nullptr);
@@ -342,9 +344,13 @@ private:
     quint32 m_lastStatusErrorCode = 0;
     quint8 m_lastStatusControlMode = 0;
     bool m_lastStatusControlModeKnown = false;
+    bool m_isTelemetryLogging = false;
     bool m_isAdcLogging = false;
     bool m_isQuickTelemetryLogging = false;
     bool m_isQuickAdcLogging = false;
+    QFile m_telemetryLogFile;
+    QTextStream m_telemetryLogStream;
+    QStringList m_telemetryLogFields;
     QFile m_adcLogFile;
     QTextStream m_adcLogStream;
     QFile m_quickTelemetryLogFile;

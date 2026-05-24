@@ -352,8 +352,8 @@
       "dataSource": "MOD",
       "status": [
         { "value": 0, "displayText": "SVPWM", "color": "lightblue" },
-        { "value": 1, "displayText": "SVPWM Comp", "color": "lightblue" },
-        { "value": 2, "displayText": "SVPWM_Super", "color": "lightblue" },
+        { "value": 1, "displayText": "Compensated", "color": "lightblue" },
+        { "value": 2, "displayText": "Superposition", "color": "lightblue" },
         { "value": 3, "displayText": "SYM", "color": "lightblue" },
         { "value": 4, "displayText": "DPWM0", "color": "lightblue" },
         { "value": 5, "displayText": "DPWM1", "color": "lightblue" },

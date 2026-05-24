@@ -1162,6 +1162,36 @@ void DataParser::stopAdcCsvLogging()
     m_pendingAdcSequences.clear();
 }
 
+bool DataParser::startTelemetryCsvLogging(const QString &fileName, QString *errorMessage)
+{
+    if (m_isTelemetryLogging) {
+        return true;
+    }
+
+    if (!startTelemetryCsvLogging(&m_telemetryLogFile,
+                                  &m_telemetryLogStream,
+                                  &m_telemetryLogFields,
+                                  fileName,
+                                  errorMessage)) {
+        return false;
+    }
+
+    m_isTelemetryLogging = true;
+    return true;
+}
+
+void DataParser::stopTelemetryCsvLogging()
+{
+    if (!m_isTelemetryLogging && !m_telemetryLogFile.isOpen()) {
+        return;
+    }
+
+    stopTelemetryCsvLogging(&m_telemetryLogFile,
+                            &m_telemetryLogStream,
+                            &m_telemetryLogFields);
+    m_isTelemetryLogging = false;
+}
+
 void DataParser::flushStaleAdcCsvSequences()
 {
     if (m_isAdcLogging) {
@@ -2073,8 +2103,11 @@ void DataParser::flushStaleQuickAdcSequences()
 
 void DataParser::maybeEmitParsedData(const QHash<QString, double> &values)
 {
-    // Quick telemetry logging receives every decoded packet before the UI signal
-    // is emitted, keeping the CSV path independent of any later display work.
+    // CSV logging receives every decoded packet before the UI signal is emitted,
+    // keeping the file path independent of any later display work.
+    if (m_isTelemetryLogging && m_telemetryLogFile.isOpen()) {
+        writeTelemetryLogRow(&m_telemetryLogStream, m_telemetryLogFields, values);
+    }
     if (m_isQuickTelemetryLogging && m_quickTelemetryLogFile.isOpen()) {
         writeTelemetryLogRow(&m_quickTelemetryLogStream, m_quickTelemetryLogFields, values);
     }

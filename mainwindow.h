@@ -13,11 +13,14 @@
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QFile>
+#include <QMutex>
 #include <QTextStream>
 #include <QPointer>
 #include "OscilloscopeWidget.h"
 #include <QStack>
 #include <QMap>
+#include <atomic>
+#include <optional>
 
 class AudioLevelMeter;
 class SerialManager;
@@ -122,7 +125,6 @@ private slots:
     void handleSerialPortClosed();
 
     // Parsed telemetry and packet-status handlers.
-    void handleNewData(const QHash<QString, double> &values);
     void handleAdcSample(const AdcSamplePacket &packet);
     void handlePacketStatus(quint32 errorCode,
                             const QStringList &errorNames,
@@ -186,20 +188,23 @@ private:
         double maximum = 100.0;
         double currentValue = 0.0;
         double currentSecondaryValue = 0.0;
-        double pendingValue = 0.0;
-        double pendingSecondaryValue = 0.0;
         bool hasCurrentValue = false;
         bool hasCurrentSecondaryValue = false;
-        bool hasPendingValue = false;
-        bool hasPendingSecondaryValue = false;
     };
     QList<GaugeBinding> m_gaugeBindings;
     QHash<QString, double> m_latestTelemetryValues;
+    QMutex m_pendingTelemetryMutex;
+    QVector<QHash<QString, double>> m_pendingTelemetryPackets;
+    std::atomic_bool m_faultCaptureDrainArmed;
+    std::atomic_bool m_faultCaptureDrainQueued;
     bool m_gaugeCircularMode;
     QTimer *m_gaugeTestTimer;
     QTimer *m_gaugeTestResetTimer;
+    QTimer *m_indicatorTestTimer;
     int m_gaugeTestPhase;
     int m_gaugeTestTick;
+    int m_indicatorTestStep;
+    int m_indicatorTestMaxSteps;
 
     int m_currentMaxPoints;   // Current visible point count from the slider.
 
@@ -216,6 +221,7 @@ private:
     // Pause scope
     bool m_plotPaused;
     bool m_plotDirty;
+    bool m_latestTelemetryChanged;
     QVector<double> m_pausedTimeStamps;
     QHash<QString, QVector<double>> m_pausedWaveData;
 
@@ -303,13 +309,21 @@ private:
                                double *criticalThreshold) const;
     void updateGauges(const QHash<QString, double> &values);
     void flushGaugeUpdates();
+    void applyGaugeValues(GaugeBinding &binding,
+                          double primaryValue,
+                          std::optional<double> secondaryValue);
     void updateGaugeModeControls();
     void startGaugeTest();
     void stopGaugeTest(bool scheduleReset = true);
     void advanceGaugeTest();
     void resetGaugesAfterTest();
+    void startIndicatorTest();
+    void stopIndicatorTest(bool restoreLiveState = true);
+    void advanceIndicatorTest();
+    bool hasTestableIndicators() const;
     void updateStatusIndicators();
     void updateFaultAutoCaptureMask();
+    void applyIndicatorState(const IndicatorDef &indicator, const IndicatorStatusDef *status);
     void applyIndicatorStatus(QLabel *label, const QString &text, const QString &colorName);
     const IndicatorStatusDef* resolveIndicatorStatus(const IndicatorDef &indicator) const;
     const IndicatorStatusDef* resolveModeIndicatorStatus(const IndicatorDef &indicator) const;
@@ -322,6 +336,11 @@ private:
     void updateAllMoveButtons();        // Update state of move up/down buttons for oscilloscopes
     void loadAvailableFields();         // Load DataParser fields into the left-hand field list.
     void updateAllPlots();              // Refresh every oscilloscope.
+    void enqueueTelemetryValues(const QHash<QString, double> &values);
+    QVector<QHash<QString, double>> takePendingTelemetryPackets();
+    void clearPendingTelemetryPackets();
+    bool drainPendingTelemetry(bool forcePlotUpdate = false);
+    void ingestTelemetryPacket(const QHash<QString, double> &values);
     void syncFieldCheckStates();
     void capturePausedPlotSnapshot();
     void setPlotPaused(bool paused);
