@@ -229,6 +229,80 @@ bool parseCustomFields(const QJsonArray &array, QList<CustomFieldDef> *customFie
     return true;
 }
 
+bool parseSpaceVectorPlots(const QJsonObject &root, QList<SpaceVectorPlotDef> *plots, QString *errorMessage)
+{
+    QList<SpaceVectorPlotDef> parsed;
+    const QJsonValue configValue = root.value("space_vector");
+    if (configValue.isUndefined()) {
+        *plots = parsed;
+        return true;
+    }
+    if (!configValue.isObject()) {
+        if (errorMessage) {
+            *errorMessage = "space_vector must be an object";
+        }
+        return false;
+    }
+
+    const QJsonValue plotsValue = configValue.toObject().value("plots");
+    if (!plotsValue.isArray()) {
+        if (errorMessage) {
+            *errorMessage = "space_vector.plots must be an array";
+        }
+        return false;
+    }
+
+    const QJsonArray array = plotsValue.toArray();
+    for (int i = 0; i < array.size(); ++i) {
+        if (!array[i].isObject()) {
+            if (errorMessage) {
+                *errorMessage = QString("space_vector.plots[%1] must be an object").arg(i);
+            }
+            return false;
+        }
+
+        const QJsonObject object = array[i].toObject();
+        SpaceVectorPlotDef plot;
+        if (!readRequiredString(object, "name", &plot.name, errorMessage) ||
+            !readRequiredString(object, "type", &plot.type, errorMessage) ||
+            !readRequiredString(object, "vdcDataSource", &plot.vdcDataSource, errorMessage)) {
+            if (errorMessage) {
+                *errorMessage = QString("space_vector.plots[%1]: %2").arg(i).arg(*errorMessage);
+            }
+            return false;
+        }
+
+        if (plot.type == "alpha-beta") {
+            if (!readRequiredString(object, "alphaDataSource", &plot.alphaDataSource, errorMessage) ||
+                !readRequiredString(object, "betaDataSource", &plot.betaDataSource, errorMessage)) {
+                if (errorMessage) {
+                    *errorMessage = QString("space_vector.plots[%1]: %2").arg(i).arg(*errorMessage);
+                }
+                return false;
+            }
+        } else if (plot.type == "abc") {
+            if (!readRequiredString(object, "aDataSource", &plot.aDataSource, errorMessage) ||
+                !readRequiredString(object, "bDataSource", &plot.bDataSource, errorMessage) ||
+                !readRequiredString(object, "cDataSource", &plot.cDataSource, errorMessage)) {
+                if (errorMessage) {
+                    *errorMessage = QString("space_vector.plots[%1]: %2").arg(i).arg(*errorMessage);
+                }
+                return false;
+            }
+        } else {
+            if (errorMessage) {
+                *errorMessage = QString("space_vector.plots[%1]: type must be alpha-beta or abc").arg(i);
+            }
+            return false;
+        }
+
+        parsed.append(plot);
+    }
+
+    *plots = parsed;
+    return true;
+}
+
 bool parseIndicatorStatus(const QJsonObject &object, IndicatorStatusDef *status, QString *errorMessage)
 {
     status->displayText = object.value("displayText").toString();
@@ -1085,6 +1159,7 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
     QList<CustomFieldDef> customFields;
     QList<IndicatorDef> indicators;
     QList<GaugeDef> gauges;
+    QList<SpaceVectorPlotDef> spaceVectorPlots;
     QList<TuneSubsystemDef> tuning;
     QHash<QString, QString> commandMap;
     if (!parseErrors(errorsJson, &errors, errorMessage) ||
@@ -1094,6 +1169,7 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
         !parseCustomFields(customFieldsJson, &customFields, errorMessage) ||
         !parseIndicators(indicatorsJson, &indicators, errorMessage) ||
         !parseGauges(gaugesJson, &gauges, errorMessage) ||
+        !parseSpaceVectorPlots(root, &spaceVectorPlots, errorMessage) ||
         !parseTuning(tuningJson, &tuning, errorMessage)) {
         return false;
     }
@@ -1105,6 +1181,7 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
     m_customFields = customFields;
     m_indicators = indicators;
     m_gauges = gauges;
+    m_spaceVectorPlots = spaceVectorPlots;
     m_tuning = tuning;
     m_telemetryFields = telemetryFields;
     m_telemetryStructures = telemetryStructures;

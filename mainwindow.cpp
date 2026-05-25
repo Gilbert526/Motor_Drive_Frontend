@@ -10,8 +10,11 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QBoxLayout>
+#include <QButtonGroup>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QListWidgetItem>
+#include <QSignalBlocker>
 #include <QDateTime>
 #include <QDir>
 #include <QFileDialog>
@@ -122,9 +125,18 @@ MainWindow::MainWindow(QWidget *parent):
     m_recordHistory(true),
     m_gaugeTimer(nullptr),
     m_plotUpdatesSuspended(false),
+    m_syncingPlotAreaVisibility(false),
+    m_plotAreaDefaultWidth(0),
+    m_scopeAreaStoredWidth(0),
+    m_spaceVectorAreaStoredWidth(0),
+    m_spaceVectorSourceGroup(nullptr),
+    m_selectedSpaceVectorPlotIndex(-1),
+    m_spaceVectorTestLastSampleSec(0.0),
+    m_spaceVectorTestActive(false),
     m_lastTimestampTicks(0),
     m_hasLastTimestamp(false) {
         ui->setupUi(this);
+        m_plotAreaDefaultWidth = width();
         setWindowTitle("Tuning Master");
 
         // Initialize the serial manager thread.
@@ -170,6 +182,7 @@ MainWindow::MainWindow(QWidget *parent):
             loadAvailableFields();
             setupGaugeArea();
             setupTuningArea();
+            setupSpaceVectorArea();
             syncFieldCheckStates();
             updateStatusIndicators();
         });
@@ -224,12 +237,47 @@ MainWindow::MainWindow(QWidget *parent):
         ui->pushButtonReset->setToolTip("Reset motor state");
         ui->pushButtonGaugeToggle->setText("◷");
         ui->pushButtonGaugeToggle->setToolTip("Show circular gauges");
-        ui->pushButtonGaugeToggle->setCheckable(true);
-        ui->pushButtonGaugeToggle->setChecked(false);
+        ui->pushButtonGaugeToggle->setCheckable(false);
         ui->pushButtonGaugeTest->setText("↻");
         ui->pushButtonGaugeTest->setToolTip("Sweep gauges for visual testing");
         ui->pushButtonGaugeTest->setCheckable(true);
         ui->pushButtonPause->setText("⏸️");
+        ui->pushButtonScopeToggle->setText("〰");
+        ui->pushButtonScopeToggle->setToolTip("Show scope area");
+        ui->pushButtonScopeToggle->setCheckable(true);
+        ui->pushButtonScopeToggle->setChecked(true);
+        ui->pushButtonSpaceVectorToggle->setText("⬡");
+        ui->pushButtonSpaceVectorToggle->setToolTip("Show space vector area");
+        ui->pushButtonSpaceVectorToggle->setCheckable(true);
+        ui->pushButtonSpaceVectorToggle->setChecked(false);
+        connect(ui->pushButtonScopeToggle, &QPushButton::toggled, this, [this]() {
+            updatePlotAreaVisibility(true);
+        });
+        connect(ui->pushButtonSpaceVectorToggle, &QPushButton::toggled, this, [this]() {
+            updatePlotAreaVisibility(true);
+        });
+        connect(ui->splitterPlotArea, &QSplitter::splitterMoved,
+                this, &MainWindow::syncPlotAreaButtonsFromSplitter);
+        updatePlotAreaVisibility(false);
+        ui->pushButtonSVTest->setText("↻");
+        ui->pushButtonSVTest->setToolTip("Run space vector test sweep");
+        ui->pushButtonSVTest->setCheckable(true);
+        ui->pushButtonSVArrow->setText("↗");
+        ui->pushButtonSVArrow->setToolTip("Show latest vector arrow");
+        ui->pushButtonSVArrow->setCheckable(true);
+        ui->pushButtonSVArrow->setChecked(true);
+        ui->spaceVectorContainer->setArrowVisible(ui->pushButtonSVArrow->isChecked());
+        connect(ui->pushButtonSVArrow, &QPushButton::toggled,
+                ui->spaceVectorContainer, &SpaceVectorWidget::setArrowVisible);
+        connect(ui->pushButtonSVTest, &QPushButton::toggled, this, [this](bool checked) {
+            if (checked) {
+                startSpaceVectorTest();
+            } else {
+                stopSpaceVectorTest();
+            }
+        });
+        setupSpaceVectorArea();
+        updateSpaceVectorControls();
         ui->pushButtonSave->setCheckable(true);
         ui->pushButtonSave->setToolTip("Start or stop saving telemetry to CSV");
         ui->pushButtonSave->setStyleSheet(kSaveButtonStyle);
@@ -398,6 +446,86 @@ void MainWindow::setupPlottingArea() {
     // Add a scope by default
     addOscilloscope("Scope 1");
     updateAllMoveButtons();
+}
+
+void MainWindow::updatePlotAreaVisibility(bool allowWidthRetraction)
+{
+    if (m_syncingPlotAreaVisibility) {
+        return;
+    }
+
+    const QList<int> currentSizes = ui->splitterPlotArea->sizes();
+    const int currentScopeWidth = currentSizes.size() > 0 ? currentSizes[0] : 0;
+    const int currentSpaceVectorWidth = currentSizes.size() > 1 ? currentSizes[1] : 0;
+    if (currentScopeWidth > 0) {
+        m_scopeAreaStoredWidth = currentScopeWidth;
+    }
+    if (currentSpaceVectorWidth > 0) {
+        m_spaceVectorAreaStoredWidth = currentSpaceVectorWidth;
+    }
+
+    const bool wasScopeExpanded = currentScopeWidth > 0;
+    const bool wasSpaceVectorExpanded = currentSpaceVectorWidth > 0;
+    const bool wasBothExpanded = wasScopeExpanded && wasSpaceVectorExpanded;
+    const bool showScope = ui->pushButtonScopeToggle->isChecked();
+    const bool showSpaceVector = ui->pushButtonSpaceVectorToggle->isChecked();
+    const bool hideFromBoth = wasBothExpanded && (!showScope || !showSpaceVector);
+    const bool canRetractWidth = allowWidthRetraction &&
+                                 hideFromBoth &&
+                                 qAbs(width() - m_plotAreaDefaultWidth) <= 2;
+    int widthDelta = 0;
+
+    if (canRetractWidth) {
+        if (wasScopeExpanded && !showScope) {
+            widthDelta += qMax(0, currentScopeWidth);
+        }
+        if (wasSpaceVectorExpanded && !showSpaceVector) {
+            widthDelta += qMax(0, currentSpaceVectorWidth);
+        }
+    }
+
+    ui->scopeAreaWidget->setVisible(true);
+    ui->spaceVectorAreaWidget->setVisible(true);
+    ui->splitterPlotArea->setVisible(true);
+
+    const int scopeWidth = showScope
+                               ? qMax(m_scopeAreaStoredWidth, ui->scopeAreaWidget->minimumWidth())
+                               : 0;
+    const int spaceVectorWidth = showSpaceVector
+                                     ? qMax(m_spaceVectorAreaStoredWidth, ui->spaceVectorAreaWidget->minimumWidth())
+                                     : 0;
+    ui->splitterPlotArea->setSizes({scopeWidth, spaceVectorWidth});
+
+    if (canRetractWidth && widthDelta > 0) {
+        const int nextWidth = qMax(minimumSizeHint().width(), width() - widthDelta);
+        resize(nextWidth, height());
+    }
+}
+
+void MainWindow::syncPlotAreaButtonsFromSplitter()
+{
+    if (m_syncingPlotAreaVisibility) {
+        return;
+    }
+
+    const QList<int> sizes = ui->splitterPlotArea->sizes();
+    if (sizes.size() < 2) {
+        return;
+    }
+
+    const bool showScope = sizes[0] > 0;
+    const bool showSpaceVector = sizes[1] > 0;
+    if (showScope) {
+        m_scopeAreaStoredWidth = sizes[0];
+    }
+    if (showSpaceVector) {
+        m_spaceVectorAreaStoredWidth = sizes[1];
+    }
+
+    m_syncingPlotAreaVisibility = true;
+    ui->pushButtonScopeToggle->setChecked(showScope);
+    ui->pushButtonSpaceVectorToggle->setChecked(showSpaceVector);
+    m_syncingPlotAreaVisibility = false;
 }
 
 void MainWindow::setupGaugeArea()
@@ -575,6 +703,202 @@ void MainWindow::updateGaugeModeControls()
     ui->pushButtonGaugeTest->setToolTip(testActive
                                             ? "Stop gauge test sweep"
                                             : "Sweep gauges for visual testing");
+}
+
+void MainWindow::setupSpaceVectorArea()
+{
+    if (m_spaceVectorSourceGroup) {
+        delete m_spaceVectorSourceGroup;
+    }
+    m_spaceVectorSourceGroup = new QButtonGroup(this);
+    m_spaceVectorSourceGroup->setExclusive(true);
+
+    for (QPushButton *button : m_spaceVectorSourceButtons) {
+        ui->gridLayout_5->removeWidget(button);
+        button->deleteLater();
+    }
+    m_spaceVectorSourceButtons.clear();
+
+    ui->gridLayout_5->removeWidget(ui->vectorControlFiller);
+    const QList<SpaceVectorPlotDef> plots = m_dataParser->getSpaceVectorPlots();
+    for (int i = 0; i < plots.size(); ++i) {
+        const SpaceVectorPlotDef &plot = plots[i];
+        QPushButton *button = new QPushButton(plot.type == "abc" ? "a" : "α", ui->widgetWarpperSpaceVectorControl);
+        button->setCheckable(true);
+        button->setFixedSize(27, 24);
+        button->setToolTip(plot.name);
+        m_spaceVectorSourceGroup->addButton(button, i);
+        m_spaceVectorSourceButtons.append(button);
+        ui->gridLayout_5->addWidget(button, 0, 2 + i);
+    }
+    ui->gridLayout_5->addWidget(ui->vectorControlFiller, 0, 2 + plots.size());
+
+    if (m_selectedSpaceVectorPlotIndex < 0 || m_selectedSpaceVectorPlotIndex >= plots.size()) {
+        m_selectedSpaceVectorPlotIndex = plots.isEmpty() ? -1 : 0;
+    }
+    if (m_selectedSpaceVectorPlotIndex >= 0) {
+        m_spaceVectorSourceButtons[m_selectedSpaceVectorPlotIndex]->setChecked(true);
+    }
+
+    connect(m_spaceVectorSourceGroup, &QButtonGroup::idClicked, this, [this](int id) {
+        if (m_selectedSpaceVectorPlotIndex == id) {
+            return;
+        }
+        m_selectedSpaceVectorPlotIndex = id;
+        ui->spaceVectorContainer->clearTrace();
+    });
+}
+
+void MainWindow::updateSpaceVectorControls()
+{
+    ui->pushButtonSVTest->setText(m_spaceVectorTestActive ? "■" : "↻");
+    ui->pushButtonSVTest->setToolTip(m_spaceVectorTestActive
+                                         ? "Stop space vector test sweep"
+                                         : "Run space vector test sweep");
+    for (QPushButton *button : m_spaceVectorSourceButtons) {
+        button->setEnabled(!m_spaceVectorTestActive);
+    }
+}
+
+void MainWindow::appendSpaceVectorSample(const QHash<QString, double> &values,
+                                         bool allowDuringTest,
+                                         bool capToBoundary)
+{
+    if ((m_spaceVectorTestActive && !allowDuringTest) || !m_dataParser) {
+        return;
+    }
+
+    const QList<SpaceVectorPlotDef> plots = m_dataParser->getSpaceVectorPlots();
+    if (m_selectedSpaceVectorPlotIndex < 0 || m_selectedSpaceVectorPlotIndex >= plots.size()) {
+        return;
+    }
+
+    const SpaceVectorPlotDef &plot = plots[m_selectedSpaceVectorPlotIndex];
+    const QHash<QString, double> &sourceValues = allowDuringTest ? values : m_latestTelemetryValues;
+    if (!sourceValues.contains(plot.vdcDataSource)) {
+        return;
+    }
+
+    const double vdc = sourceValues.value(plot.vdcDataSource);
+    double alpha = 0.0;
+    double beta = 0.0;
+
+    if (plot.type == "alpha-beta") {
+        if (!values.contains(plot.alphaDataSource) && !values.contains(plot.betaDataSource)) {
+            return;
+        }
+        if (!sourceValues.contains(plot.alphaDataSource) ||
+            !sourceValues.contains(plot.betaDataSource)) {
+            return;
+        }
+        alpha = sourceValues.value(plot.alphaDataSource);
+        beta = sourceValues.value(plot.betaDataSource);
+    } else if (plot.type == "abc") {
+        if (!values.contains(plot.aDataSource) &&
+            !values.contains(plot.bDataSource) &&
+            !values.contains(plot.cDataSource)) {
+            return;
+        }
+        if (!sourceValues.contains(plot.aDataSource) ||
+            !sourceValues.contains(plot.bDataSource) ||
+            !sourceValues.contains(plot.cDataSource)) {
+            return;
+        }
+        const double a = sourceValues.value(plot.aDataSource);
+        const double b = sourceValues.value(plot.bDataSource);
+        const double c = sourceValues.value(plot.cDataSource);
+        alpha = (2.0 * a - b - c) / 3.0;
+        beta = (b - c) / std::sqrt(3.0);
+    } else {
+        return;
+    }
+
+    ui->spaceVectorContainer->appendSample(alpha, beta, vdc, capToBoundary);
+}
+
+void MainWindow::updateSpaceVectorPlot()
+{
+    if (m_spaceVectorTestActive) {
+        const double elapsedSec = m_spaceVectorTestElapsed.elapsed() / 1000.0;
+        constexpr double kTestRevolutionSec = 2.0;
+        constexpr double kTestDurationSec = 10.0;
+        constexpr double kTestSamplesPerSecond = 5000.0;
+        constexpr double kPi = 3.14159265358979323846;
+        constexpr double kTestVdc = 24.0;
+        const double endSec = qMin(elapsedSec, kTestDurationSec);
+
+        if (endSec > m_spaceVectorTestLastSampleSec) {
+            const int firstSample = static_cast<int>(std::floor(m_spaceVectorTestLastSampleSec * kTestSamplesPerSecond));
+            const int lastSample = static_cast<int>(std::floor(endSec * kTestSamplesPerSecond));
+            const QList<SpaceVectorPlotDef> plots = m_dataParser->getSpaceVectorPlots();
+            if (m_selectedSpaceVectorPlotIndex >= 0 &&
+                m_selectedSpaceVectorPlotIndex < plots.size()) {
+                const SpaceVectorPlotDef &plot = plots[m_selectedSpaceVectorPlotIndex];
+
+                for (int sample = firstSample; sample < lastSample; ++sample) {
+                    const double sampleSec = (sample + 1) / kTestSamplesPerSecond;
+                    double magnitude = kTestVdc / std::sqrt(3.0) / 2.0;
+                    double phase = std::fmod(sampleSec, kTestRevolutionSec) / kTestRevolutionSec * 2.0 * kPi;
+                    bool capToBoundary = false;
+
+                    if (sampleSec < 2.0) {
+                        magnitude = kTestVdc / std::sqrt(3.0) / 2.0;
+                    } else if (sampleSec < 4.0) {
+                        magnitude = kTestVdc / std::sqrt(3.0);
+                    } else if (sampleSec < 6.0) {
+                        magnitude = 2.0 * kTestVdc / kPi;
+                        capToBoundary = true;
+                    } else {
+                        const double rampSec = sampleSec - 6.0;
+                        phase = rampSec / kTestRevolutionSec * 2.0 * kPi;
+                        magnitude = (2.0 * kTestVdc / kPi) * qBound(0.0, rampSec / 4.0, 1.0);
+                        capToBoundary = true;
+                    }
+
+                    const double alpha = magnitude * std::cos(phase);
+                    const double beta = magnitude * std::sin(phase);
+                    QHash<QString, double> sampleValues;
+                    sampleValues.insert(plot.vdcDataSource, kTestVdc);
+                    if (plot.type == "abc") {
+                        sampleValues.insert(plot.aDataSource, alpha);
+                        sampleValues.insert(plot.bDataSource, -0.5 * alpha + std::sqrt(3.0) * 0.5 * beta);
+                        sampleValues.insert(plot.cDataSource, -0.5 * alpha - std::sqrt(3.0) * 0.5 * beta);
+                    } else {
+                        sampleValues.insert(plot.alphaDataSource, alpha);
+                        sampleValues.insert(plot.betaDataSource, beta);
+                    }
+                    appendSpaceVectorSample(sampleValues, true, capToBoundary);
+                }
+            }
+            m_spaceVectorTestLastSampleSec = endSec;
+        }
+
+        if (elapsedSec >= kTestDurationSec) {
+            stopSpaceVectorTest();
+        }
+    }
+
+    ui->spaceVectorContainer->refreshPlot();
+}
+
+void MainWindow::startSpaceVectorTest()
+{
+    m_spaceVectorTestActive = true;
+    m_spaceVectorTestElapsed.restart();
+    m_spaceVectorTestLastSampleSec = 0.0;
+    ui->spaceVectorContainer->clearTrace();
+    ui->pushButtonSVTest->setChecked(true);
+    updateSpaceVectorControls();
+}
+
+void MainWindow::stopSpaceVectorTest()
+{
+    m_spaceVectorTestActive = false;
+    {
+        const QSignalBlocker blocker(ui->pushButtonSVTest);
+        ui->pushButtonSVTest->setChecked(false);
+    }
+    updateSpaceVectorControls();
 }
 
 void MainWindow::startGaugeTest()
@@ -1478,6 +1802,7 @@ void MainWindow::updatePlot() {
 
     drainPendingTelemetry(false);
     updateStatusIndicators();
+    updateSpaceVectorPlot();
 }
 
 // ==================== Data Handling ====================
@@ -1592,6 +1917,7 @@ void MainWindow::ingestTelemetryPacket(const QHash<QString, double> &values)
             m_latestTelemetryChanged = true;
         }
     }
+    appendSpaceVectorSample(values);
     // Append values to waveform buffers.
     for (auto it = values.begin(); it != values.end(); ++it) {
         const QString &field = it.key();
@@ -1867,7 +2193,7 @@ void MainWindow::refreshSerialPorts() {
 
 void MainWindow::updateUiForSerialState(bool isOpen) {
     if (isOpen) {
-        ui->pushButtonStartToggle->setText("⏹");
+        ui->pushButtonStartToggle->setText("■");
         ui->comboPort->setEnabled(false);
         ui->comboBaud->setEnabled(false);
         ui->pushButtonRefresh->setEnabled(false);
@@ -1942,7 +2268,7 @@ QString MainWindow::currentTuneParameterCommand() const
 void MainWindow::on_pushButtonStartToggle_clicked() {
     if (m_serialManager->thread() == nullptr) return;
 
-    if (ui->pushButtonStartToggle->text() == "⏹") {
+    if (ui->pushButtonStartToggle->text() == "■") {
         QMetaObject::invokeMethod(m_serialManager, "closeSerialPort", Qt::QueuedConnection);
     } else {
         QString portName = ui->comboPort->currentText();
@@ -2285,7 +2611,7 @@ void MainWindow::on_pushButtonGaugeToggle_clicked()
         stopGaugeTest(false);
     }
 
-    m_gaugeCircularMode = ui->pushButtonGaugeToggle->isChecked();
+    m_gaugeCircularMode = !m_gaugeCircularMode;
     setupGaugeArea();
     if (restartGaugeTest) {
         ui->pushButtonGaugeTest->setChecked(true);

@@ -62,6 +62,8 @@ Motor_Drive_Frontend_autogen/timestamp: \
 	C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/simulationdialog.h \
 	C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/simulationoptionsdialog.cpp \
 	C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/simulationoptionsdialog.h \
+	C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/spacevectorwidget.cpp \
+	C:/Users/Gilbert/OneDrive\ -\ The\ University\ of\ Manchester/40330.\ Team\ Project/Repository/Motor_Drive_Frontend/spacevectorwidget.h \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/QByteArray \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/QCache \
 	D:/Qt/6.11.0/mingw_64/include/QtCore/QDateTime \
@@ -545,6 +547,7 @@ Motor_Drive_Frontend_autogen/timestamp: \
 	D:/Qt/6.11.0/mingw_64/include/QtSerialPort/qtserialportexports.h \
 	D:/Qt/6.11.0/mingw_64/include/QtWidgets/QCommonStyle \
 	D:/Qt/6.11.0/mingw_64/include/QtWidgets/QDialog \
+	D:/Qt/6.11.0/mingw_64/include/QtWidgets/QFrame \
 	D:/Qt/6.11.0/mingw_64/include/QtWidgets/QLabel \
 	D:/Qt/6.11.0/mingw_64/include/QtWidgets/QLayout \
 	D:/Qt/6.11.0/mingw_64/include/QtWidgets/QListWidget \

@@ -37,6 +37,8 @@ qt_add_executable(Motor_Drive_Frontend
     qcustomplot.h
     oscilloscopewidget.cpp
     oscilloscopewidget.h
+    spacevectorwidget.cpp
+    spacevectorwidget.h
     audiolevelmeter.cpp
     audiolevelmeter.h
     draglistwidget.cpp

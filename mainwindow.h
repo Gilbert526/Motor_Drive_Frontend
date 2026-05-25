@@ -16,6 +16,7 @@
 #include <QMutex>
 #include <QTextStream>
 #include <QPointer>
+#include <QElapsedTimer>
 #include "OscilloscopeWidget.h"
 #include <QStack>
 #include <QMap>
@@ -25,6 +26,8 @@
 class AudioLevelMeter;
 class SerialManager;
 class DataParser;
+class QButtonGroup;
+class QPushButton;
 class simulationDialog;
 struct IndicatorDef;
 struct IndicatorStatusDef;
@@ -178,6 +181,16 @@ private:
     QSlider     *m_sampleSlider;
     QLabel      *m_sampleLabel;
     QList<OscilloscopeWidget*> m_oscilloscopes;
+    bool m_syncingPlotAreaVisibility;
+    int m_plotAreaDefaultWidth;
+    int m_scopeAreaStoredWidth;
+    int m_spaceVectorAreaStoredWidth;
+    QButtonGroup *m_spaceVectorSourceGroup;
+    QList<QPushButton*> m_spaceVectorSourceButtons;
+    int m_selectedSpaceVectorPlotIndex;
+    QElapsedTimer m_spaceVectorTestElapsed;
+    double m_spaceVectorTestLastSampleSec;
+    bool m_spaceVectorTestActive;
 
     struct GaugeBinding {
         QString fieldName;
@@ -313,6 +326,14 @@ private:
                           double primaryValue,
                           std::optional<double> secondaryValue);
     void updateGaugeModeControls();
+    void setupSpaceVectorArea();
+    void updateSpaceVectorControls();
+    void appendSpaceVectorSample(const QHash<QString, double> &values,
+                                 bool allowDuringTest = false,
+                                 bool capToBoundary = false);
+    void updateSpaceVectorPlot();
+    void startSpaceVectorTest();
+    void stopSpaceVectorTest();
     void startGaugeTest();
     void stopGaugeTest(bool scheduleReset = true);
     void advanceGaugeTest();
@@ -351,6 +372,8 @@ private:
     void flushReceiveTextLines(QByteArray &lineBuffer);
     bool isLikelyReceiveTextLine(const QByteArray &line) const;
     void updatePlotRefreshState();
+    void updatePlotAreaVisibility(bool allowWidthRetraction);
+    void syncPlotAreaButtonsFromSplitter();
 
     void addTimeStamp(double offsetSec); // Append a relative timestamp.
 

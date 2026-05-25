@@ -110,6 +110,20 @@ struct GaugeDef {
 };
 
 /**
+ * @brief One selectable space-vector data source.
+ */
+struct SpaceVectorPlotDef {
+    QString name;
+    QString type;
+    QString alphaDataSource;
+    QString betaDataSource;
+    QString aDataSource;
+    QString bDataSource;
+    QString cDataSource;
+    QString vdcDataSource;
+};
+
+/**
  * @brief One tunable parameter exposed by the firmware command interface.
  */
 struct TuneParameterDef {
@@ -248,6 +262,7 @@ public:
     QString getCommandNameForField(const QString &displayName) const;
     const QList<IndicatorDef>& getIndicators() const { return m_indicators; }
     const QList<GaugeDef>& getGauges() const { return m_gauges; }
+    const QList<SpaceVectorPlotDef>& getSpaceVectorPlots() const { return m_spaceVectorPlots; }
     const QList<TuneSubsystemDef>& getTuningDefinitions() const { return m_tuning; }
 
     /**
@@ -324,6 +339,7 @@ private:
     QList<CustomFieldDef> m_customFields;
     QList<IndicatorDef> m_indicators;
     QList<GaugeDef> m_gauges;
+    QList<SpaceVectorPlotDef> m_spaceVectorPlots;
     QList<TuneSubsystemDef> m_tuning;
     QHash<QString, TelemetryFieldDef> m_telemetryFields;
     QList<TelemetryStructureDef> m_telemetryStructures;

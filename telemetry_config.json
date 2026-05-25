@@ -454,5 +454,24 @@
       ],
       "hysteresis": 2.0
     }
-  ]
+  ],
+  "space_vector": {
+    "plots": [
+      {
+        "name": "Alpha-Beta",
+        "type": "alpha-beta",
+        "alphaDataSource": "VALPHA",
+        "betaDataSource": "VBETA",
+        "vdcDataSource": "VBATT"
+      },
+      {
+        "name": "ABC",
+        "type": "abc",
+        "aDataSource": "VA_EST",
+        "bDataSource": "VB_EST",
+        "cDataSource": "VC_EST",
+        "vdcDataSource": "VBATT"
+      }
+    ]
+  }
 }
