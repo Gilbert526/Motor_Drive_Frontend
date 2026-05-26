@@ -422,7 +422,7 @@
       "name": "Speed",
       "gauge": 1,
       "dataSource": "RPM",
-      "secondaryDataSource": "MAXVAL",
+      "secondaryDataSource": "RPMSP",
       "topDisplayUnit": "RPM",
       "valueDecimals": 0,
       "min": -10000.0,
