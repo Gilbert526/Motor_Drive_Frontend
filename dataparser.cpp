@@ -51,6 +51,113 @@ bool readOptionalObjectArray(const QJsonObject &root, const QString &key, QJsonA
     return readObjectArray(root, key, array, errorMessage);
 }
 
+int csvColumnIndex(const QStringList &headers, const QString &name)
+{
+    for (int i = 0; i < headers.size(); ++i) {
+        if (headers.at(i) == name) {
+            return i;
+        }
+    }
+    for (int i = 0; i < headers.size(); ++i) {
+        if (headers.at(i).compare(name, Qt::CaseInsensitive) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+QString csvColumnValue(const QStringList &headers, const QStringList &columns, const QString &name)
+{
+    const int index = csvColumnIndex(headers, name);
+    return index >= 0 && index < columns.size() ? columns.at(index).trimmed() : QString();
+}
+
+void appendZeroBytes(QByteArray *data, int count)
+{
+    if (count > 0) {
+        data->append(QByteArray(count, '\0'));
+    }
+}
+
+void appendUInt8(QByteArray *data, quint8 value)
+{
+    data->append(static_cast<char>(value));
+}
+
+void appendUInt16LE(QByteArray *data, quint16 value)
+{
+    char bytes[sizeof(quint16)];
+    qToLittleEndian(value, bytes);
+    data->append(bytes, sizeof(bytes));
+}
+
+void appendUInt32LE(QByteArray *data, quint32 value)
+{
+    char bytes[sizeof(quint32)];
+    qToLittleEndian(value, bytes);
+    data->append(bytes, sizeof(bytes));
+}
+
+void appendFloatLE(QByteArray *data, float value)
+{
+    char bytes[sizeof(float)];
+    qToLittleEndian(value, bytes);
+    data->append(bytes, sizeof(bytes));
+}
+
+bool appendCsvPayloadValue(QByteArray *payload,
+                           const FieldDef &field,
+                           double value,
+                           QString *errorMessage)
+{
+    const int originalSize = payload->size();
+    switch (field.format) {
+    case 'B': {
+        const double bounded = qBound(0.0, std::round(value), 255.0);
+        appendUInt8(payload, static_cast<quint8>(bounded));
+        break;
+    }
+    case 'H': {
+        if (field.size < 2) {
+            if (errorMessage) {
+                *errorMessage = QString("%1 requires at least 2 bytes for H format").arg(field.name);
+            }
+            return false;
+        }
+        const double bounded = qBound(0.0, std::round(value), 65535.0);
+        appendUInt16LE(payload, static_cast<quint16>(bounded));
+        break;
+    }
+    case 'f':
+        if (field.size < 4) {
+            if (errorMessage) {
+                *errorMessage = QString("%1 requires at least 4 bytes for f format").arg(field.name);
+            }
+            return false;
+        }
+        appendFloatLE(payload, static_cast<float>(value));
+        break;
+    default:
+        if (errorMessage) {
+            *errorMessage = QString("%1 uses unsupported format %2").arg(field.name).arg(field.format);
+        }
+        return false;
+    }
+
+    const int written = payload->size() - originalSize;
+    if (written > field.size) {
+        if (errorMessage) {
+            *errorMessage = QString("%1 wrote %2 bytes into a %3 byte field")
+                                .arg(field.name)
+                                .arg(written)
+                                .arg(field.size);
+        }
+        return false;
+    }
+    appendZeroBytes(payload, field.size - written);
+    return true;
+}
+
 bool readRequiredString(const QJsonObject &object, const QString &key, QString *out, QString *errorMessage)
 {
     const QJsonValue value = object.value(key);
@@ -1339,6 +1446,180 @@ void DataParser::stopQuickCsvLogging()
         m_isQuickAdcLogging = false;
         m_quickPendingAdcSequences.clear();
     }
+}
+
+bool DataParser::parseTelemetryCsvRow(const QStringList &headers,
+                                      const QStringList &columns,
+                                      double *timestampSeconds,
+                                      QString *errorMessage)
+{
+    QByteArray frame;
+    if (!buildTelemetryFrameFromCsvRow(headers, columns, &frame, timestampSeconds, errorMessage)) {
+        return false;
+    }
+
+    parseData(frame);
+    return true;
+}
+
+bool DataParser::telemetryCsvRowTimestampSeconds(const QStringList &headers,
+                                                 const QStringList &columns,
+                                                 double *timestampSeconds,
+                                                 QString *errorMessage) const
+{
+    QByteArray frame;
+    return buildTelemetryFrameFromCsvRow(headers, columns, &frame, timestampSeconds, errorMessage);
+}
+
+bool DataParser::buildTelemetryFrameFromCsvRow(const QStringList &headers,
+                                               const QStringList &columns,
+                                               QByteArray *frame,
+                                               double *timestampSeconds,
+                                               QString *errorMessage) const
+{
+    if (!frame) {
+        if (errorMessage) {
+            *errorMessage = "Internal error: missing frame output";
+        }
+        return false;
+    }
+    frame->clear();
+    if (m_telemetryStructures.isEmpty()) {
+        if (errorMessage) {
+            *errorMessage = "No telemetry packet structure is loaded";
+        }
+        return false;
+    }
+
+    const TelemetryStructureDef &structure = m_telemetryStructures.first();
+    QByteArray payload;
+    QByteArray payload2;
+    quint32 mask1 = 0;
+    quint32 mask2 = 0;
+
+    for (const FieldDef &field : m_fields) {
+        const int index = csvColumnIndex(headers, field.name);
+        if (index < 0 || index >= columns.size()) {
+            continue;
+        }
+        const QString text = columns.at(index).trimmed();
+        if (text.isEmpty()) {
+            continue;
+        }
+        bool ok = false;
+        const double value = text.toDouble(&ok);
+        if (!ok) {
+            if (errorMessage) {
+                *errorMessage = QString("CSV value for %1 is not numeric").arg(field.name);
+            }
+            return false;
+        }
+        mask1 |= field.maskBit;
+        if (!appendCsvPayloadValue(&payload, field, value, errorMessage)) {
+            return false;
+        }
+    }
+
+    for (const FieldDef &field : m_fields2) {
+        const int index = csvColumnIndex(headers, field.name);
+        if (index < 0 || index >= columns.size()) {
+            continue;
+        }
+        const QString text = columns.at(index).trimmed();
+        if (text.isEmpty()) {
+            continue;
+        }
+        bool ok = false;
+        const double value = text.toDouble(&ok);
+        if (!ok) {
+            if (errorMessage) {
+                *errorMessage = QString("CSV value for %1 is not numeric").arg(field.name);
+            }
+            return false;
+        }
+        mask2 |= field.maskBit;
+        if (!appendCsvPayloadValue(&payload2, field, value, errorMessage)) {
+            return false;
+        }
+    }
+
+    if (mask1 == 0 && mask2 == 0) {
+        if (errorMessage) {
+            *errorMessage = "CSV does not contain any configured telemetry field columns";
+        }
+        return false;
+    }
+
+    bool ok = false;
+    const double rawTimestampDouble = csvColumnValue(headers, columns, "time").toDouble(&ok);
+    const quint64 rawTimestamp = ok && rawTimestampDouble > 0.0
+                                     ? static_cast<quint64>(std::llround(rawTimestampDouble))
+                                     : 0;
+    const quint32 errorCode = static_cast<quint32>(qBound<quint64>(
+        0ULL, static_cast<quint64>(csvColumnValue(headers, columns, "error_code").toULongLong(&ok)), 0xFFFFFFFFULL));
+    ok = false;
+    const quint8 controlMode = static_cast<quint8>(qBound(
+        0, csvColumnValue(headers, columns, "control_mode").toInt(&ok), 255));
+
+    bool hasTimestampUs = false;
+    bool hasTimestampTicks = false;
+    for (const QString &fieldName : structure.fields) {
+        hasTimestampUs = hasTimestampUs || fieldName == "timestamp_us";
+        hasTimestampTicks = hasTimestampTicks || fieldName == "timestamp_high" || fieldName == "timestamp_low";
+    }
+    if (timestampSeconds) {
+        *timestampSeconds = DataParser::timestampSeconds(hasTimestampUs,
+                                                         static_cast<quint32>(rawTimestamp & 0xFFFFFFFFULL),
+                                                         hasTimestampTicks,
+                                                         rawTimestamp);
+    }
+
+    for (const QString &fieldName : structure.fields) {
+        const TelemetryFieldDef field = m_telemetryFields.value(fieldName);
+        if (fieldName == "header") {
+            const QByteArray header = m_telemetrySyncBytes.isEmpty() ? field.value : m_telemetrySyncBytes;
+            frame->append(header.left(field.length));
+            appendZeroBytes(frame, field.length - header.size());
+        } else if (fieldName == "version") {
+            appendUInt8(frame, structure.version);
+            appendZeroBytes(frame, field.length - 1);
+        } else if (fieldName == "errors") {
+            appendUInt32LE(frame, errorCode);
+            appendZeroBytes(frame, field.length - 4);
+        } else if (fieldName == "modes") {
+            appendUInt8(frame, controlMode);
+            appendZeroBytes(frame, field.length - 1);
+        } else if (fieldName == "timestamp_high") {
+            appendUInt16LE(frame, static_cast<quint16>((rawTimestamp >> 32) & 0xFFFFULL));
+            appendZeroBytes(frame, field.length - 2);
+        } else if (fieldName == "timestamp_low" || fieldName == "timestamp_us") {
+            appendUInt32LE(frame, static_cast<quint32>(rawTimestamp & 0xFFFFFFFFULL));
+            appendZeroBytes(frame, field.length - 4);
+        } else if (fieldName == "mask") {
+            appendUInt32LE(frame, mask1);
+            appendZeroBytes(frame, field.length - 4);
+        } else if (fieldName == "mask2") {
+            appendUInt32LE(frame, mask2);
+            appendZeroBytes(frame, field.length - 4);
+        } else if (fieldName == "payload") {
+            frame->append(payload);
+        } else if (fieldName == "payload2") {
+            frame->append(payload2);
+        } else if (fieldName == "crc") {
+            if (field.length != 4) {
+                if (errorMessage) {
+                    *errorMessage = "Telemetry CSV replay only supports 4-byte CRC fields";
+                }
+                return false;
+            }
+            appendUInt32LE(frame, calculateCrc32(frame->constData(), frame->size(), field.polynomial));
+        } else if (field.length > 0) {
+            frame->append(field.value.left(field.length));
+            appendZeroBytes(frame, field.length - field.value.size());
+        }
+    }
+
+    return true;
 }
 
 void DataParser::parseData(const QByteArray &newData) {

@@ -310,6 +310,14 @@ public:
                               const QString &adcFileName,
                               QString *errorMessage = nullptr);
     void stopQuickCsvLogging();
+    bool parseTelemetryCsvRow(const QStringList &headers,
+                              const QStringList &columns,
+                              double *timestampSeconds = nullptr,
+                              QString *errorMessage = nullptr);
+    bool telemetryCsvRowTimestampSeconds(const QStringList &headers,
+                                         const QStringList &columns,
+                                         double *timestampSeconds,
+                                         QString *errorMessage = nullptr) const;
 
 signals:
     void parsedData(const QHash<QString, double> &values);
@@ -408,6 +416,11 @@ private:
     void writeTelemetryLogRow(QTextStream *stream,
                               const QStringList &fields,
                               const QHash<QString, double> &values);
+    bool buildTelemetryFrameFromCsvRow(const QStringList &headers,
+                                       const QStringList &columns,
+                                       QByteArray *frame,
+                                       double *timestampSeconds,
+                                       QString *errorMessage) const;
     void writeAdcLogRows(const AdcSamplePacket &packet);
     void writeQuickAdcLogRows(const AdcSamplePacket &packet);
     void flushAdcSequence(quint32 sequence, const QString &reason = QString());

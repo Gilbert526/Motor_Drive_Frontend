@@ -114,10 +114,14 @@ private slots:
     void on_comboBoxTuneParameter_currentIndexChanged(int index);
     // Scope control
     void on_pushButtonPause_clicked();
+    void on_pushButtonTriggerToggle_clicked();
+    void on_pushButtonTriggerSetting_clicked();
     void on_pushButtonSave_clicked();
     void on_pushButtonSaveAdc_clicked();
     void on_pushButtonQuickSave_clicked();
     void on_pushButtonSelectConfig_clicked();
+    void on_pushButtonHistoryData_clicked();
+    void on_pushButtonHistoryDataPlay_toggled(bool checked);
     void on_pushButtonGaugeToggle_clicked();
     void on_pushButtonGaugeTest_clicked();
 
@@ -224,6 +228,7 @@ private:
     // Refresh/activity timers.
     QTimer *m_plotTimer;
     QTimer *m_gaugeTimer;
+    QTimer *m_historyDataTimer;
     bool m_plotUpdatesSuspended;
 
     // Timer
@@ -237,6 +242,25 @@ private:
     bool m_latestTelemetryChanged;
     QVector<double> m_pausedTimeStamps;
     QHash<QString, QVector<double>> m_pausedWaveData;
+
+    enum class ScopeTriggerType {
+        RisingEdge,
+        FallingEdge,
+        AboveLevel,
+        BelowLevel
+    };
+
+    // Scope trigger mode freezes the oscilloscope display on the most recent
+    // trigger event while live buffers keep receiving data for the next capture.
+    QString m_scopeTriggerSource;
+    ScopeTriggerType m_scopeTriggerType;
+    double m_scopeTriggerThreshold;
+    bool m_scopeTriggerEnabled;
+    bool m_scopeTriggerHasPrevious;
+    double m_scopeTriggerPreviousValue;
+    bool m_scopeTriggerSnapshotValid;
+    QVector<double> m_scopeTriggerTimeStamps;
+    QHash<QString, QVector<double>> m_scopeTriggerWaveData;
 
     // Fault-triggered auto capture tuning.
     // Adjust these values to change which faults trigger a capture,
@@ -259,6 +283,15 @@ private:
     bool m_isAdcLogging;
     bool m_isQuickSaving;
     bool m_adcPacketActive;
+    QString m_historyDataPath;
+    QFile m_historyDataFile;
+    QTextStream m_historyDataStream;
+    QStringList m_historyDataHeaders;
+    QStringList m_historyDataPendingRow;
+    double m_historyDataPendingTimeSec;
+    bool m_historyDataHasPendingRow;
+    QElapsedTimer m_historyDataReplayClock;
+    double m_historyDataReplayStartTimeSec;
     QFile m_adcLogFile;
     QTextStream m_adcLogStream;
     qint64 m_lastAdcPacketMs;
@@ -365,6 +398,24 @@ private:
     void syncFieldCheckStates();
     void capturePausedPlotSnapshot();
     void setPlotPaused(bool paused);
+    void setupScopeTriggerControls();
+    void updateScopeTriggerButtonState();
+    void resetScopeTriggerRuntime();
+    void evaluateScopeTrigger(const QHash<QString, double> &values);
+    bool scopeTriggerConditionMet(double previousValue,
+                                  double currentValue,
+                                  bool hasPrevious) const;
+    bool scopeTriggerLogicHigh(ScopeTriggerType type, double value, double threshold) const;
+    void captureScopeTriggerSnapshot();
+    void showScopeTriggerDialog();
+    void updateScopeTriggerPreview(QCustomPlot *plot,
+                                   QLabel *statusLabel,
+                                   const QString &source,
+                                   ScopeTriggerType type,
+                                   double threshold) const;
+    double scopeTriggerPreviewMidpoint(const QString &source, double fallback) const;
+    QStringList availableScopeTriggerSources() const;
+    QString scopeTriggerTypeText(ScopeTriggerType type) const;
     void startFaultAutoCapture(quint32 triggeredMask);
     void advanceFaultAutoCapture();
     bool isReceiveTextByte(char byte) const;
@@ -390,6 +441,14 @@ private:
     QString quickSaveFilePath(const QString &timestamp, const QString &fileStem) const;
     void updateAdcSaveButtonState();
     void handleAdcStatusText(const QString &text);
+    void updateHistoryDataControls();
+    bool startHistoryDataReplay();
+    void stopHistoryDataReplay(const QString &message = QString());
+    bool openHistoryDataFile(QString *errorMessage);
+    bool readNextHistoryDataRow(QStringList *columns, double *timestampSeconds, QString *errorMessage);
+    void scheduleHistoryDataPendingRow();
+    void processNextHistoryDataRow();
+    void clearTelemetryDisplayBuffers();
 
     // Target setting helpers
     void updateTargetSliderLimits();   // Update slider range and step mapping for Speed/Torque.
