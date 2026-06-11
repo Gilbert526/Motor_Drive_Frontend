@@ -85,6 +85,7 @@ CMakeLists.txt.user*
 *.cmake
 
 *compile_commands.json
+.cache/
 
 out/build/**
 !out/build/qt-x86/**

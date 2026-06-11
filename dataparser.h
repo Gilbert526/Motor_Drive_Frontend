@@ -99,12 +99,28 @@ struct GaugeDef {
     QString name;
     int gauge = 0;
     QString dataSource;
+    QString secondaryDataSource = "MAXVAL";
     QString topDisplayUnit;
     double minimum = 0.0;
     double maximum = 100.0;
     int divisions = 5;
+    int valueDecimals = 2;
     QList<GaugeThresholdDef> thresholds;
     double hysteresis = 0.0;
+};
+
+/**
+ * @brief One selectable space-vector data source.
+ */
+struct SpaceVectorPlotDef {
+    QString name;
+    QString type;
+    QString alphaDataSource;
+    QString betaDataSource;
+    QString aDataSource;
+    QString bDataSource;
+    QString cDataSource;
+    QString vdcDataSource;
 };
 
 /**
@@ -246,6 +262,7 @@ public:
     QString getCommandNameForField(const QString &displayName) const;
     const QList<IndicatorDef>& getIndicators() const { return m_indicators; }
     const QList<GaugeDef>& getGauges() const { return m_gauges; }
+    const QList<SpaceVectorPlotDef>& getSpaceVectorPlots() const { return m_spaceVectorPlots; }
     const QList<TuneSubsystemDef>& getTuningDefinitions() const { return m_tuning; }
 
     /**
@@ -287,10 +304,20 @@ public:
     bool startAdcCsvLogging(const QString &fileName, QString *errorMessage = nullptr);
     void stopAdcCsvLogging();
     void flushStaleAdcCsvSequences();
+    bool startTelemetryCsvLogging(const QString &fileName, QString *errorMessage = nullptr);
+    void stopTelemetryCsvLogging();
     bool startQuickCsvLogging(const QString &telemetryFileName,
                               const QString &adcFileName,
                               QString *errorMessage = nullptr);
     void stopQuickCsvLogging();
+    bool parseTelemetryCsvRow(const QStringList &headers,
+                              const QStringList &columns,
+                              double *timestampSeconds = nullptr,
+                              QString *errorMessage = nullptr);
+    bool telemetryCsvRowTimestampSeconds(const QStringList &headers,
+                                         const QStringList &columns,
+                                         double *timestampSeconds,
+                                         QString *errorMessage = nullptr) const;
 
 signals:
     void parsedData(const QHash<QString, double> &values);
@@ -320,6 +347,7 @@ private:
     QList<CustomFieldDef> m_customFields;
     QList<IndicatorDef> m_indicators;
     QList<GaugeDef> m_gauges;
+    QList<SpaceVectorPlotDef> m_spaceVectorPlots;
     QList<TuneSubsystemDef> m_tuning;
     QHash<QString, TelemetryFieldDef> m_telemetryFields;
     QList<TelemetryStructureDef> m_telemetryStructures;
@@ -340,9 +368,13 @@ private:
     quint32 m_lastStatusErrorCode = 0;
     quint8 m_lastStatusControlMode = 0;
     bool m_lastStatusControlModeKnown = false;
+    bool m_isTelemetryLogging = false;
     bool m_isAdcLogging = false;
     bool m_isQuickTelemetryLogging = false;
     bool m_isQuickAdcLogging = false;
+    QFile m_telemetryLogFile;
+    QTextStream m_telemetryLogStream;
+    QStringList m_telemetryLogFields;
     QFile m_adcLogFile;
     QTextStream m_adcLogStream;
     QFile m_quickTelemetryLogFile;
@@ -384,6 +416,11 @@ private:
     void writeTelemetryLogRow(QTextStream *stream,
                               const QStringList &fields,
                               const QHash<QString, double> &values);
+    bool buildTelemetryFrameFromCsvRow(const QStringList &headers,
+                                       const QStringList &columns,
+                                       QByteArray *frame,
+                                       double *timestampSeconds,
+                                       QString *errorMessage) const;
     void writeAdcLogRows(const AdcSamplePacket &packet);
     void writeQuickAdcLogRows(const AdcSamplePacket &packet);
     void flushAdcSequence(quint32 sequence, const QString &reason = QString());

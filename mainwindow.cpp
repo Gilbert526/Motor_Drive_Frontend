@@ -9,8 +9,17 @@
 #include <QSerialPortInfo>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QBoxLayout>
+#include <QButtonGroup>
+#include <QComboBox>
+#include <QDoubleSpinBox>
+#include <QFormLayout>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QListWidgetItem>
+#include <QMouseEvent>
+#include <QSignalBlocker>
+#include <QSizePolicy>
 #include <QDateTime>
 #include <QDir>
 #include <QFileDialog>
@@ -20,7 +29,9 @@
 #include <QWheelEvent>
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <limits>
+#include <memory>
 #include <utility>
 
 namespace {
@@ -75,6 +86,31 @@ QString uniqueFilePath(const QString &filePath)
         }
     }
 }
+
+QStringList parseCsvLine(const QString &line)
+{
+    QStringList columns;
+    QString current;
+    bool inQuotes = false;
+    for (int i = 0; i < line.size(); ++i) {
+        const QChar ch = line.at(i);
+        if (ch == '"') {
+            if (inQuotes && i + 1 < line.size() && line.at(i + 1) == '"') {
+                current.append('"');
+                ++i;
+            } else {
+                inQuotes = !inQuotes;
+            }
+        } else if (ch == ',' && !inQuotes) {
+            columns.append(current);
+            current.clear();
+        } else {
+            current.append(ch);
+        }
+    }
+    columns.append(current);
+    return columns;
+}
 }
 
 MainWindow::MainWindow(QWidget *parent):
@@ -85,9 +121,28 @@ MainWindow::MainWindow(QWidget *parent):
     m_serialThread(nullptr),
     m_historyIndex(-1),
     m_maxWavePoints(20000),     // Store up to 20,000 samples per field.
+    m_faultCaptureDrainArmed(false),
+    m_faultCaptureDrainQueued(false),
+    m_gaugeCircularMode(false),
+    m_gaugeTestTimer(nullptr),
+    m_gaugeTestResetTimer(nullptr),
+    m_indicatorTestTimer(nullptr),
+    m_gaugeTestPhase(0),
+    m_gaugeTestTick(0),
+    m_indicatorTestStep(0),
+    m_indicatorTestMaxSteps(0),
     m_currentMaxPoints(500),
     m_plotPaused(false),
     m_plotDirty(false),
+    m_latestTelemetryChanged(false),
+    m_scopeTriggerType(ScopeTriggerType::RisingEdge),
+    m_scopeTriggerThreshold(0.0),
+    m_scopeTriggerEnabled(false),
+    m_scopeTriggerHasPrevious(false),
+    m_scopeTriggerPreviousValue(0.0),
+    m_scopeTriggerSnapshotPending(false),
+    m_scopeTriggerPendingTimeSec(0.0),
+    m_scopeTriggerSnapshotValid(false),
     m_faultAutoCaptureTriggerMask(0),
     m_faultAutoCaptureDisplayPoints(5000),
     m_faultAutoCapturePacketsAfterTrigger(50),
@@ -101,6 +156,10 @@ MainWindow::MainWindow(QWidget *parent):
     m_lastAdcPacketMs(0),
     m_adcActivityTimer(nullptr),
     m_quickSaveTimer(nullptr),
+    m_historyDataTimer(nullptr),
+    m_historyDataPendingTimeSec(0.0),
+    m_historyDataHasPendingRow(false),
+    m_historyDataReplayStartTimeSec(0.0),
     m_syncingFromMask(false),
     m_lastSpeedValue(0.0),
     m_lastTorqueValue(0.0),
@@ -110,9 +169,18 @@ MainWindow::MainWindow(QWidget *parent):
     m_recordHistory(true),
     m_gaugeTimer(nullptr),
     m_plotUpdatesSuspended(false),
+    m_syncingPlotAreaVisibility(false),
+    m_plotAreaDefaultWidth(0),
+    m_scopeAreaStoredWidth(0),
+    m_spaceVectorAreaStoredWidth(0),
+    m_spaceVectorSourceGroup(nullptr),
+    m_selectedSpaceVectorPlotIndex(-1),
+    m_spaceVectorTestLastSampleSec(0.0),
+    m_spaceVectorTestActive(false),
     m_lastTimestampTicks(0),
     m_hasLastTimestamp(false) {
         ui->setupUi(this);
+        m_plotAreaDefaultWidth = width();
         setWindowTitle("Tuning Master");
 
         // Initialize the serial manager thread.
@@ -131,7 +199,13 @@ MainWindow::MainWindow(QWidget *parent):
         connect(m_serialManager, &SerialManager::portOpened, this, &MainWindow::handleSerialPortOpened);
         connect(m_serialManager, &SerialManager::portClosed, this, &MainWindow::handleSerialPortClosed);
         connect(m_serialManager, &SerialManager::rawDataReceived, m_dataParser, &DataParser::parseData);
-        connect(m_dataParser, &DataParser::parsedData, this, &MainWindow::handleNewData);
+        connect(m_dataParser,
+                &DataParser::parsedData,
+                this,
+                [this](const QHash<QString, double> &values) {
+                    enqueueTelemetryValues(values);
+                },
+                Qt::DirectConnection);
         connect(m_dataParser, &DataParser::adcSampleReceived, this, &MainWindow::handleAdcSample);
         connect(m_dataParser, &DataParser::adcSampleActivityReceived, this, [this]() {
             m_lastAdcPacketMs = QDateTime::currentMSecsSinceEpoch();
@@ -150,8 +224,10 @@ MainWindow::MainWindow(QWidget *parent):
         connect(m_dataParser, &DataParser::configurationChanged, this, [this]() {
             updateFaultAutoCaptureMask();
             loadAvailableFields();
+            setupScopeTriggerControls();
             setupGaugeArea();
             setupTuningArea();
+            setupSpaceVectorArea();
             syncFieldCheckStates();
             updateStatusIndicators();
         });
@@ -173,8 +249,9 @@ MainWindow::MainWindow(QWidget *parent):
 
         // Timer-driven waveform refresh.
         m_plotTimer = new QTimer(this);
+        m_plotTimer->setTimerType(Qt::PreciseTimer);
         connect(m_plotTimer, &QTimer::timeout, this, &MainWindow::updatePlot);
-        m_plotTimer->start(50);
+        m_plotTimer->start(16);
 
         m_adcActivityTimer = new QTimer(this);
         m_adcActivityTimer->setSingleShot(true);
@@ -203,7 +280,50 @@ MainWindow::MainWindow(QWidget *parent):
         ui->pushButtonAudible->setToolTip("Toggle audible PWM frequencies");
         ui->pushButtonReset->setText("Reset");
         ui->pushButtonReset->setToolTip("Reset motor state");
+        ui->pushButtonGaugeToggle->setText("◷");
+        ui->pushButtonGaugeToggle->setToolTip("Show circular gauges");
+        ui->pushButtonGaugeToggle->setCheckable(false);
+        ui->pushButtonGaugeTest->setText("↻");
+        ui->pushButtonGaugeTest->setToolTip("Sweep gauges for visual testing");
+        ui->pushButtonGaugeTest->setCheckable(true);
         ui->pushButtonPause->setText("⏸️");
+        setupScopeTriggerControls();
+        ui->pushButtonScopeToggle->setText("〰");
+        ui->pushButtonScopeToggle->setToolTip("Show scope area");
+        ui->pushButtonScopeToggle->setCheckable(true);
+        ui->pushButtonScopeToggle->setChecked(true);
+        ui->pushButtonSpaceVectorToggle->setText("⬡");
+        ui->pushButtonSpaceVectorToggle->setToolTip("Show space vector area");
+        ui->pushButtonSpaceVectorToggle->setCheckable(true);
+        ui->pushButtonSpaceVectorToggle->setChecked(false);
+        connect(ui->pushButtonScopeToggle, &QPushButton::toggled, this, [this]() {
+            updatePlotAreaVisibility(true);
+        });
+        connect(ui->pushButtonSpaceVectorToggle, &QPushButton::toggled, this, [this]() {
+            updatePlotAreaVisibility(true);
+        });
+        connect(ui->splitterPlotArea, &QSplitter::splitterMoved,
+                this, &MainWindow::syncPlotAreaButtonsFromSplitter);
+        updatePlotAreaVisibility(false);
+        ui->pushButtonSVTest->setText("↻");
+        ui->pushButtonSVTest->setToolTip("Run space vector test sweep");
+        ui->pushButtonSVTest->setCheckable(true);
+        ui->pushButtonSVArrow->setText("↗");
+        ui->pushButtonSVArrow->setToolTip("Show latest vector arrow");
+        ui->pushButtonSVArrow->setCheckable(true);
+        ui->pushButtonSVArrow->setChecked(true);
+        ui->spaceVectorContainer->setArrowVisible(ui->pushButtonSVArrow->isChecked());
+        connect(ui->pushButtonSVArrow, &QPushButton::toggled,
+                ui->spaceVectorContainer, &SpaceVectorWidget::setArrowVisible);
+        connect(ui->pushButtonSVTest, &QPushButton::toggled, this, [this](bool checked) {
+            if (checked) {
+                startSpaceVectorTest();
+            } else {
+                stopSpaceVectorTest();
+            }
+        });
+        setupSpaceVectorArea();
+        updateSpaceVectorControls();
         ui->pushButtonSave->setCheckable(true);
         ui->pushButtonSave->setToolTip("Start or stop saving telemetry to CSV");
         ui->pushButtonSave->setStyleSheet(kSaveButtonStyle);
@@ -214,6 +334,9 @@ MainWindow::MainWindow(QWidget *parent):
         ui->pushButtonQuickSave->setCheckable(true);
         ui->pushButtonQuickSave->setToolTip("Start quick logging for the selected data");
         ui->pushButtonQuickSave->setStyleSheet(kSaveButtonStyle);
+        ui->pushButtonHistoryData->setText("📁");
+        ui->pushButtonHistoryDataPlay->setCheckable(true);
+        updateHistoryDataControls();
         ui->lineEditSaveTime->setToolTip("Quick log duration in seconds");
         updateAdcSaveButtonState();
         ui->plainTextEditReceive->setReadOnly(true);
@@ -221,6 +344,25 @@ MainWindow::MainWindow(QWidget *parent):
         m_quickSaveTimer = new QTimer(this);
         m_quickSaveTimer->setSingleShot(true);
         connect(m_quickSaveTimer, &QTimer::timeout, this, &MainWindow::stopQuickSave);
+
+        m_historyDataTimer = new QTimer(this);
+        m_historyDataTimer->setSingleShot(true);
+        m_historyDataTimer->setTimerType(Qt::PreciseTimer);
+        connect(m_historyDataTimer, &QTimer::timeout, this, &MainWindow::processNextHistoryDataRow);
+
+        m_gaugeTestTimer = new QTimer(this);
+        m_gaugeTestTimer->setInterval(16);
+        connect(m_gaugeTestTimer, &QTimer::timeout, this, &MainWindow::advanceGaugeTest);
+
+        m_gaugeTestResetTimer = new QTimer(this);
+        m_gaugeTestResetTimer->setSingleShot(true);
+        m_gaugeTestResetTimer->setInterval(3000);
+        connect(m_gaugeTestResetTimer, &QTimer::timeout, this, &MainWindow::resetGaugesAfterTest);
+
+        m_indicatorTestTimer = new QTimer(this);
+        m_indicatorTestTimer->setInterval(500);
+        connect(m_indicatorTestTimer, &QTimer::timeout, this, &MainWindow::advanceIndicatorTest);
+        updateGaugeModeControls();
 
         // Command line features
         ui->lineEditSend->installEventFilter(this);
@@ -279,6 +421,7 @@ MainWindow::MainWindow(QWidget *parent):
     }
 
 MainWindow::~MainWindow() {
+    stopHistoryDataReplay();
     stopQuickSave();
     stopTelemetryLogging();
     stopAdcLogging();
@@ -360,19 +503,105 @@ void MainWindow::setupPlottingArea() {
     updateAllMoveButtons();
 }
 
+void MainWindow::updatePlotAreaVisibility(bool allowWidthRetraction)
+{
+    if (m_syncingPlotAreaVisibility) {
+        return;
+    }
+
+    const QList<int> currentSizes = ui->splitterPlotArea->sizes();
+    const int currentScopeWidth = currentSizes.size() > 0 ? currentSizes[0] : 0;
+    const int currentSpaceVectorWidth = currentSizes.size() > 1 ? currentSizes[1] : 0;
+    if (currentScopeWidth > 0) {
+        m_scopeAreaStoredWidth = currentScopeWidth;
+    }
+    if (currentSpaceVectorWidth > 0) {
+        m_spaceVectorAreaStoredWidth = currentSpaceVectorWidth;
+    }
+
+    const bool wasScopeExpanded = currentScopeWidth > 0;
+    const bool wasSpaceVectorExpanded = currentSpaceVectorWidth > 0;
+    const bool wasBothExpanded = wasScopeExpanded && wasSpaceVectorExpanded;
+    const bool showScope = ui->pushButtonScopeToggle->isChecked();
+    const bool showSpaceVector = ui->pushButtonSpaceVectorToggle->isChecked();
+    const bool hideFromBoth = wasBothExpanded && (!showScope || !showSpaceVector);
+    const bool canRetractWidth = allowWidthRetraction &&
+                                 hideFromBoth &&
+                                 qAbs(width() - m_plotAreaDefaultWidth) <= 2;
+    int widthDelta = 0;
+
+    if (canRetractWidth) {
+        if (wasScopeExpanded && !showScope) {
+            widthDelta += qMax(0, currentScopeWidth);
+        }
+        if (wasSpaceVectorExpanded && !showSpaceVector) {
+            widthDelta += qMax(0, currentSpaceVectorWidth);
+        }
+    }
+
+    ui->scopeAreaWidget->setVisible(true);
+    ui->spaceVectorAreaWidget->setVisible(true);
+    ui->splitterPlotArea->setVisible(true);
+
+    const int scopeWidth = showScope
+                               ? qMax(m_scopeAreaStoredWidth, ui->scopeAreaWidget->minimumWidth())
+                               : 0;
+    const int spaceVectorWidth = showSpaceVector
+                                     ? qMax(m_spaceVectorAreaStoredWidth, ui->spaceVectorAreaWidget->minimumWidth())
+                                     : 0;
+    ui->splitterPlotArea->setSizes({scopeWidth, spaceVectorWidth});
+
+    if (canRetractWidth && widthDelta > 0) {
+        const int nextWidth = qMax(minimumSizeHint().width(), width() - widthDelta);
+        resize(nextWidth, height());
+    }
+}
+
+void MainWindow::syncPlotAreaButtonsFromSplitter()
+{
+    if (m_syncingPlotAreaVisibility) {
+        return;
+    }
+
+    const QList<int> sizes = ui->splitterPlotArea->sizes();
+    if (sizes.size() < 2) {
+        return;
+    }
+
+    const bool showScope = sizes[0] > 0;
+    const bool showSpaceVector = sizes[1] > 0;
+    if (showScope) {
+        m_scopeAreaStoredWidth = sizes[0];
+    }
+    if (showSpaceVector) {
+        m_spaceVectorAreaStoredWidth = sizes[1];
+    }
+
+    m_syncingPlotAreaVisibility = true;
+    ui->pushButtonScopeToggle->setChecked(showScope);
+    ui->pushButtonSpaceVectorToggle->setChecked(showSpaceVector);
+    m_syncingPlotAreaVisibility = false;
+}
+
 void MainWindow::setupGaugeArea()
 {
     // Gauge definitions come from the parser configuration. Rebuilding the area
     // on configuration changes keeps the UI in sync with the loaded protocol.
     QLayout *existingLayout = ui->gaugeArea->layout();
-    QHBoxLayout *gaugeLayout = qobject_cast<QHBoxLayout*>(existingLayout);
+    QBoxLayout *gaugeLayout = qobject_cast<QBoxLayout*>(existingLayout);
     if (!gaugeLayout) {
         delete existingLayout;
-        gaugeLayout = new QHBoxLayout(ui->gaugeArea);
+        gaugeLayout = new QBoxLayout(m_gaugeCircularMode
+                                         ? QBoxLayout::TopToBottom
+                                         : QBoxLayout::LeftToRight,
+                                     ui->gaugeArea);
         gaugeLayout->setContentsMargins(6, 0, 6, 0);
-        gaugeLayout->setSpacing(18);
         ui->gaugeArea->setLayout(gaugeLayout);
     }
+    gaugeLayout->setDirection(m_gaugeCircularMode
+                                  ? QBoxLayout::TopToBottom
+                                  : QBoxLayout::LeftToRight);
+    gaugeLayout->setSpacing(m_gaugeCircularMode ? 2 : 18);
 
     gaugeLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
     m_gaugeBindings.clear();
@@ -383,23 +612,29 @@ void MainWindow::setupGaugeArea()
         delete item;
     }
 
-    gaugeLayout->setAlignment(Qt::AlignCenter);
-    gaugeLayout->addStretch(1);
+    gaugeLayout->setAlignment(m_gaugeCircularMode
+                                  ? (Qt::AlignHCenter | Qt::AlignTop)
+                                  : Qt::AlignCenter);
+    if (!m_gaugeCircularMode) {
+        gaugeLayout->addStretch(1);
+    }
     for (const GaugeDef &gauge : m_dataParser->getGauges()) {
         addGauge(gauge);
     }
-    gaugeLayout->addStretch(1);
+    if (!m_gaugeCircularMode) {
+        gaugeLayout->addStretch(1);
+    }
 
-    if (!m_gaugeTimer) {
-        m_gaugeTimer = new QTimer(this);
-        connect(m_gaugeTimer, &QTimer::timeout, this, &MainWindow::flushGaugeUpdates);
-        m_gaugeTimer->start(16);
+    if (m_gaugeTimer) {
+        m_gaugeTimer->stop();
+        m_gaugeTimer->deleteLater();
+        m_gaugeTimer = nullptr;
     }
 }
 
 void MainWindow::addGauge(const GaugeDef &gauge)
 {
-    QHBoxLayout *gaugeLayout = qobject_cast<QHBoxLayout*>(ui->gaugeArea->layout());
+    QBoxLayout *gaugeLayout = qobject_cast<QBoxLayout*>(ui->gaugeArea->layout());
     if (!gaugeLayout) {
         return;
     }
@@ -415,10 +650,25 @@ void MainWindow::addGauge(const GaugeDef &gauge)
     meter->setThresholds(warningThreshold, criticalThreshold);
     meter->setThresholdHysteresisPercent(gauge.hysteresis);
     meter->setDivisionCount(gauge.divisions);
+    meter->setValueDecimals(gauge.valueDecimals);
     meter->setPeakHoldMs(1000);
+    meter->setDisplayMode(m_gaugeCircularMode
+                              ? AudioLevelMeter::DisplayMode::Circular
+                              : AudioLevelMeter::DisplayMode::VerticalBar);
+
+    const QString secondarySource = gauge.secondaryDataSource.trimmed();
+    const bool secondaryUsesPeakHold = secondarySource.isEmpty() ||
+        secondarySource.compare("MAXVAL", Qt::CaseInsensitive) == 0;
+    meter->setPeakTrackingEnabled(secondaryUsesPeakHold);
+    meter->setSecondaryColorTracksPrimary(secondaryUsesPeakHold);
 
     gaugeLayout->addWidget(meter, 0);
-    m_gaugeBindings.append({gauge.dataSource, meter});
+    m_gaugeBindings.append({gauge.dataSource,
+                            secondaryUsesPeakHold ? QString() : secondarySource,
+                            secondaryUsesPeakHold,
+                            meter,
+                            gauge.minimum,
+                            gauge.maximum});
 }
 
 void MainWindow::deriveGaugeThresholds(const GaugeDef &gauge,
@@ -452,23 +702,434 @@ void MainWindow::deriveGaugeThresholds(const GaugeDef &gauge,
 void MainWindow::updateGauges(const QHash<QString, double> &values)
 {
     for (GaugeBinding &binding : m_gaugeBindings) {
-        if (values.contains(binding.fieldName)) {
-            binding.pendingValue = values.value(binding.fieldName);
-            binding.hasPendingValue = true;
+        if (!values.contains(binding.fieldName)) {
+            continue;
         }
+        const double primaryValue = values.value(binding.fieldName);
+        std::optional<double> secondaryValue;
+        if (!binding.secondaryUsesPeakHold && values.contains(binding.secondaryFieldName)) {
+            secondaryValue = values.value(binding.secondaryFieldName);
+        }
+        applyGaugeValues(binding, primaryValue, secondaryValue);
     }
 }
 
 void MainWindow::flushGaugeUpdates()
 {
-    for (GaugeBinding &binding : m_gaugeBindings) {
-        if (binding.meter && binding.hasPendingValue) {
-            binding.meter->setValue(binding.pendingValue);
-            binding.hasPendingValue = false;
+    updateStatusIndicators();
+}
+
+void MainWindow::applyGaugeValues(GaugeBinding &binding,
+                                  double primaryValue,
+                                  std::optional<double> secondaryValue)
+{
+    binding.currentValue = primaryValue;
+    binding.hasCurrentValue = true;
+    if (secondaryValue.has_value()) {
+        binding.currentSecondaryValue = secondaryValue.value();
+        binding.hasCurrentSecondaryValue = true;
+    }
+
+    if (!binding.meter) {
+        return;
+    }
+
+    binding.meter->setValue(primaryValue);
+    if (secondaryValue.has_value()) {
+        binding.meter->setPeakValue(secondaryValue.value());
+    } else if (!binding.secondaryUsesPeakHold) {
+        binding.meter->setPeakValue(primaryValue);
+    }
+}
+
+void MainWindow::updateGaugeModeControls()
+{
+    if (!ui) {
+        return;
+    }
+
+    ui->pushButtonGaugeToggle->setText(m_gaugeCircularMode ? "▥" : "◷");
+    ui->pushButtonGaugeToggle->setToolTip(m_gaugeCircularMode
+                                              ? "Show vertical bar gauges"
+                                              : "Show circular gauges");
+    const bool testActive = (m_gaugeTestTimer && m_gaugeTestTimer->isActive()) ||
+        (m_indicatorTestTimer && m_indicatorTestTimer->isActive());
+    ui->pushButtonGaugeTest->setText(testActive ? "■" : "↻");
+    ui->pushButtonGaugeTest->setToolTip(testActive
+                                            ? "Stop gauge test sweep"
+                                            : "Sweep gauges for visual testing");
+}
+
+void MainWindow::setupSpaceVectorArea()
+{
+    if (m_spaceVectorSourceGroup) {
+        delete m_spaceVectorSourceGroup;
+    }
+    m_spaceVectorSourceGroup = new QButtonGroup(this);
+    m_spaceVectorSourceGroup->setExclusive(true);
+
+    for (QPushButton *button : m_spaceVectorSourceButtons) {
+        ui->gridLayout_5->removeWidget(button);
+        button->deleteLater();
+    }
+    m_spaceVectorSourceButtons.clear();
+
+    ui->gridLayout_5->removeWidget(ui->vectorControlFiller);
+    const QList<SpaceVectorPlotDef> plots = m_dataParser->getSpaceVectorPlots();
+    for (int i = 0; i < plots.size(); ++i) {
+        const SpaceVectorPlotDef &plot = plots[i];
+        QPushButton *button = new QPushButton(plot.type == "abc" ? "a" : "α", ui->widgetWarpperSpaceVectorControl);
+        button->setCheckable(true);
+        button->setFixedSize(27, 24);
+        button->setToolTip(plot.name);
+        m_spaceVectorSourceGroup->addButton(button, i);
+        m_spaceVectorSourceButtons.append(button);
+        ui->gridLayout_5->addWidget(button, 0, 2 + i);
+    }
+    ui->gridLayout_5->addWidget(ui->vectorControlFiller, 0, 2 + plots.size());
+
+    if (m_selectedSpaceVectorPlotIndex < 0 || m_selectedSpaceVectorPlotIndex >= plots.size()) {
+        m_selectedSpaceVectorPlotIndex = plots.isEmpty() ? -1 : 0;
+    }
+    if (m_selectedSpaceVectorPlotIndex >= 0) {
+        m_spaceVectorSourceButtons[m_selectedSpaceVectorPlotIndex]->setChecked(true);
+    }
+
+    connect(m_spaceVectorSourceGroup, &QButtonGroup::idClicked, this, [this](int id) {
+        if (m_selectedSpaceVectorPlotIndex == id) {
+            return;
+        }
+        m_selectedSpaceVectorPlotIndex = id;
+        ui->spaceVectorContainer->clearTrace();
+    });
+}
+
+void MainWindow::updateSpaceVectorControls()
+{
+    ui->pushButtonSVTest->setText(m_spaceVectorTestActive ? "■" : "↻");
+    ui->pushButtonSVTest->setToolTip(m_spaceVectorTestActive
+                                         ? "Stop space vector test sweep"
+                                         : "Run space vector test sweep");
+    for (QPushButton *button : m_spaceVectorSourceButtons) {
+        button->setEnabled(!m_spaceVectorTestActive);
+    }
+}
+
+void MainWindow::appendSpaceVectorSample(const QHash<QString, double> &values,
+                                         bool allowDuringTest,
+                                         bool capToBoundary)
+{
+    if ((m_spaceVectorTestActive && !allowDuringTest) || !m_dataParser) {
+        return;
+    }
+
+    const QList<SpaceVectorPlotDef> plots = m_dataParser->getSpaceVectorPlots();
+    if (m_selectedSpaceVectorPlotIndex < 0 || m_selectedSpaceVectorPlotIndex >= plots.size()) {
+        return;
+    }
+
+    const SpaceVectorPlotDef &plot = plots[m_selectedSpaceVectorPlotIndex];
+    const QHash<QString, double> &sourceValues = allowDuringTest ? values : m_latestTelemetryValues;
+    if (!sourceValues.contains(plot.vdcDataSource)) {
+        return;
+    }
+
+    const double vdc = sourceValues.value(plot.vdcDataSource);
+    double alpha = 0.0;
+    double beta = 0.0;
+
+    if (plot.type == "alpha-beta") {
+        if (!values.contains(plot.alphaDataSource) && !values.contains(plot.betaDataSource)) {
+            return;
+        }
+        if (!sourceValues.contains(plot.alphaDataSource) ||
+            !sourceValues.contains(plot.betaDataSource)) {
+            return;
+        }
+        alpha = sourceValues.value(plot.alphaDataSource);
+        beta = sourceValues.value(plot.betaDataSource);
+    } else if (plot.type == "abc") {
+        if (!values.contains(plot.aDataSource) &&
+            !values.contains(plot.bDataSource) &&
+            !values.contains(plot.cDataSource)) {
+            return;
+        }
+        if (!sourceValues.contains(plot.aDataSource) ||
+            !sourceValues.contains(plot.bDataSource) ||
+            !sourceValues.contains(plot.cDataSource)) {
+            return;
+        }
+        const double a = sourceValues.value(plot.aDataSource);
+        const double b = sourceValues.value(plot.bDataSource);
+        const double c = sourceValues.value(plot.cDataSource);
+        alpha = (2.0 * a - b - c) / 3.0;
+        beta = (b - c) / std::sqrt(3.0);
+    } else {
+        return;
+    }
+
+    ui->spaceVectorContainer->appendSample(alpha, beta, vdc, capToBoundary);
+}
+
+void MainWindow::updateSpaceVectorPlot()
+{
+    if (m_spaceVectorTestActive) {
+        const double elapsedSec = m_spaceVectorTestElapsed.elapsed() / 1000.0;
+        constexpr double kTestRevolutionSec = 2.0;
+        constexpr double kTestDurationSec = 10.0;
+        constexpr double kTestSamplesPerSecond = 5000.0;
+        constexpr double kPi = 3.14159265358979323846;
+        constexpr double kTestVdc = 24.0;
+        const double endSec = qMin(elapsedSec, kTestDurationSec);
+
+        if (endSec > m_spaceVectorTestLastSampleSec) {
+            const int firstSample = static_cast<int>(std::floor(m_spaceVectorTestLastSampleSec * kTestSamplesPerSecond));
+            const int lastSample = static_cast<int>(std::floor(endSec * kTestSamplesPerSecond));
+            const QList<SpaceVectorPlotDef> plots = m_dataParser->getSpaceVectorPlots();
+            if (m_selectedSpaceVectorPlotIndex >= 0 &&
+                m_selectedSpaceVectorPlotIndex < plots.size()) {
+                const SpaceVectorPlotDef &plot = plots[m_selectedSpaceVectorPlotIndex];
+
+                for (int sample = firstSample; sample < lastSample; ++sample) {
+                    const double sampleSec = (sample + 1) / kTestSamplesPerSecond;
+                    double magnitude = kTestVdc / std::sqrt(3.0) / 2.0;
+                    double phase = std::fmod(sampleSec, kTestRevolutionSec) / kTestRevolutionSec * 2.0 * kPi;
+                    bool capToBoundary = false;
+
+                    if (sampleSec < 2.0) {
+                        magnitude = kTestVdc / std::sqrt(3.0) / 2.0;
+                    } else if (sampleSec < 4.0) {
+                        magnitude = kTestVdc / std::sqrt(3.0);
+                    } else if (sampleSec < 6.0) {
+                        magnitude = 2.0 * kTestVdc / kPi;
+                        capToBoundary = true;
+                    } else {
+                        const double rampSec = sampleSec - 6.0;
+                        phase = rampSec / kTestRevolutionSec * 2.0 * kPi;
+                        magnitude = (2.0 * kTestVdc / kPi) * qBound(0.0, rampSec / 4.0, 1.0);
+                        capToBoundary = true;
+                    }
+
+                    const double alpha = magnitude * std::cos(phase);
+                    const double beta = magnitude * std::sin(phase);
+                    QHash<QString, double> sampleValues;
+                    sampleValues.insert(plot.vdcDataSource, kTestVdc);
+                    if (plot.type == "abc") {
+                        sampleValues.insert(plot.aDataSource, alpha);
+                        sampleValues.insert(plot.bDataSource, -0.5 * alpha + std::sqrt(3.0) * 0.5 * beta);
+                        sampleValues.insert(plot.cDataSource, -0.5 * alpha - std::sqrt(3.0) * 0.5 * beta);
+                    } else {
+                        sampleValues.insert(plot.alphaDataSource, alpha);
+                        sampleValues.insert(plot.betaDataSource, beta);
+                    }
+                    appendSpaceVectorSample(sampleValues, true, capToBoundary);
+                }
+            }
+            m_spaceVectorTestLastSampleSec = endSec;
+        }
+
+        if (elapsedSec >= kTestDurationSec) {
+            stopSpaceVectorTest();
         }
     }
 
-    updateStatusIndicators();
+    ui->spaceVectorContainer->refreshPlot();
+}
+
+void MainWindow::startSpaceVectorTest()
+{
+    m_spaceVectorTestActive = true;
+    m_spaceVectorTestElapsed.restart();
+    m_spaceVectorTestLastSampleSec = 0.0;
+    ui->spaceVectorContainer->clearTrace();
+    ui->pushButtonSVTest->setChecked(true);
+    updateSpaceVectorControls();
+}
+
+void MainWindow::stopSpaceVectorTest()
+{
+    m_spaceVectorTestActive = false;
+    {
+        const QSignalBlocker blocker(ui->pushButtonSVTest);
+        ui->pushButtonSVTest->setChecked(false);
+    }
+    updateSpaceVectorControls();
+}
+
+void MainWindow::startGaugeTest()
+{
+    const bool testGauges = !m_gaugeBindings.isEmpty();
+    const bool testIndicators = hasTestableIndicators();
+    if (!testGauges && !testIndicators) {
+        ui->pushButtonGaugeTest->setChecked(false);
+        return;
+    }
+
+    if (testGauges) {
+        m_gaugeTestPhase = 0;
+        m_gaugeTestTick = 0;
+    }
+    if (m_gaugeTestResetTimer) {
+        m_gaugeTestResetTimer->stop();
+    }
+    if (testGauges) {
+        for (GaugeBinding &binding : m_gaugeBindings) {
+            if (binding.meter) {
+                binding.meter->setPeakTrackingEnabled(false);
+            }
+            applyGaugeValues(binding, binding.minimum, binding.minimum);
+        }
+
+        if (m_gaugeTestTimer) {
+            m_gaugeTestTimer->start();
+        }
+    }
+    if (testIndicators) {
+        startIndicatorTest();
+    }
+    updateGaugeModeControls();
+}
+
+void MainWindow::startIndicatorTest()
+{
+    if (!hasTestableIndicators()) {
+        return;
+    }
+
+    m_indicatorTestStep = 0;
+    m_indicatorTestMaxSteps = 0;
+    for (const IndicatorDef &indicator : m_dataParser->getIndicators()) {
+        m_indicatorTestMaxSteps = qMax(m_indicatorTestMaxSteps, indicator.statuses.size());
+    }
+
+    advanceIndicatorTest();
+    if (m_indicatorTestTimer) {
+        m_indicatorTestTimer->start();
+    }
+}
+
+void MainWindow::stopIndicatorTest(bool restoreLiveState)
+{
+    if (m_indicatorTestTimer) {
+        m_indicatorTestTimer->stop();
+    }
+    m_indicatorTestStep = 0;
+    m_indicatorTestMaxSteps = 0;
+    if (restoreLiveState) {
+        updateStatusIndicators();
+    }
+    if (!m_gaugeTestTimer || !m_gaugeTestTimer->isActive()) {
+        ui->pushButtonGaugeTest->setChecked(false);
+    }
+}
+
+void MainWindow::advanceIndicatorTest()
+{
+    if (!m_dataParser || m_indicatorTestMaxSteps <= 0) {
+        stopIndicatorTest();
+        return;
+    }
+    if (m_indicatorTestStep >= m_indicatorTestMaxSteps) {
+        stopIndicatorTest();
+        updateGaugeModeControls();
+        return;
+    }
+
+    for (const IndicatorDef &indicator : m_dataParser->getIndicators()) {
+        if (m_indicatorTestStep < indicator.statuses.size()) {
+            const IndicatorStatusDef &status = indicator.statuses.at(m_indicatorTestStep);
+            applyIndicatorState(indicator, &status);
+        }
+    }
+
+    ++m_indicatorTestStep;
+}
+
+bool MainWindow::hasTestableIndicators() const
+{
+    if (!m_dataParser) {
+        return false;
+    }
+
+    for (const IndicatorDef &indicator : m_dataParser->getIndicators()) {
+        if (!indicator.statuses.isEmpty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void MainWindow::stopGaugeTest(bool scheduleReset)
+{
+    if (m_gaugeTestTimer) {
+        m_gaugeTestTimer->stop();
+    }
+    stopIndicatorTest(true);
+
+    ui->pushButtonGaugeTest->setChecked(false);
+    if (scheduleReset && m_gaugeTestResetTimer) {
+        m_gaugeTestResetTimer->start();
+    } else {
+        resetGaugesAfterTest();
+    }
+    updateGaugeModeControls();
+}
+
+void MainWindow::advanceGaugeTest()
+{
+    constexpr int kTicksPerPhase = 100;
+    const double progress = qMin(1.0, m_gaugeTestTick / double(kTicksPerPhase - 1));
+
+    for (GaugeBinding &binding : m_gaugeBindings) {
+        if (!binding.meter) {
+            continue;
+        }
+
+        const double sweptValue = binding.minimum + (binding.maximum - binding.minimum) * progress;
+        if (m_gaugeTestPhase == 0) {
+            applyGaugeValues(binding, sweptValue, binding.minimum);
+        } else {
+            applyGaugeValues(binding, binding.maximum, sweptValue);
+        }
+    }
+
+    ++m_gaugeTestTick;
+    if (m_gaugeTestTick >= kTicksPerPhase) {
+        m_gaugeTestTick = 0;
+        ++m_gaugeTestPhase;
+        if (m_gaugeTestPhase > 1) {
+            if (m_gaugeTestTimer) {
+                m_gaugeTestTimer->stop();
+            }
+            if (m_gaugeTestResetTimer) {
+                m_gaugeTestResetTimer->start();
+            }
+            if (!m_indicatorTestTimer || !m_indicatorTestTimer->isActive()) {
+                ui->pushButtonGaugeTest->setChecked(false);
+            }
+            updateGaugeModeControls();
+        }
+    }
+}
+
+void MainWindow::resetGaugesAfterTest()
+{
+    for (GaugeBinding &binding : m_gaugeBindings) {
+        if (!binding.meter) {
+            continue;
+        }
+
+        const double restoredValue = qBound(binding.minimum, 0.0, binding.maximum);
+        const double restoredSecondaryValue = restoredValue;
+        if (binding.meter) {
+            binding.meter->setPeakTrackingEnabled(false);
+        }
+        applyGaugeValues(binding, restoredValue, restoredSecondaryValue);
+        if (binding.meter) {
+            binding.meter->setPeakTrackingEnabled(binding.secondaryUsesPeakHold);
+        }
+    }
+    updateGaugeModeControls();
 }
 
 void MainWindow::updateStatusIndicators()
@@ -478,25 +1139,20 @@ void MainWindow::updateStatusIndicators()
     if (!m_dataParser) {
         return;
     }
+    if (m_indicatorTestTimer && m_indicatorTestTimer->isActive()) {
+        return;
+    }
 
     QSet<int> configuredIndicators;
     for (const IndicatorDef &indicator : m_dataParser->getIndicators()) {
         configuredIndicators.insert(indicator.indicator);
-        QLabel *label = findChild<QLabel*>(QString("statusLed%1").arg(indicator.indicator));
-        if (!label) {
-            continue;
-        }
 
         const IndicatorStatusDef *status = resolveIndicatorStatus(indicator);
         if (!status) {
             status = defaultIndicatorStatus(indicator);
         }
 
-        if (status) {
-            applyIndicatorStatus(label, status->displayText, status->color);
-        } else {
-            applyIndicatorStatus(label, indicator.name, "off");
-        }
+        applyIndicatorState(indicator, status);
     }
 
     for (int i = 0; i <= 8; ++i) {
@@ -516,6 +1172,20 @@ void MainWindow::updateFaultAutoCaptureMask()
 
     m_faultAutoCaptureTriggerMask = m_dataParser->getErrorMaskForType("overcurrent") |
                                     m_dataParser->getErrorMaskForType("undervoltage");
+}
+
+void MainWindow::applyIndicatorState(const IndicatorDef &indicator, const IndicatorStatusDef *status)
+{
+    if (!status) {
+        return;
+    }
+
+    QLabel *label = findChild<QLabel*>(QString("statusLed%1").arg(indicator.indicator));
+    if (!label) {
+        return;
+    }
+
+    applyIndicatorStatus(label, status->displayText, status->color);
 }
 
 void MainWindow::applyIndicatorStatus(QLabel *label, const QString &text, const QString &colorName)
@@ -1148,11 +1818,9 @@ void MainWindow::updatePlotRefreshState()
         m_plotTimer->stop();
     } else {
         if (!m_plotTimer->isActive()) {
-            m_plotTimer->start(50);
+            m_plotTimer->start(16);
         }
-        if (!m_plotPaused && m_plotDirty) {
-            updateAllPlots();
-        }
+        drainPendingTelemetry(true);
     }
 }
 
@@ -1173,8 +1841,21 @@ void MainWindow::on_sampleSlider_valueChanged(int value) {
 }
 
 void MainWindow::updateAllPlots() {
-    const QHash<QString, QVector<double>> &plotData = m_plotPaused ? m_pausedWaveData : m_waveData;
-    const QVector<double> &plotTimeStamps = m_plotPaused ? m_pausedTimeStamps : m_timeStamps;
+    if (!m_plotPaused &&
+        m_scopeTriggerEnabled &&
+        m_scopeTriggerSnapshotPending) {
+        captureScopeTriggerSnapshot(m_scopeTriggerPendingTimeSec);
+    }
+
+    const bool useTriggerSnapshot = !m_plotPaused &&
+                                    m_scopeTriggerEnabled &&
+                                    m_scopeTriggerSnapshotValid;
+    const QHash<QString, QVector<double>> &plotData = m_plotPaused
+                                                         ? m_pausedWaveData
+                                                         : (useTriggerSnapshot ? m_scopeTriggerWaveData : m_waveData);
+    const QVector<double> &plotTimeStamps = m_plotPaused
+                                               ? m_pausedTimeStamps
+                                               : (useTriggerSnapshot ? m_scopeTriggerTimeStamps : m_timeStamps);
 
     for (OscilloscopeWidget *osc : m_oscilloscopes) {
         osc->updatePlot(plotData, plotTimeStamps, m_currentMaxPoints);
@@ -1183,14 +1864,86 @@ void MainWindow::updateAllPlots() {
 }
 
 void MainWindow::updatePlot() {
-    if (m_plotUpdatesSuspended || m_plotPaused || !m_plotDirty) return;
-    updateAllPlots();
+    if (m_plotUpdatesSuspended) {
+        return;
+    }
+
+    drainPendingTelemetry(false);
+    updateStatusIndicators();
+    updateSpaceVectorPlot();
 }
 
 // ==================== Data Handling ====================
-void MainWindow::handleNewData(const QHash<QString, double> &values) {
-    // This slot is the central telemetry fan-out: it logs raw values, maintains
-    // plot buffers, updates dashboard widgets, and services fault auto-capture.
+void MainWindow::enqueueTelemetryValues(const QHash<QString, double> &values)
+{
+    {
+        QMutexLocker locker(&m_pendingTelemetryMutex);
+        m_pendingTelemetryPackets.append(values);
+        if (m_pendingTelemetryPackets.size() > m_maxWavePoints) {
+            m_pendingTelemetryPackets.remove(0, m_pendingTelemetryPackets.size() - m_maxWavePoints);
+        }
+    }
+
+    if (!m_faultCaptureDrainArmed.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    bool expected = false;
+    if (!m_faultCaptureDrainQueued.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+        return;
+    }
+
+    QMetaObject::invokeMethod(this, [this]() {
+        m_faultCaptureDrainQueued.store(false, std::memory_order_release);
+        drainPendingTelemetry(true);
+    }, Qt::QueuedConnection);
+}
+
+QVector<QHash<QString, double>> MainWindow::takePendingTelemetryPackets()
+{
+    QMutexLocker locker(&m_pendingTelemetryMutex);
+    QVector<QHash<QString, double>> packets;
+    packets.swap(m_pendingTelemetryPackets);
+    return packets;
+}
+
+void MainWindow::clearPendingTelemetryPackets()
+{
+    QMutexLocker locker(&m_pendingTelemetryMutex);
+    m_pendingTelemetryPackets.clear();
+    m_faultCaptureDrainQueued.store(false, std::memory_order_release);
+}
+
+bool MainWindow::drainPendingTelemetry(bool forcePlotUpdate)
+{
+    const QVector<QHash<QString, double>> packets = takePendingTelemetryPackets();
+    if (packets.isEmpty()) {
+        if (forcePlotUpdate && !m_plotPaused && m_plotDirty) {
+            updateAllPlots();
+        }
+        return false;
+    }
+
+    for (const QHash<QString, double> &values : packets) {
+        ingestTelemetryPacket(values);
+    }
+
+    if (m_latestTelemetryChanged) {
+        updateGauges(m_latestTelemetryValues);
+        m_latestTelemetryChanged = false;
+    }
+
+    if ((forcePlotUpdate || m_plotDirty) && !m_plotPaused) {
+        updateAllPlots();
+    }
+
+    return true;
+}
+
+void MainWindow::ingestTelemetryPacket(const QHash<QString, double> &values)
+{
+    // This is the central telemetry fan-out for buffered packets: maintain plot
+    // buffers and latest-value state, while rendering happens on the UI cadence.
     const double currentTime = values.value(DataParser::TIMESTAMP_SECONDS_FIELD,
                                             static_cast<double>(static_cast<quint64>(values.value(DataParser::TIMESTAMP_FIELD, 0.0))) / 275000000.0);
     const quint64 timestampTicks = values.contains(DataParser::TIMESTAMP_US_FIELD)
@@ -1202,7 +1955,14 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
         m_waveData.clear();
         m_pausedTimeStamps.clear();
         m_pausedWaveData.clear();
+        m_scopeTriggerTimeStamps.clear();
+        m_scopeTriggerWaveData.clear();
+        m_scopeTriggerSnapshotPending = false;
+        m_scopeTriggerPendingTimeSec = 0.0;
+        m_scopeTriggerSnapshotValid = false;
+        m_scopeTriggerHasPrevious = false;
         m_latestTelemetryValues.clear();
+        m_latestTelemetryChanged = true;
     }
 
     m_lastTimestampTicks = timestampTicks;
@@ -1228,8 +1988,10 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
             it.key() != DataParser::TIMESTAMP_US_FIELD &&
             it.key() != DataParser::TIMESTAMP_SECONDS_FIELD) {
             m_latestTelemetryValues[it.key()] = it.value();
+            m_latestTelemetryChanged = true;
         }
     }
+    appendSpaceVectorSample(values);
     // Append values to waveform buffers.
     for (auto it = values.begin(); it != values.end(); ++it) {
         const QString &field = it.key();
@@ -1247,14 +2009,15 @@ void MainWindow::handleNewData(const QHash<QString, double> &values) {
         }
         vec[targetSize - 1] = it.value();
     }
-    m_plotDirty = true;
+    if (m_scopeTriggerEnabled) {
+        evaluateScopeTrigger(values, currentTime);
+    }
+    if (!m_scopeTriggerEnabled ||
+        !m_scopeTriggerSnapshotValid ||
+        m_scopeTriggerSnapshotPending) {
+        m_plotDirty = true;
+    }
     advanceFaultAutoCapture();
-    updateGauges(values);
-    // Optional debug display for key values in the receive area.
-    writeTelemetryLogRow(values);
-    // if (values.contains("RPM")) {
-    //     ui->plainTextEditReceive->appendPlainText(QString("RPM: %1").arg(values["RPM"], 0, 'f', 1));
-    // }
 }
 
 void MainWindow::handleAdcSample(const AdcSamplePacket &packet) {
@@ -1310,6 +2073,497 @@ void MainWindow::setPlotPaused(bool paused)
     updateAllPlots();
 }
 
+void MainWindow::setupScopeTriggerControls()
+{
+    const QStringList sources = availableScopeTriggerSources();
+    if (m_scopeTriggerSource.isEmpty() || !sources.contains(m_scopeTriggerSource)) {
+        m_scopeTriggerSource = sources.isEmpty() ? QString() : sources.first();
+        resetScopeTriggerRuntime();
+    }
+    if (m_scopeTriggerSource.isEmpty()) {
+        m_scopeTriggerEnabled = false;
+    }
+
+    ui->pushButtonTriggerToggle->setText("⚡");
+    ui->pushButtonTriggerToggle->setToolTip("Enable oscilloscope trigger");
+    ui->pushButtonTriggerToggle->setCheckable(true);
+    ui->pushButtonTriggerToggle->setChecked(m_scopeTriggerEnabled);
+    ui->pushButtonTriggerSetting->setText("⚙");
+    ui->pushButtonTriggerSetting->setToolTip("Configure oscilloscope trigger");
+    updateScopeTriggerButtonState();
+}
+
+void MainWindow::updateScopeTriggerButtonState()
+{
+    const QSignalBlocker blocker(ui->pushButtonTriggerToggle);
+    ui->pushButtonTriggerToggle->setChecked(m_scopeTriggerEnabled);
+    ui->pushButtonTriggerToggle->setToolTip(
+        m_scopeTriggerEnabled
+            ? QString("Oscilloscope trigger enabled: %1, %2, threshold %3")
+                  .arg(m_scopeTriggerSource.isEmpty() ? QString("no source") : m_scopeTriggerSource)
+                  .arg(scopeTriggerTypeText(m_scopeTriggerType))
+                  .arg(m_scopeTriggerThreshold)
+            : QString("Enable oscilloscope trigger"));
+}
+
+void MainWindow::resetScopeTriggerRuntime()
+{
+    m_scopeTriggerHasPrevious = false;
+    m_scopeTriggerPreviousValue = 0.0;
+    m_scopeTriggerSnapshotPending = false;
+    m_scopeTriggerPendingTimeSec = 0.0;
+    m_scopeTriggerSnapshotValid = false;
+    m_scopeTriggerTimeStamps.clear();
+    m_scopeTriggerWaveData.clear();
+    m_plotDirty = true;
+}
+
+void MainWindow::evaluateScopeTrigger(const QHash<QString, double> &values, double sampleTimeSec)
+{
+    if (!m_scopeTriggerEnabled || m_plotPaused || m_scopeTriggerSource.isEmpty()) {
+        return;
+    }
+
+    const auto it = values.constFind(m_scopeTriggerSource);
+    if (it == values.constEnd() || !std::isfinite(it.value())) {
+        return;
+    }
+
+    const double currentValue = it.value();
+    if (scopeTriggerConditionMet(m_scopeTriggerPreviousValue,
+                                 currentValue,
+                                 m_scopeTriggerHasPrevious)) {
+        scheduleScopeTriggerSnapshot(sampleTimeSec);
+    }
+
+    m_scopeTriggerPreviousValue = currentValue;
+    m_scopeTriggerHasPrevious = true;
+}
+
+bool MainWindow::scopeTriggerConditionMet(double previousValue,
+                                          double currentValue,
+                                          bool hasPrevious) const
+{
+    switch (m_scopeTriggerType) {
+    case ScopeTriggerType::RisingEdge:
+        return hasPrevious &&
+               previousValue < m_scopeTriggerThreshold &&
+               currentValue >= m_scopeTriggerThreshold;
+    case ScopeTriggerType::FallingEdge:
+        return hasPrevious &&
+               previousValue > m_scopeTriggerThreshold &&
+               currentValue <= m_scopeTriggerThreshold;
+    case ScopeTriggerType::AboveLevel:
+        return currentValue >= m_scopeTriggerThreshold &&
+               (!hasPrevious || previousValue < m_scopeTriggerThreshold);
+    case ScopeTriggerType::BelowLevel:
+        return currentValue <= m_scopeTriggerThreshold &&
+               (!hasPrevious || previousValue > m_scopeTriggerThreshold);
+    }
+
+    return false;
+}
+
+bool MainWindow::scopeTriggerLogicHigh(ScopeTriggerType type,
+                                       double value,
+                                       double threshold) const
+{
+    switch (type) {
+    case ScopeTriggerType::RisingEdge:
+    case ScopeTriggerType::AboveLevel:
+        return value >= threshold;
+    case ScopeTriggerType::FallingEdge:
+    case ScopeTriggerType::BelowLevel:
+        return value <= threshold;
+    }
+
+    return false;
+}
+
+void MainWindow::scheduleScopeTriggerSnapshot(double triggerTimeSec)
+{
+    // The UI can only display one capture per refresh. Keep the most recent
+    // trigger point and materialize it just before plotting to avoid copying
+    // buffers repeatedly during high-frequency trigger bursts.
+    m_scopeTriggerPendingTimeSec = triggerTimeSec;
+    m_scopeTriggerSnapshotPending = true;
+    m_plotDirty = true;
+}
+
+void MainWindow::captureScopeTriggerSnapshot(double triggerTimeSec)
+{
+    m_scopeTriggerSnapshotPending = false;
+    m_scopeTriggerTimeStamps.clear();
+    m_scopeTriggerWaveData.clear();
+
+    const int captureCapacity = m_sampleSlider
+                                    ? qMax(m_currentMaxPoints, m_sampleSlider->maximum())
+                                    : m_currentMaxPoints;
+    const int maxCapturePoints = qMin(m_maxWavePoints, captureCapacity);
+    if (m_timeStamps.isEmpty() || maxCapturePoints <= 0) {
+        m_scopeTriggerSnapshotValid = false;
+        return;
+    }
+
+    const auto endIt = std::upper_bound(m_timeStamps.cbegin(),
+                                        m_timeStamps.cend(),
+                                        triggerTimeSec);
+    const int endIdx = endIt == m_timeStamps.cbegin()
+                           ? 0
+                           : static_cast<int>(std::distance(m_timeStamps.cbegin(), endIt)) - 1;
+    const int pointsToCapture = qMin(maxCapturePoints, endIdx + 1);
+    if (pointsToCapture <= 0) {
+        m_scopeTriggerSnapshotValid = false;
+        return;
+    }
+
+    const int startIdx = endIdx + 1 - pointsToCapture;
+    m_scopeTriggerTimeStamps = m_timeStamps.mid(startIdx, pointsToCapture);
+    const int totalPoints = m_timeStamps.size();
+
+    for (auto it = m_waveData.cbegin(); it != m_waveData.cend(); ++it) {
+        const QVector<double> &series = it.value();
+        if (series.isEmpty()) {
+            continue;
+        }
+
+        const int dataStartIdx = qMax(0, totalPoints - series.size());
+        const int visibleStartIdx = qMax(startIdx, dataStartIdx);
+        if (visibleStartIdx > endIdx) {
+            continue;
+        }
+
+        m_scopeTriggerWaveData.insert(it.key(),
+                                      series.mid(visibleStartIdx - dataStartIdx,
+                                                 endIdx - visibleStartIdx + 1));
+    }
+
+    m_scopeTriggerSnapshotValid = !m_scopeTriggerTimeStamps.isEmpty();
+}
+
+void MainWindow::showScopeTriggerDialog()
+{
+    QDialog dialog(this);
+    dialog.setWindowTitle("Oscilloscope Trigger");
+    dialog.setMinimumSize(760, 480);
+    dialog.resize(920, 640);
+
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(12, 12, 12, 12);
+    layout->setSpacing(8);
+
+    auto *controlsWidget = new QWidget(&dialog);
+    controlsWidget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    auto *form = new QFormLayout;
+    form->setContentsMargins(0, 0, 0, 0);
+    form->setSpacing(8);
+    controlsWidget->setLayout(form);
+
+    auto *sourceCombo = new QComboBox(&dialog);
+    sourceCombo->setFixedHeight(28);
+    sourceCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    const QStringList sources = availableScopeTriggerSources();
+    sourceCombo->addItems(sources);
+    const int sourceIndex = qMax(0, sources.indexOf(m_scopeTriggerSource));
+    if (!sources.isEmpty()) {
+        sourceCombo->setCurrentIndex(sourceIndex);
+    }
+
+    auto *typeCombo = new QComboBox(&dialog);
+    typeCombo->setFixedHeight(28);
+    typeCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    const QList<ScopeTriggerType> types = {
+        ScopeTriggerType::RisingEdge,
+        ScopeTriggerType::FallingEdge,
+        ScopeTriggerType::AboveLevel,
+        ScopeTriggerType::BelowLevel
+    };
+    for (ScopeTriggerType type : types) {
+        typeCombo->addItem(scopeTriggerTypeText(type), static_cast<int>(type));
+    }
+    typeCombo->setCurrentIndex(qMax(0, typeCombo->findData(static_cast<int>(m_scopeTriggerType))));
+
+    auto *thresholdSpin = new QDoubleSpinBox(&dialog);
+    thresholdSpin->setFixedHeight(28);
+    thresholdSpin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    thresholdSpin->setRange(-1.0e9, 1.0e9);
+    thresholdSpin->setDecimals(6);
+    thresholdSpin->setSingleStep(0.1);
+    thresholdSpin->setValue(m_scopeTriggerThreshold);
+
+    form->addRow("Source", sourceCombo);
+    form->addRow("Type", typeCombo);
+    form->addRow("Threshold", thresholdSpin);
+    layout->addWidget(controlsWidget);
+
+    auto *previewPlot = new QCustomPlot(&dialog);
+    previewPlot->setMinimumHeight(280);
+    previewPlot->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    previewPlot->setMouseTracking(true);
+    previewPlot->legend->setVisible(true);
+    previewPlot->xAxis->setLabel("Time (s)");
+    previewPlot->yAxis->setLabel("Signal");
+    previewPlot->yAxis2->setVisible(true);
+    previewPlot->yAxis2->setLabel("Logic");
+    layout->addWidget(previewPlot);
+
+    auto *statusLabel = new QLabel(&dialog);
+    statusLabel->setWordWrap(true);
+    statusLabel->setFixedHeight(statusLabel->fontMetrics().lineSpacing() * 2 + 10);
+    statusLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    layout->addWidget(statusLabel);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
+                                         Qt::Horizontal,
+                                         &dialog);
+    buttons->setFixedHeight(qMax(34, buttons->sizeHint().height()));
+    buttons->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    layout->addWidget(buttons);
+    layout->setStretchFactor(controlsWidget, 0);
+    layout->setStretchFactor(previewPlot, 1);
+    layout->setStretchFactor(statusLabel, 0);
+    layout->setStretchFactor(buttons, 0);
+
+    const auto refreshPreview = [this, sourceCombo, typeCombo, thresholdSpin, previewPlot, statusLabel]() {
+        updateScopeTriggerPreview(previewPlot,
+                                  statusLabel,
+                                  sourceCombo->currentText(),
+                                  static_cast<ScopeTriggerType>(typeCombo->currentData().toInt()),
+                                  thresholdSpin->value());
+    };
+    const auto draggingThreshold = std::make_shared<bool>(false);
+    const auto setThresholdFromPlot = [previewPlot, thresholdSpin](QMouseEvent *event) {
+        thresholdSpin->setValue(previewPlot->yAxis->pixelToCoord(event->pos().y()));
+    };
+
+    connect(sourceCombo, &QComboBox::currentTextChanged, &dialog, [this, sourceCombo, thresholdSpin, refreshPreview]() {
+        const QSignalBlocker blocker(thresholdSpin);
+        thresholdSpin->setValue(scopeTriggerPreviewMidpoint(sourceCombo->currentText(), thresholdSpin->value()));
+        refreshPreview();
+    });
+    connect(typeCombo, qOverload<int>(&QComboBox::currentIndexChanged), &dialog, refreshPreview);
+    connect(thresholdSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), &dialog, refreshPreview);
+    connect(previewPlot, &QCustomPlot::mousePress, &dialog, [previewPlot, thresholdSpin, draggingThreshold, setThresholdFromPlot](QMouseEvent *event) {
+        if (event->button() != Qt::LeftButton) {
+            return;
+        }
+
+        const int thresholdPixel = qRound(previewPlot->yAxis->coordToPixel(thresholdSpin->value()));
+        if (qAbs(event->pos().y() - thresholdPixel) > 10) {
+            return;
+        }
+
+        *draggingThreshold = true;
+        previewPlot->setCursor(Qt::SizeVerCursor);
+        setThresholdFromPlot(event);
+    });
+    connect(previewPlot, &QCustomPlot::mouseMove, &dialog, [previewPlot, thresholdSpin, draggingThreshold, setThresholdFromPlot](QMouseEvent *event) {
+        if (*draggingThreshold) {
+            setThresholdFromPlot(event);
+            return;
+        }
+
+        const int thresholdPixel = qRound(previewPlot->yAxis->coordToPixel(thresholdSpin->value()));
+        previewPlot->setCursor(qAbs(event->pos().y() - thresholdPixel) <= 10
+                                   ? Qt::SizeVerCursor
+                                   : Qt::ArrowCursor);
+    });
+    connect(previewPlot, &QCustomPlot::mouseRelease, &dialog, [previewPlot, draggingThreshold](QMouseEvent *event) {
+        if (event->button() != Qt::LeftButton) {
+            return;
+        }
+
+        *draggingThreshold = false;
+        previewPlot->setCursor(Qt::ArrowCursor);
+    });
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    refreshPreview();
+
+    if (dialog.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    m_scopeTriggerSource = sourceCombo->currentText();
+    m_scopeTriggerType = static_cast<ScopeTriggerType>(typeCombo->currentData().toInt());
+    m_scopeTriggerThreshold = thresholdSpin->value();
+    resetScopeTriggerRuntime();
+    updateScopeTriggerButtonState();
+    updateAllPlots();
+}
+
+void MainWindow::updateScopeTriggerPreview(QCustomPlot *plot,
+                                           QLabel *statusLabel,
+                                           const QString &source,
+                                           ScopeTriggerType type,
+                                           double threshold) const
+{
+    if (!plot || !statusLabel) {
+        return;
+    }
+
+    plot->clearGraphs();
+    plot->legend->setVisible(true);
+    plot->yAxis2->setVisible(true);
+
+    QVector<double> x;
+    QVector<double> signal;
+    QVector<double> thresholdLineX;
+    QVector<double> thresholdLineY;
+    QVector<double> logic;
+
+    const QVector<double> sourceData = m_waveData.value(source);
+    const int totalPoints = m_timeStamps.size();
+    const int dataStartIdx = qMax(0, totalPoints - sourceData.size());
+    const int visibleCount = qMin(totalPoints, qMax(300, qMin(m_currentMaxPoints, 1200)));
+    const int startIdx = qMax(0, totalPoints - visibleCount);
+    double yMin = threshold;
+    double yMax = threshold;
+    bool hasSignalData = false;
+    bool previousLogicHigh = false;
+    bool hasPreviousLogic = false;
+    int triggerMarks = 0;
+
+    for (int i = startIdx; i < totalPoints; ++i) {
+        const int dataIndex = i - dataStartIdx;
+        if (dataIndex < 0 || dataIndex >= sourceData.size()) {
+            continue;
+        }
+
+        const double value = sourceData[dataIndex];
+        if (!std::isfinite(value)) {
+            continue;
+        }
+
+        const bool logicHigh = scopeTriggerLogicHigh(type, value, threshold);
+        bool triggerPulse = false;
+        switch (type) {
+        case ScopeTriggerType::RisingEdge:
+        case ScopeTriggerType::FallingEdge:
+            triggerPulse = logicHigh && hasPreviousLogic && !previousLogicHigh;
+            break;
+        case ScopeTriggerType::AboveLevel:
+        case ScopeTriggerType::BelowLevel:
+            triggerPulse = logicHigh && (!hasPreviousLogic || !previousLogicHigh);
+            break;
+        }
+
+        x.append(m_timeStamps[i]);
+        signal.append(value);
+        logic.append((type == ScopeTriggerType::RisingEdge || type == ScopeTriggerType::FallingEdge)
+                         ? (triggerPulse ? 1.0 : 0.0)
+                         : (logicHigh ? 1.0 : 0.0));
+        yMin = qMin(yMin, value);
+        yMax = qMax(yMax, value);
+        hasSignalData = true;
+        if (triggerPulse) {
+            ++triggerMarks;
+        }
+        previousLogicHigh = logicHigh;
+        hasPreviousLogic = true;
+    }
+
+    if (hasSignalData) {
+        thresholdLineX << x.first() << x.last();
+        thresholdLineY << threshold << threshold;
+    }
+
+    QCPGraph *signalGraph = plot->addGraph(plot->xAxis, plot->yAxis);
+    signalGraph->setName(source.isEmpty() ? QString("Signal") : source);
+    signalGraph->setPen(QPen(QColor("#1976d2"), 1.5));
+    signalGraph->setData(x, signal, true);
+
+    QCPGraph *thresholdGraph = plot->addGraph(plot->xAxis, plot->yAxis);
+    thresholdGraph->setName("Threshold");
+    QPen thresholdPen(QColor("#f57c00"), 1.25);
+    thresholdPen.setStyle(Qt::DashLine);
+    thresholdGraph->setPen(thresholdPen);
+    thresholdGraph->setData(thresholdLineX, thresholdLineY, true);
+
+    QCPGraph *logicGraph = plot->addGraph(plot->xAxis, plot->yAxis2);
+    logicGraph->setName(type == ScopeTriggerType::RisingEdge || type == ScopeTriggerType::FallingEdge
+                            ? QString("Trigger pulse")
+                            : QString("Trigger logic"));
+    logicGraph->setPen(QPen(QColor("#2e7d32"), 1.5));
+    logicGraph->setLineStyle(QCPGraph::lsStepLeft);
+    logicGraph->setData(x, logic, true);
+
+    if (hasSignalData) {
+        const double yPadding = qMax(1.0e-9, (yMax - yMin) * 0.08);
+        plot->xAxis->setRange(x.first(), x.last());
+        plot->yAxis->setRange(yMin - yPadding, yMax + yPadding);
+        plot->yAxis2->setRange(-0.1, 1.1);
+        statusLabel->setText(QString("%1 preview: %2 trigger point%3 in the visible buffer.")
+                                 .arg(scopeTriggerTypeText(type))
+                                 .arg(triggerMarks)
+                                 .arg(triggerMarks == 1 ? QString() : QString("s")));
+    } else {
+        plot->xAxis->setRange(0, 1);
+        plot->yAxis->setRange(threshold - 1.0, threshold + 1.0);
+        plot->yAxis2->setRange(-0.1, 1.1);
+        statusLabel->setText(source.isEmpty()
+                                 ? QString("Choose a telemetry source to preview the trigger.")
+                                 : QString("No buffered samples are available for %1 yet.").arg(source));
+    }
+
+    plot->replot(QCustomPlot::rpQueuedReplot);
+}
+
+QStringList MainWindow::availableScopeTriggerSources() const
+{
+    if (!m_dataParser) {
+        return {};
+    }
+    return m_dataParser->getFieldNames();
+}
+
+double MainWindow::scopeTriggerPreviewMidpoint(const QString &source, double fallback) const
+{
+    const QVector<double> sourceData = m_waveData.value(source);
+    const int totalPoints = m_timeStamps.size();
+    const int dataStartIdx = qMax(0, totalPoints - sourceData.size());
+    const int visibleCount = qMin(totalPoints, qMax(300, qMin(m_currentMaxPoints, 1200)));
+    const int startIdx = qMax(0, totalPoints - visibleCount);
+    double yMin = std::numeric_limits<double>::max();
+    double yMax = std::numeric_limits<double>::lowest();
+    bool hasSignalData = false;
+
+    for (int i = startIdx; i < totalPoints; ++i) {
+        const int dataIndex = i - dataStartIdx;
+        if (dataIndex < 0 || dataIndex >= sourceData.size()) {
+            continue;
+        }
+
+        const double value = sourceData[dataIndex];
+        if (!std::isfinite(value)) {
+            continue;
+        }
+
+        yMin = qMin(yMin, value);
+        yMax = qMax(yMax, value);
+        hasSignalData = true;
+    }
+
+    return hasSignalData ? (yMin + yMax) * 0.5 : fallback;
+}
+
+QString MainWindow::scopeTriggerTypeText(ScopeTriggerType type) const
+{
+    switch (type) {
+    case ScopeTriggerType::RisingEdge:
+        return "Rising edge";
+    case ScopeTriggerType::FallingEdge:
+        return "Falling edge";
+    case ScopeTriggerType::AboveLevel:
+        return "Above threshold";
+    case ScopeTriggerType::BelowLevel:
+        return "Below threshold";
+    }
+
+    return "Rising edge";
+}
+
 void MainWindow::startFaultAutoCapture(quint32 triggeredMask)
 {
     // Fault auto-capture freezes the display shortly after a configured fault so
@@ -1327,6 +2581,7 @@ void MainWindow::startFaultAutoCapture(quint32 triggeredMask)
     m_faultAutoCapturePending = true;
     m_faultAutoCaptureSkipCurrentPacket = true;
     m_faultAutoCapturePacketsRemaining = qMax(0, m_faultAutoCapturePacketsAfterTrigger);
+    m_faultCaptureDrainArmed.store(true, std::memory_order_release);
 
     if (m_currentMaxPoints != requestedPoints) {
         m_sampleSlider->setValue(requestedPoints);
@@ -1334,6 +2589,8 @@ void MainWindow::startFaultAutoCapture(quint32 triggeredMask)
         m_plotDirty = true;
         updateAllPlots();
     }
+
+    drainPendingTelemetry(true);
 }
 
 void MainWindow::advanceFaultAutoCapture()
@@ -1354,6 +2611,7 @@ void MainWindow::advanceFaultAutoCapture()
     if (m_faultAutoCapturePacketsRemaining <= 0) {
         m_faultAutoCapturePending = false;
         m_faultAutoCaptureSkipCurrentPacket = false;
+        m_faultCaptureDrainArmed.store(false, std::memory_order_release);
         setPlotPaused(true);
     }
 }
@@ -1507,7 +2765,7 @@ void MainWindow::refreshSerialPorts() {
 
 void MainWindow::updateUiForSerialState(bool isOpen) {
     if (isOpen) {
-        ui->pushButtonStartToggle->setText("⏹");
+        ui->pushButtonStartToggle->setText("■");
         ui->comboPort->setEnabled(false);
         ui->comboBaud->setEnabled(false);
         ui->pushButtonRefresh->setEnabled(false);
@@ -1582,7 +2840,7 @@ QString MainWindow::currentTuneParameterCommand() const
 void MainWindow::on_pushButtonStartToggle_clicked() {
     if (m_serialManager->thread() == nullptr) return;
 
-    if (ui->pushButtonStartToggle->text() == "⏹") {
+    if (ui->pushButtonStartToggle->text() == "■") {
         QMetaObject::invokeMethod(m_serialManager, "closeSerialPort", Qt::QueuedConnection);
     } else {
         QString portName = ui->comboPort->currentText();
@@ -1918,14 +3176,69 @@ void MainWindow::on_comboBoxTuneParameter_currentIndexChanged(int index) {
     }
 }
 
+void MainWindow::on_pushButtonGaugeToggle_clicked()
+{
+    const bool restartGaugeTest = m_gaugeTestTimer && m_gaugeTestTimer->isActive();
+    if (restartGaugeTest) {
+        stopGaugeTest(false);
+    }
+
+    m_gaugeCircularMode = !m_gaugeCircularMode;
+    setupGaugeArea();
+    if (restartGaugeTest) {
+        ui->pushButtonGaugeTest->setChecked(true);
+        startGaugeTest();
+    }
+    updateGaugeModeControls();
+}
+
+void MainWindow::on_pushButtonGaugeTest_clicked()
+{
+    if (ui->pushButtonGaugeTest->isChecked()) {
+        startGaugeTest();
+    } else {
+        stopGaugeTest();
+    }
+}
+
 void MainWindow::on_pushButtonPause_clicked() {
     if (!m_plotPaused) {
         m_faultAutoCapturePending = false;
         m_faultAutoCaptureSkipCurrentPacket = false;
         m_faultAutoCapturePacketsRemaining = 0;
+        m_faultCaptureDrainArmed.store(false, std::memory_order_release);
     }
 
     setPlotPaused(!m_plotPaused);
+}
+
+void MainWindow::on_pushButtonTriggerToggle_clicked()
+{
+    bool enableTrigger = ui->pushButtonTriggerToggle->isChecked();
+
+    if (enableTrigger && m_scopeTriggerSource.isEmpty()) {
+        const QStringList sources = availableScopeTriggerSources();
+        if (!sources.isEmpty()) {
+            m_scopeTriggerSource = sources.first();
+        }
+    }
+
+    if (enableTrigger && m_scopeTriggerSource.isEmpty()) {
+        QMessageBox::information(this,
+                                 "Oscilloscope Trigger",
+                                 "No telemetry fields are available for triggering yet.");
+        enableTrigger = false;
+    }
+
+    m_scopeTriggerEnabled = enableTrigger;
+    resetScopeTriggerRuntime();
+    updateScopeTriggerButtonState();
+    updateAllPlots();
+}
+
+void MainWindow::on_pushButtonTriggerSetting_clicked()
+{
+    showScopeTriggerDialog();
 }
 
 void MainWindow::on_pushButtonSave_clicked() {
@@ -1960,6 +3273,40 @@ void MainWindow::on_pushButtonQuickSave_clicked() {
 
     if (!startQuickSave()) {
         ui->pushButtonQuickSave->setChecked(false);
+    }
+}
+
+void MainWindow::on_pushButtonHistoryData_clicked()
+{
+    const QString startDir = !m_historyDataPath.isEmpty()
+                                 ? QFileInfo(m_historyDataPath).absolutePath()
+                                 : QDir::currentPath();
+    const QString filePath = QFileDialog::getOpenFileName(this,
+                                                          "Select Historic Telemetry CSV",
+                                                          startDir,
+                                                          "Telemetry CSV (*.csv);;All files (*)");
+    if (filePath.isEmpty()) {
+        return;
+    }
+
+    if (ui->pushButtonHistoryDataPlay->isChecked()) {
+        stopHistoryDataReplay();
+    }
+    m_historyDataPath = filePath;
+    statusBar()->showMessage("Selected historic telemetry: " + filePath, 5000);
+    updateHistoryDataControls();
+}
+
+void MainWindow::on_pushButtonHistoryDataPlay_toggled(bool checked)
+{
+    if (checked) {
+        if (!startHistoryDataReplay()) {
+            QSignalBlocker blocker(ui->pushButtonHistoryDataPlay);
+            ui->pushButtonHistoryDataPlay->setChecked(false);
+            updateHistoryDataControls();
+        }
+    } else {
+        stopHistoryDataReplay();
     }
 }
 
@@ -2009,6 +3356,9 @@ void MainWindow::on_pushButtonSelectConfig_clicked() {
     m_pausedTimeStamps.clear();
     m_pausedWaveData.clear();
     m_latestTelemetryValues.clear();
+    clearPendingTelemetryPackets();
+    m_latestTelemetryChanged = false;
+    m_faultCaptureDrainArmed.store(false, std::memory_order_release);
     m_hasLastTimestamp = false;
     updateAllPlots();
     if (restartLogging && !startTelemetryLogging()) {
@@ -2022,43 +3372,38 @@ void MainWindow::on_pushButtonSelectConfig_clicked() {
 }
 
 bool MainWindow::startTelemetryLogging() {
-    // Telemetry CSV uses the parser's current field list as the header. Status
-    // columns are appended first so fault/mode context is available per row.
+    // Telemetry CSV logging runs in the parser worker so file I/O follows the
+    // packet stream without blocking the UI refresh loop.
     if (m_isLogging) {
         return true;
     }
 
     const QString fileName = QDateTime::currentDateTime().toString("yyyy-MM-dd-hh.mm.ss'_log_data.csv'");
-    m_logFile.setFileName(QDir::current().filePath(fileName));
-    if (!m_logFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::critical(this, "Error", "Failed to create telemetry log file: " + m_logFile.errorString());
+    const QString filePath = QDir::current().filePath(fileName);
+    bool started = false;
+    QString errorMessage;
+    QMetaObject::invokeMethod(m_dataParser, [this, filePath, &started, &errorMessage]() {
+        started = m_dataParser->startTelemetryCsvLogging(filePath, &errorMessage);
+    }, Qt::BlockingQueuedConnection);
+    if (!started) {
+        QMessageBox::critical(this, "Error", "Failed to create telemetry log file: " + errorMessage);
         return false;
     }
 
-    m_logFields = m_dataParser->getFieldNames();
-    m_logStream.setDevice(&m_logFile);
-    m_logStream << "time,error_code,error_flags,control_mode,control_mode_name";
-    for (const QString &field : m_logFields) {
-        m_logStream << "," << field;
-    }
-    m_logStream << "\n";
-
     m_isLogging = true;
     ui->pushButtonSave->setChecked(true);
-    ui->pushButtonSave->setToolTip("Saving telemetry to " + m_logFile.fileName());
+    ui->pushButtonSave->setToolTip("Saving telemetry to " + filePath);
     return true;
 }
 
 void MainWindow::stopTelemetryLogging() {
-    if (!m_isLogging && !m_logFile.isOpen()) {
+    if (!m_isLogging) {
         return;
     }
 
-    m_logStream.flush();
-    m_logStream.setDevice(nullptr);
-    if (m_logFile.isOpen()) {
-        m_logFile.close();
-    }
+    QMetaObject::invokeMethod(m_dataParser, [this]() {
+        m_dataParser->stopTelemetryCsvLogging();
+    }, Qt::BlockingQueuedConnection);
     m_isLogging = false;
     if (ui && ui->pushButtonSave) {
         ui->pushButtonSave->setChecked(false);
@@ -2294,6 +3639,241 @@ void MainWindow::stopQuickSave() {
 QString MainWindow::quickSaveFilePath(const QString &timestamp, const QString &fileStem) const {
     const QString fileName = timestamp + fileStem + ui->lineEditSaveSuffix->text() + ".csv";
     return uniqueFilePath(QDir::current().filePath(fileName));
+}
+
+void MainWindow::updateHistoryDataControls()
+{
+    if (!ui || !ui->pushButtonHistoryData || !ui->pushButtonHistoryDataPlay) {
+        return;
+    }
+
+    const bool replaying = ui->pushButtonHistoryDataPlay->isChecked();
+    ui->pushButtonHistoryData->setText(m_historyDataPath.isEmpty() ? "📁" : "📄");
+    ui->pushButtonHistoryData->setToolTip(m_historyDataPath.isEmpty()
+                                              ? "Select historic telemetry CSV"
+                                              : "Historic telemetry: " + m_historyDataPath);
+    ui->pushButtonHistoryDataPlay->setText(replaying ? "⏸" : "▶");
+    ui->pushButtonHistoryDataPlay->setToolTip(replaying
+                                                  ? "Stop historic telemetry replay"
+                                                  : "Play historic telemetry CSV");
+}
+
+bool MainWindow::startHistoryDataReplay()
+{
+    if (m_historyDataPath.isEmpty()) {
+        on_pushButtonHistoryData_clicked();
+        if (m_historyDataPath.isEmpty()) {
+            return false;
+        }
+    }
+
+    QString errorMessage;
+    if (!openHistoryDataFile(&errorMessage)) {
+        QMessageBox::critical(this, "Historic Telemetry", "Failed to open historic telemetry CSV: " + errorMessage);
+        return false;
+    }
+
+    if (!readNextHistoryDataRow(&m_historyDataPendingRow, &m_historyDataPendingTimeSec, &errorMessage)) {
+        stopHistoryDataReplay();
+        QMessageBox::warning(this, "Historic Telemetry", "No replayable telemetry rows were found: " + errorMessage);
+        return false;
+    }
+
+    clearTelemetryDisplayBuffers();
+    m_historyDataHasPendingRow = true;
+    m_historyDataReplayStartTimeSec = m_historyDataPendingTimeSec;
+    m_historyDataReplayClock.start();
+    ui->pushButtonHistoryDataPlay->setChecked(true);
+    updateHistoryDataControls();
+    statusBar()->showMessage("Replaying historic telemetry: " + QFileInfo(m_historyDataPath).fileName(), 5000);
+    scheduleHistoryDataPendingRow();
+    return true;
+}
+
+void MainWindow::stopHistoryDataReplay(const QString &message)
+{
+    if (m_historyDataTimer) {
+        m_historyDataTimer->stop();
+    }
+    m_historyDataHasPendingRow = false;
+    m_historyDataPendingRow.clear();
+    m_historyDataHeaders.clear();
+    m_historyDataReplayClock.invalidate();
+    m_historyDataStream.setDevice(nullptr);
+    if (m_historyDataFile.isOpen()) {
+        m_historyDataFile.close();
+    }
+    if (ui && ui->pushButtonHistoryDataPlay) {
+        QSignalBlocker blocker(ui->pushButtonHistoryDataPlay);
+        ui->pushButtonHistoryDataPlay->setChecked(false);
+    }
+    updateHistoryDataControls();
+    if (!message.isEmpty()) {
+        statusBar()->showMessage(message, 5000);
+    }
+}
+
+bool MainWindow::openHistoryDataFile(QString *errorMessage)
+{
+    if (m_historyDataPath.isEmpty()) {
+        if (errorMessage) {
+            *errorMessage = "No CSV file has been selected";
+        }
+        return false;
+    }
+
+    m_historyDataStream.setDevice(nullptr);
+    if (m_historyDataFile.isOpen()) {
+        m_historyDataFile.close();
+    }
+    m_historyDataFile.setFileName(m_historyDataPath);
+    if (!m_historyDataFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        if (errorMessage) {
+            *errorMessage = m_historyDataFile.errorString();
+        }
+        return false;
+    }
+
+    m_historyDataStream.setDevice(&m_historyDataFile);
+    while (!m_historyDataStream.atEnd()) {
+        const QString line = m_historyDataStream.readLine();
+        if (line.trimmed().isEmpty()) {
+            continue;
+        }
+        m_historyDataHeaders = parseCsvLine(line);
+        if (m_historyDataHeaders.isEmpty()) {
+            break;
+        }
+        return true;
+    }
+
+    if (errorMessage) {
+        *errorMessage = "CSV file is empty";
+    }
+    return false;
+}
+
+bool MainWindow::readNextHistoryDataRow(QStringList *columns, double *timestampSeconds, QString *errorMessage)
+{
+    if (!columns || !timestampSeconds || !m_historyDataStream.device()) {
+        if (errorMessage) {
+            *errorMessage = "Historic telemetry file is not open";
+        }
+        return false;
+    }
+
+    while (!m_historyDataStream.atEnd()) {
+        const QString line = m_historyDataStream.readLine();
+        if (line.trimmed().isEmpty()) {
+            continue;
+        }
+        QStringList parsedColumns = parseCsvLine(line);
+        while (parsedColumns.size() < m_historyDataHeaders.size()) {
+            parsedColumns.append(QString());
+        }
+
+        bool ok = false;
+        QString parserError;
+        QMetaObject::invokeMethod(m_dataParser, [this, parsedColumns, &ok, timestampSeconds, &parserError]() {
+            ok = m_dataParser->telemetryCsvRowTimestampSeconds(m_historyDataHeaders,
+                                                               parsedColumns,
+                                                               timestampSeconds,
+                                                               &parserError);
+        }, Qt::BlockingQueuedConnection);
+        if (!ok) {
+            if (errorMessage) {
+                *errorMessage = parserError;
+            }
+            return false;
+        }
+
+        *columns = parsedColumns;
+        return true;
+    }
+
+    if (errorMessage) {
+        *errorMessage = "end of file";
+    }
+    return false;
+}
+
+void MainWindow::scheduleHistoryDataPendingRow()
+{
+    if (!m_historyDataTimer || !m_historyDataHasPendingRow) {
+        return;
+    }
+
+    if (!m_historyDataReplayClock.isValid()) {
+        m_historyDataReplayStartTimeSec = m_historyDataPendingTimeSec;
+        m_historyDataReplayClock.start();
+    }
+
+    const double targetSec = qMax(0.0, m_historyDataPendingTimeSec - m_historyDataReplayStartTimeSec);
+    const qint64 targetMs = static_cast<qint64>(std::llround(targetSec * 1000.0));
+    const qint64 elapsedMs = m_historyDataReplayClock.elapsed();
+    const int delayMs = static_cast<int>(qBound<qint64>(0LL,
+                                                        targetMs - elapsedMs,
+                                                        static_cast<qint64>(std::numeric_limits<int>::max())));
+    m_historyDataTimer->start(delayMs);
+}
+
+void MainWindow::processNextHistoryDataRow()
+{
+    if (!m_historyDataHasPendingRow) {
+        stopHistoryDataReplay();
+        return;
+    }
+
+    bool parsed = false;
+    QString parserError;
+    const QStringList row = m_historyDataPendingRow;
+    double currentTimeSec = m_historyDataPendingTimeSec;
+    QMetaObject::invokeMethod(m_dataParser, [this, row, &parsed, &currentTimeSec, &parserError]() {
+        parsed = m_dataParser->parseTelemetryCsvRow(m_historyDataHeaders,
+                                                    row,
+                                                    &currentTimeSec,
+                                                    &parserError);
+    }, Qt::BlockingQueuedConnection);
+    if (!parsed) {
+        stopHistoryDataReplay("Historic telemetry replay stopped: " + parserError);
+        QMessageBox::warning(this, "Historic Telemetry", "Replay stopped: " + parserError);
+        return;
+    }
+
+    QString errorMessage;
+    QStringList nextRow;
+    double nextTimeSec = currentTimeSec;
+    if (!readNextHistoryDataRow(&nextRow, &nextTimeSec, &errorMessage)) {
+        drainPendingTelemetry(true);
+        stopHistoryDataReplay("Historic telemetry replay finished");
+        return;
+    }
+
+    m_historyDataPendingRow = nextRow;
+    m_historyDataPendingTimeSec = nextTimeSec;
+    scheduleHistoryDataPendingRow();
+}
+
+void MainWindow::clearTelemetryDisplayBuffers()
+{
+    m_timeStamps.clear();
+    m_waveData.clear();
+    m_pausedTimeStamps.clear();
+    m_pausedWaveData.clear();
+    m_scopeTriggerTimeStamps.clear();
+    m_scopeTriggerWaveData.clear();
+    m_scopeTriggerSnapshotPending = false;
+    m_scopeTriggerPendingTimeSec = 0.0;
+    m_scopeTriggerSnapshotValid = false;
+    m_scopeTriggerHasPrevious = false;
+    m_latestTelemetryValues.clear();
+    clearPendingTelemetryPackets();
+    m_latestTelemetryChanged = true;
+    m_faultCaptureDrainArmed.store(false, std::memory_order_release);
+    m_faultCaptureDrainQueued.store(false, std::memory_order_release);
+    m_hasLastTimestamp = false;
+    resetScopeTriggerRuntime();
+    updateAllPlots();
 }
 
 void MainWindow::updateAdcSaveButtonState() {

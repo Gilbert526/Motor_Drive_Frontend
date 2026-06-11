@@ -13,15 +13,21 @@
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QFile>
+#include <QMutex>
 #include <QTextStream>
 #include <QPointer>
+#include <QElapsedTimer>
 #include "OscilloscopeWidget.h"
 #include <QStack>
 #include <QMap>
+#include <atomic>
+#include <optional>
 
 class AudioLevelMeter;
 class SerialManager;
 class DataParser;
+class QButtonGroup;
+class QPushButton;
 class simulationDialog;
 struct IndicatorDef;
 struct IndicatorStatusDef;
@@ -108,10 +114,16 @@ private slots:
     void on_comboBoxTuneParameter_currentIndexChanged(int index);
     // Scope control
     void on_pushButtonPause_clicked();
+    void on_pushButtonTriggerToggle_clicked();
+    void on_pushButtonTriggerSetting_clicked();
     void on_pushButtonSave_clicked();
     void on_pushButtonSaveAdc_clicked();
     void on_pushButtonQuickSave_clicked();
     void on_pushButtonSelectConfig_clicked();
+    void on_pushButtonHistoryData_clicked();
+    void on_pushButtonHistoryDataPlay_toggled(bool checked);
+    void on_pushButtonGaugeToggle_clicked();
+    void on_pushButtonGaugeTest_clicked();
 
     void onFieldCheckStateChanged(QListWidgetItem *item);
 
@@ -120,7 +132,6 @@ private slots:
     void handleSerialPortClosed();
 
     // Parsed telemetry and packet-status handlers.
-    void handleNewData(const QHash<QString, double> &values);
     void handleAdcSample(const AdcSamplePacket &packet);
     void handlePacketStatus(quint32 errorCode,
                             const QStringList &errorNames,
@@ -174,21 +185,50 @@ private:
     QSlider     *m_sampleSlider;
     QLabel      *m_sampleLabel;
     QList<OscilloscopeWidget*> m_oscilloscopes;
+    bool m_syncingPlotAreaVisibility;
+    int m_plotAreaDefaultWidth;
+    int m_scopeAreaStoredWidth;
+    int m_spaceVectorAreaStoredWidth;
+    QButtonGroup *m_spaceVectorSourceGroup;
+    QList<QPushButton*> m_spaceVectorSourceButtons;
+    int m_selectedSpaceVectorPlotIndex;
+    QElapsedTimer m_spaceVectorTestElapsed;
+    double m_spaceVectorTestLastSampleSec;
+    bool m_spaceVectorTestActive;
 
     struct GaugeBinding {
         QString fieldName;
+        QString secondaryFieldName;
+        bool secondaryUsesPeakHold = true;
         AudioLevelMeter *meter = nullptr;
-        double pendingValue = 0.0;
-        bool hasPendingValue = false;
+        double minimum = 0.0;
+        double maximum = 100.0;
+        double currentValue = 0.0;
+        double currentSecondaryValue = 0.0;
+        bool hasCurrentValue = false;
+        bool hasCurrentSecondaryValue = false;
     };
     QList<GaugeBinding> m_gaugeBindings;
     QHash<QString, double> m_latestTelemetryValues;
+    QMutex m_pendingTelemetryMutex;
+    QVector<QHash<QString, double>> m_pendingTelemetryPackets;
+    std::atomic_bool m_faultCaptureDrainArmed;
+    std::atomic_bool m_faultCaptureDrainQueued;
+    bool m_gaugeCircularMode;
+    QTimer *m_gaugeTestTimer;
+    QTimer *m_gaugeTestResetTimer;
+    QTimer *m_indicatorTestTimer;
+    int m_gaugeTestPhase;
+    int m_gaugeTestTick;
+    int m_indicatorTestStep;
+    int m_indicatorTestMaxSteps;
 
     int m_currentMaxPoints;   // Current visible point count from the slider.
 
     // Refresh/activity timers.
     QTimer *m_plotTimer;
     QTimer *m_gaugeTimer;
+    QTimer *m_historyDataTimer;
     bool m_plotUpdatesSuspended;
 
     // Timer
@@ -199,8 +239,30 @@ private:
     // Pause scope
     bool m_plotPaused;
     bool m_plotDirty;
+    bool m_latestTelemetryChanged;
     QVector<double> m_pausedTimeStamps;
     QHash<QString, QVector<double>> m_pausedWaveData;
+
+    enum class ScopeTriggerType {
+        RisingEdge,
+        FallingEdge,
+        AboveLevel,
+        BelowLevel
+    };
+
+    // Scope trigger mode freezes the oscilloscope display on the most recent
+    // trigger event while live buffers keep receiving data for the next capture.
+    QString m_scopeTriggerSource;
+    ScopeTriggerType m_scopeTriggerType;
+    double m_scopeTriggerThreshold;
+    bool m_scopeTriggerEnabled;
+    bool m_scopeTriggerHasPrevious;
+    double m_scopeTriggerPreviousValue;
+    bool m_scopeTriggerSnapshotPending;
+    double m_scopeTriggerPendingTimeSec;
+    bool m_scopeTriggerSnapshotValid;
+    QVector<double> m_scopeTriggerTimeStamps;
+    QHash<QString, QVector<double>> m_scopeTriggerWaveData;
 
     // Fault-triggered auto capture tuning.
     // Adjust these values to change which faults trigger a capture,
@@ -223,6 +285,15 @@ private:
     bool m_isAdcLogging;
     bool m_isQuickSaving;
     bool m_adcPacketActive;
+    QString m_historyDataPath;
+    QFile m_historyDataFile;
+    QTextStream m_historyDataStream;
+    QStringList m_historyDataHeaders;
+    QStringList m_historyDataPendingRow;
+    double m_historyDataPendingTimeSec;
+    bool m_historyDataHasPendingRow;
+    QElapsedTimer m_historyDataReplayClock;
+    double m_historyDataReplayStartTimeSec;
     QFile m_adcLogFile;
     QTextStream m_adcLogStream;
     qint64 m_lastAdcPacketMs;
@@ -286,8 +357,29 @@ private:
                                double *criticalThreshold) const;
     void updateGauges(const QHash<QString, double> &values);
     void flushGaugeUpdates();
+    void applyGaugeValues(GaugeBinding &binding,
+                          double primaryValue,
+                          std::optional<double> secondaryValue);
+    void updateGaugeModeControls();
+    void setupSpaceVectorArea();
+    void updateSpaceVectorControls();
+    void appendSpaceVectorSample(const QHash<QString, double> &values,
+                                 bool allowDuringTest = false,
+                                 bool capToBoundary = false);
+    void updateSpaceVectorPlot();
+    void startSpaceVectorTest();
+    void stopSpaceVectorTest();
+    void startGaugeTest();
+    void stopGaugeTest(bool scheduleReset = true);
+    void advanceGaugeTest();
+    void resetGaugesAfterTest();
+    void startIndicatorTest();
+    void stopIndicatorTest(bool restoreLiveState = true);
+    void advanceIndicatorTest();
+    bool hasTestableIndicators() const;
     void updateStatusIndicators();
     void updateFaultAutoCaptureMask();
+    void applyIndicatorState(const IndicatorDef &indicator, const IndicatorStatusDef *status);
     void applyIndicatorStatus(QLabel *label, const QString &text, const QString &colorName);
     const IndicatorStatusDef* resolveIndicatorStatus(const IndicatorDef &indicator) const;
     const IndicatorStatusDef* resolveModeIndicatorStatus(const IndicatorDef &indicator) const;
@@ -300,9 +392,33 @@ private:
     void updateAllMoveButtons();        // Update state of move up/down buttons for oscilloscopes
     void loadAvailableFields();         // Load DataParser fields into the left-hand field list.
     void updateAllPlots();              // Refresh every oscilloscope.
+    void enqueueTelemetryValues(const QHash<QString, double> &values);
+    QVector<QHash<QString, double>> takePendingTelemetryPackets();
+    void clearPendingTelemetryPackets();
+    bool drainPendingTelemetry(bool forcePlotUpdate = false);
+    void ingestTelemetryPacket(const QHash<QString, double> &values);
     void syncFieldCheckStates();
     void capturePausedPlotSnapshot();
     void setPlotPaused(bool paused);
+    void setupScopeTriggerControls();
+    void updateScopeTriggerButtonState();
+    void resetScopeTriggerRuntime();
+    void evaluateScopeTrigger(const QHash<QString, double> &values, double sampleTimeSec);
+    bool scopeTriggerConditionMet(double previousValue,
+                                  double currentValue,
+                                  bool hasPrevious) const;
+    bool scopeTriggerLogicHigh(ScopeTriggerType type, double value, double threshold) const;
+    void scheduleScopeTriggerSnapshot(double triggerTimeSec);
+    void captureScopeTriggerSnapshot(double triggerTimeSec);
+    void showScopeTriggerDialog();
+    void updateScopeTriggerPreview(QCustomPlot *plot,
+                                   QLabel *statusLabel,
+                                   const QString &source,
+                                   ScopeTriggerType type,
+                                   double threshold) const;
+    double scopeTriggerPreviewMidpoint(const QString &source, double fallback) const;
+    QStringList availableScopeTriggerSources() const;
+    QString scopeTriggerTypeText(ScopeTriggerType type) const;
     void startFaultAutoCapture(quint32 triggeredMask);
     void advanceFaultAutoCapture();
     bool isReceiveTextByte(char byte) const;
@@ -310,6 +426,8 @@ private:
     void flushReceiveTextLines(QByteArray &lineBuffer);
     bool isLikelyReceiveTextLine(const QByteArray &line) const;
     void updatePlotRefreshState();
+    void updatePlotAreaVisibility(bool allowWidthRetraction);
+    void syncPlotAreaButtonsFromSplitter();
 
     void addTimeStamp(double offsetSec); // Append a relative timestamp.
 
@@ -326,6 +444,14 @@ private:
     QString quickSaveFilePath(const QString &timestamp, const QString &fileStem) const;
     void updateAdcSaveButtonState();
     void handleAdcStatusText(const QString &text);
+    void updateHistoryDataControls();
+    bool startHistoryDataReplay();
+    void stopHistoryDataReplay(const QString &message = QString());
+    bool openHistoryDataFile(QString *errorMessage);
+    bool readNextHistoryDataRow(QStringList *columns, double *timestampSeconds, QString *errorMessage);
+    void scheduleHistoryDataPendingRow();
+    void processNextHistoryDataRow();
+    void clearTelemetryDisplayBuffers();
 
     // Target setting helpers
     void updateTargetSliderLimits();   // Update slider range and step mapping for Speed/Torque.

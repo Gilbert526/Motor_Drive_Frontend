@@ -352,8 +352,8 @@
       "dataSource": "MOD",
       "status": [
         { "value": 0, "displayText": "SVPWM", "color": "lightblue" },
-        { "value": 1, "displayText": "SVPWM Comp", "color": "lightblue" },
-        { "value": 2, "displayText": "SVPWM_Super", "color": "lightblue" },
+        { "value": 1, "displayText": "Compensated", "color": "lightblue" },
+        { "value": 2, "displayText": "Superposition", "color": "lightblue" },
         { "value": 3, "displayText": "SYM", "color": "lightblue" },
         { "value": 4, "displayText": "DPWM0", "color": "lightblue" },
         { "value": 5, "displayText": "DPWM1", "color": "lightblue" },
@@ -405,7 +405,9 @@
       "name": "Voltage",
       "gauge": 0,
       "dataSource": "VBATT",
+      "secondaryDataSource": "MAXVAL",
       "topDisplayUnit": "V",
+      "valueDecimals": 2,
       "min": 0.0,
       "max": 30.0,
       "divisions": 6,
@@ -420,7 +422,9 @@
       "name": "Speed",
       "gauge": 1,
       "dataSource": "RPM",
+      "secondaryDataSource": "RPMSP",
       "topDisplayUnit": "RPM",
+      "valueDecimals": 0,
       "min": -10000.0,
       "max": 10000.0,
       "divisions": 20,
@@ -437,7 +441,9 @@
       "name": "Modulation",
       "gauge": 2,
       "dataSource": "M_INDEX",
+      "secondaryDataSource": "MAXVAL",
       "topDisplayUnit": "",
+      "valueDecimals": 2,
       "min": 0.0,
       "max": 1.2,
       "divisions": 12,
@@ -448,5 +454,24 @@
       ],
       "hysteresis": 2.0
     }
-  ]
+  ],
+  "space_vector": {
+    "plots": [
+      {
+        "name": "Alpha-Beta",
+        "type": "alpha-beta",
+        "alphaDataSource": "VALPHA",
+        "betaDataSource": "VBETA",
+        "vdcDataSource": "VBATT"
+      },
+      {
+        "name": "ABC",
+        "type": "abc",
+        "aDataSource": "VA_EST",
+        "bDataSource": "VB_EST",
+        "cDataSource": "VC_EST",
+        "vdcDataSource": "VBATT"
+      }
+    ]
+  }
 }

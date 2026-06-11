@@ -8,3 +8,4 @@
 #include "EWIEGA46WW/moc_serialmanager.cpp"
 #include "EWIEGA46WW/moc_simulationdialog.cpp"
 #include "EWIEGA46WW/moc_simulationoptionsdialog.cpp"
+#include "EWIEGA46WW/moc_spacevectorwidget.cpp"

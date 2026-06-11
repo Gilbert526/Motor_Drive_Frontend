@@ -51,6 +51,113 @@ bool readOptionalObjectArray(const QJsonObject &root, const QString &key, QJsonA
     return readObjectArray(root, key, array, errorMessage);
 }
 
+int csvColumnIndex(const QStringList &headers, const QString &name)
+{
+    for (int i = 0; i < headers.size(); ++i) {
+        if (headers.at(i) == name) {
+            return i;
+        }
+    }
+    for (int i = 0; i < headers.size(); ++i) {
+        if (headers.at(i).compare(name, Qt::CaseInsensitive) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+QString csvColumnValue(const QStringList &headers, const QStringList &columns, const QString &name)
+{
+    const int index = csvColumnIndex(headers, name);
+    return index >= 0 && index < columns.size() ? columns.at(index).trimmed() : QString();
+}
+
+void appendZeroBytes(QByteArray *data, int count)
+{
+    if (count > 0) {
+        data->append(QByteArray(count, '\0'));
+    }
+}
+
+void appendUInt8(QByteArray *data, quint8 value)
+{
+    data->append(static_cast<char>(value));
+}
+
+void appendUInt16LE(QByteArray *data, quint16 value)
+{
+    char bytes[sizeof(quint16)];
+    qToLittleEndian(value, bytes);
+    data->append(bytes, sizeof(bytes));
+}
+
+void appendUInt32LE(QByteArray *data, quint32 value)
+{
+    char bytes[sizeof(quint32)];
+    qToLittleEndian(value, bytes);
+    data->append(bytes, sizeof(bytes));
+}
+
+void appendFloatLE(QByteArray *data, float value)
+{
+    char bytes[sizeof(float)];
+    qToLittleEndian(value, bytes);
+    data->append(bytes, sizeof(bytes));
+}
+
+bool appendCsvPayloadValue(QByteArray *payload,
+                           const FieldDef &field,
+                           double value,
+                           QString *errorMessage)
+{
+    const int originalSize = payload->size();
+    switch (field.format) {
+    case 'B': {
+        const double bounded = qBound(0.0, std::round(value), 255.0);
+        appendUInt8(payload, static_cast<quint8>(bounded));
+        break;
+    }
+    case 'H': {
+        if (field.size < 2) {
+            if (errorMessage) {
+                *errorMessage = QString("%1 requires at least 2 bytes for H format").arg(field.name);
+            }
+            return false;
+        }
+        const double bounded = qBound(0.0, std::round(value), 65535.0);
+        appendUInt16LE(payload, static_cast<quint16>(bounded));
+        break;
+    }
+    case 'f':
+        if (field.size < 4) {
+            if (errorMessage) {
+                *errorMessage = QString("%1 requires at least 4 bytes for f format").arg(field.name);
+            }
+            return false;
+        }
+        appendFloatLE(payload, static_cast<float>(value));
+        break;
+    default:
+        if (errorMessage) {
+            *errorMessage = QString("%1 uses unsupported format %2").arg(field.name).arg(field.format);
+        }
+        return false;
+    }
+
+    const int written = payload->size() - originalSize;
+    if (written > field.size) {
+        if (errorMessage) {
+            *errorMessage = QString("%1 wrote %2 bytes into a %3 byte field")
+                                .arg(field.name)
+                                .arg(written)
+                                .arg(field.size);
+        }
+        return false;
+    }
+    appendZeroBytes(payload, field.size - written);
+    return true;
+}
+
 bool readRequiredString(const QJsonObject &object, const QString &key, QString *out, QString *errorMessage)
 {
     const QJsonValue value = object.value(key);
@@ -229,6 +336,80 @@ bool parseCustomFields(const QJsonArray &array, QList<CustomFieldDef> *customFie
     return true;
 }
 
+bool parseSpaceVectorPlots(const QJsonObject &root, QList<SpaceVectorPlotDef> *plots, QString *errorMessage)
+{
+    QList<SpaceVectorPlotDef> parsed;
+    const QJsonValue configValue = root.value("space_vector");
+    if (configValue.isUndefined()) {
+        *plots = parsed;
+        return true;
+    }
+    if (!configValue.isObject()) {
+        if (errorMessage) {
+            *errorMessage = "space_vector must be an object";
+        }
+        return false;
+    }
+
+    const QJsonValue plotsValue = configValue.toObject().value("plots");
+    if (!plotsValue.isArray()) {
+        if (errorMessage) {
+            *errorMessage = "space_vector.plots must be an array";
+        }
+        return false;
+    }
+
+    const QJsonArray array = plotsValue.toArray();
+    for (int i = 0; i < array.size(); ++i) {
+        if (!array[i].isObject()) {
+            if (errorMessage) {
+                *errorMessage = QString("space_vector.plots[%1] must be an object").arg(i);
+            }
+            return false;
+        }
+
+        const QJsonObject object = array[i].toObject();
+        SpaceVectorPlotDef plot;
+        if (!readRequiredString(object, "name", &plot.name, errorMessage) ||
+            !readRequiredString(object, "type", &plot.type, errorMessage) ||
+            !readRequiredString(object, "vdcDataSource", &plot.vdcDataSource, errorMessage)) {
+            if (errorMessage) {
+                *errorMessage = QString("space_vector.plots[%1]: %2").arg(i).arg(*errorMessage);
+            }
+            return false;
+        }
+
+        if (plot.type == "alpha-beta") {
+            if (!readRequiredString(object, "alphaDataSource", &plot.alphaDataSource, errorMessage) ||
+                !readRequiredString(object, "betaDataSource", &plot.betaDataSource, errorMessage)) {
+                if (errorMessage) {
+                    *errorMessage = QString("space_vector.plots[%1]: %2").arg(i).arg(*errorMessage);
+                }
+                return false;
+            }
+        } else if (plot.type == "abc") {
+            if (!readRequiredString(object, "aDataSource", &plot.aDataSource, errorMessage) ||
+                !readRequiredString(object, "bDataSource", &plot.bDataSource, errorMessage) ||
+                !readRequiredString(object, "cDataSource", &plot.cDataSource, errorMessage)) {
+                if (errorMessage) {
+                    *errorMessage = QString("space_vector.plots[%1]: %2").arg(i).arg(*errorMessage);
+                }
+                return false;
+            }
+        } else {
+            if (errorMessage) {
+                *errorMessage = QString("space_vector.plots[%1]: type must be alpha-beta or abc").arg(i);
+            }
+            return false;
+        }
+
+        parsed.append(plot);
+    }
+
+    *plots = parsed;
+    return true;
+}
+
 bool parseIndicatorStatus(const QJsonObject &object, IndicatorStatusDef *status, QString *errorMessage)
 {
     status->displayText = object.value("displayText").toString();
@@ -401,6 +582,10 @@ bool parseGauges(const QJsonArray &array, QList<GaugeDef> *gauges, QString *erro
             return false;
         }
 
+        gauge.secondaryDataSource = object.value("secondaryDataSource").toString("MAXVAL").trimmed();
+        if (gauge.secondaryDataSource.isEmpty()) {
+            gauge.secondaryDataSource = "MAXVAL";
+        }
         gauge.topDisplayUnit = object.value("topDisplayUnit").toString();
         const QJsonValue minValue = object.value("min");
         const QJsonValue maxValue = object.value("max");
@@ -419,6 +604,13 @@ bool parseGauges(const QJsonArray &array, QList<GaugeDef> *gauges, QString *erro
             return false;
         }
         if (!readIntRange(object, "divisions", 1, 100, &gauge.divisions, errorMessage)) {
+            if (errorMessage) {
+                *errorMessage = QString("gauges[%1]: %2").arg(i).arg(*errorMessage);
+            }
+            return false;
+        }
+        if (object.contains("valueDecimals") &&
+            !readIntRange(object, "valueDecimals", 0, 6, &gauge.valueDecimals, errorMessage)) {
             if (errorMessage) {
                 *errorMessage = QString("gauges[%1]: %2").arg(i).arg(*errorMessage);
             }
@@ -1074,6 +1266,7 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
     QList<CustomFieldDef> customFields;
     QList<IndicatorDef> indicators;
     QList<GaugeDef> gauges;
+    QList<SpaceVectorPlotDef> spaceVectorPlots;
     QList<TuneSubsystemDef> tuning;
     QHash<QString, QString> commandMap;
     if (!parseErrors(errorsJson, &errors, errorMessage) ||
@@ -1083,6 +1276,7 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
         !parseCustomFields(customFieldsJson, &customFields, errorMessage) ||
         !parseIndicators(indicatorsJson, &indicators, errorMessage) ||
         !parseGauges(gaugesJson, &gauges, errorMessage) ||
+        !parseSpaceVectorPlots(root, &spaceVectorPlots, errorMessage) ||
         !parseTuning(tuningJson, &tuning, errorMessage)) {
         return false;
     }
@@ -1094,6 +1288,7 @@ bool DataParser::loadConfiguration(const QString &filePath, QString *errorMessag
     m_customFields = customFields;
     m_indicators = indicators;
     m_gauges = gauges;
+    m_spaceVectorPlots = spaceVectorPlots;
     m_tuning = tuning;
     m_telemetryFields = telemetryFields;
     m_telemetryStructures = telemetryStructures;
@@ -1149,6 +1344,36 @@ void DataParser::stopAdcCsvLogging()
     }
     m_isAdcLogging = false;
     m_pendingAdcSequences.clear();
+}
+
+bool DataParser::startTelemetryCsvLogging(const QString &fileName, QString *errorMessage)
+{
+    if (m_isTelemetryLogging) {
+        return true;
+    }
+
+    if (!startTelemetryCsvLogging(&m_telemetryLogFile,
+                                  &m_telemetryLogStream,
+                                  &m_telemetryLogFields,
+                                  fileName,
+                                  errorMessage)) {
+        return false;
+    }
+
+    m_isTelemetryLogging = true;
+    return true;
+}
+
+void DataParser::stopTelemetryCsvLogging()
+{
+    if (!m_isTelemetryLogging && !m_telemetryLogFile.isOpen()) {
+        return;
+    }
+
+    stopTelemetryCsvLogging(&m_telemetryLogFile,
+                            &m_telemetryLogStream,
+                            &m_telemetryLogFields);
+    m_isTelemetryLogging = false;
 }
 
 void DataParser::flushStaleAdcCsvSequences()
@@ -1221,6 +1446,180 @@ void DataParser::stopQuickCsvLogging()
         m_isQuickAdcLogging = false;
         m_quickPendingAdcSequences.clear();
     }
+}
+
+bool DataParser::parseTelemetryCsvRow(const QStringList &headers,
+                                      const QStringList &columns,
+                                      double *timestampSeconds,
+                                      QString *errorMessage)
+{
+    QByteArray frame;
+    if (!buildTelemetryFrameFromCsvRow(headers, columns, &frame, timestampSeconds, errorMessage)) {
+        return false;
+    }
+
+    parseData(frame);
+    return true;
+}
+
+bool DataParser::telemetryCsvRowTimestampSeconds(const QStringList &headers,
+                                                 const QStringList &columns,
+                                                 double *timestampSeconds,
+                                                 QString *errorMessage) const
+{
+    QByteArray frame;
+    return buildTelemetryFrameFromCsvRow(headers, columns, &frame, timestampSeconds, errorMessage);
+}
+
+bool DataParser::buildTelemetryFrameFromCsvRow(const QStringList &headers,
+                                               const QStringList &columns,
+                                               QByteArray *frame,
+                                               double *timestampSeconds,
+                                               QString *errorMessage) const
+{
+    if (!frame) {
+        if (errorMessage) {
+            *errorMessage = "Internal error: missing frame output";
+        }
+        return false;
+    }
+    frame->clear();
+    if (m_telemetryStructures.isEmpty()) {
+        if (errorMessage) {
+            *errorMessage = "No telemetry packet structure is loaded";
+        }
+        return false;
+    }
+
+    const TelemetryStructureDef &structure = m_telemetryStructures.first();
+    QByteArray payload;
+    QByteArray payload2;
+    quint32 mask1 = 0;
+    quint32 mask2 = 0;
+
+    for (const FieldDef &field : m_fields) {
+        const int index = csvColumnIndex(headers, field.name);
+        if (index < 0 || index >= columns.size()) {
+            continue;
+        }
+        const QString text = columns.at(index).trimmed();
+        if (text.isEmpty()) {
+            continue;
+        }
+        bool ok = false;
+        const double value = text.toDouble(&ok);
+        if (!ok) {
+            if (errorMessage) {
+                *errorMessage = QString("CSV value for %1 is not numeric").arg(field.name);
+            }
+            return false;
+        }
+        mask1 |= field.maskBit;
+        if (!appendCsvPayloadValue(&payload, field, value, errorMessage)) {
+            return false;
+        }
+    }
+
+    for (const FieldDef &field : m_fields2) {
+        const int index = csvColumnIndex(headers, field.name);
+        if (index < 0 || index >= columns.size()) {
+            continue;
+        }
+        const QString text = columns.at(index).trimmed();
+        if (text.isEmpty()) {
+            continue;
+        }
+        bool ok = false;
+        const double value = text.toDouble(&ok);
+        if (!ok) {
+            if (errorMessage) {
+                *errorMessage = QString("CSV value for %1 is not numeric").arg(field.name);
+            }
+            return false;
+        }
+        mask2 |= field.maskBit;
+        if (!appendCsvPayloadValue(&payload2, field, value, errorMessage)) {
+            return false;
+        }
+    }
+
+    if (mask1 == 0 && mask2 == 0) {
+        if (errorMessage) {
+            *errorMessage = "CSV does not contain any configured telemetry field columns";
+        }
+        return false;
+    }
+
+    bool ok = false;
+    const double rawTimestampDouble = csvColumnValue(headers, columns, "time").toDouble(&ok);
+    const quint64 rawTimestamp = ok && rawTimestampDouble > 0.0
+                                     ? static_cast<quint64>(std::llround(rawTimestampDouble))
+                                     : 0;
+    const quint32 errorCode = static_cast<quint32>(qBound<quint64>(
+        0ULL, static_cast<quint64>(csvColumnValue(headers, columns, "error_code").toULongLong(&ok)), 0xFFFFFFFFULL));
+    ok = false;
+    const quint8 controlMode = static_cast<quint8>(qBound(
+        0, csvColumnValue(headers, columns, "control_mode").toInt(&ok), 255));
+
+    bool hasTimestampUs = false;
+    bool hasTimestampTicks = false;
+    for (const QString &fieldName : structure.fields) {
+        hasTimestampUs = hasTimestampUs || fieldName == "timestamp_us";
+        hasTimestampTicks = hasTimestampTicks || fieldName == "timestamp_high" || fieldName == "timestamp_low";
+    }
+    if (timestampSeconds) {
+        *timestampSeconds = DataParser::timestampSeconds(hasTimestampUs,
+                                                         static_cast<quint32>(rawTimestamp & 0xFFFFFFFFULL),
+                                                         hasTimestampTicks,
+                                                         rawTimestamp);
+    }
+
+    for (const QString &fieldName : structure.fields) {
+        const TelemetryFieldDef field = m_telemetryFields.value(fieldName);
+        if (fieldName == "header") {
+            const QByteArray header = m_telemetrySyncBytes.isEmpty() ? field.value : m_telemetrySyncBytes;
+            frame->append(header.left(field.length));
+            appendZeroBytes(frame, field.length - header.size());
+        } else if (fieldName == "version") {
+            appendUInt8(frame, structure.version);
+            appendZeroBytes(frame, field.length - 1);
+        } else if (fieldName == "errors") {
+            appendUInt32LE(frame, errorCode);
+            appendZeroBytes(frame, field.length - 4);
+        } else if (fieldName == "modes") {
+            appendUInt8(frame, controlMode);
+            appendZeroBytes(frame, field.length - 1);
+        } else if (fieldName == "timestamp_high") {
+            appendUInt16LE(frame, static_cast<quint16>((rawTimestamp >> 32) & 0xFFFFULL));
+            appendZeroBytes(frame, field.length - 2);
+        } else if (fieldName == "timestamp_low" || fieldName == "timestamp_us") {
+            appendUInt32LE(frame, static_cast<quint32>(rawTimestamp & 0xFFFFFFFFULL));
+            appendZeroBytes(frame, field.length - 4);
+        } else if (fieldName == "mask") {
+            appendUInt32LE(frame, mask1);
+            appendZeroBytes(frame, field.length - 4);
+        } else if (fieldName == "mask2") {
+            appendUInt32LE(frame, mask2);
+            appendZeroBytes(frame, field.length - 4);
+        } else if (fieldName == "payload") {
+            frame->append(payload);
+        } else if (fieldName == "payload2") {
+            frame->append(payload2);
+        } else if (fieldName == "crc") {
+            if (field.length != 4) {
+                if (errorMessage) {
+                    *errorMessage = "Telemetry CSV replay only supports 4-byte CRC fields";
+                }
+                return false;
+            }
+            appendUInt32LE(frame, calculateCrc32(frame->constData(), frame->size(), field.polynomial));
+        } else if (field.length > 0) {
+            frame->append(field.value.left(field.length));
+            appendZeroBytes(frame, field.length - field.value.size());
+        }
+    }
+
+    return true;
 }
 
 void DataParser::parseData(const QByteArray &newData) {
@@ -2062,8 +2461,11 @@ void DataParser::flushStaleQuickAdcSequences()
 
 void DataParser::maybeEmitParsedData(const QHash<QString, double> &values)
 {
-    // Quick telemetry logging receives every decoded packet before the UI signal
-    // is emitted, keeping the CSV path independent of any later display work.
+    // CSV logging receives every decoded packet before the UI signal is emitted,
+    // keeping the file path independent of any later display work.
+    if (m_isTelemetryLogging && m_telemetryLogFile.isOpen()) {
+        writeTelemetryLogRow(&m_telemetryLogStream, m_telemetryLogFields, values);
+    }
     if (m_isQuickTelemetryLogging && m_quickTelemetryLogFile.isOpen()) {
         writeTelemetryLogRow(&m_quickTelemetryLogStream, m_quickTelemetryLogFields, values);
     }

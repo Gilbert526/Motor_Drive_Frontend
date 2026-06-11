@@ -5,6 +5,7 @@
 #include <QPushButton>
 #include <QMimeData>
 #include <QPalette>
+#include <QDebug>
 #include <cmath>
 #include <limits>
 
