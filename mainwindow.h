@@ -258,6 +258,8 @@ private:
     bool m_scopeTriggerEnabled;
     bool m_scopeTriggerHasPrevious;
     double m_scopeTriggerPreviousValue;
+    bool m_scopeTriggerSnapshotPending;
+    double m_scopeTriggerPendingTimeSec;
     bool m_scopeTriggerSnapshotValid;
     QVector<double> m_scopeTriggerTimeStamps;
     QHash<QString, QVector<double>> m_scopeTriggerWaveData;
@@ -401,12 +403,13 @@ private:
     void setupScopeTriggerControls();
     void updateScopeTriggerButtonState();
     void resetScopeTriggerRuntime();
-    void evaluateScopeTrigger(const QHash<QString, double> &values);
+    void evaluateScopeTrigger(const QHash<QString, double> &values, double sampleTimeSec);
     bool scopeTriggerConditionMet(double previousValue,
                                   double currentValue,
                                   bool hasPrevious) const;
     bool scopeTriggerLogicHigh(ScopeTriggerType type, double value, double threshold) const;
-    void captureScopeTriggerSnapshot();
+    void scheduleScopeTriggerSnapshot(double triggerTimeSec);
+    void captureScopeTriggerSnapshot(double triggerTimeSec);
     void showScopeTriggerDialog();
     void updateScopeTriggerPreview(QCustomPlot *plot,
                                    QLabel *statusLabel,

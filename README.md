@@ -11,6 +11,10 @@ playback between two frontend instances.
 
 ![Motor Drive Frontend demo](assets/images/demo.png)
 
+A quick start guide is provided below, for more detailed instruction on using the software
+as well as editing configuration file for customized display options, please refer to the 
+[User Manual](GUI_MANUAL.md).
+
 ## Features
 
 - Serial connection management for USB virtual COM ports.

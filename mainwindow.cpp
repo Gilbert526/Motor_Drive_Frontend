@@ -29,6 +29,7 @@
 #include <QWheelEvent>
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <utility>
@@ -139,6 +140,8 @@ MainWindow::MainWindow(QWidget *parent):
     m_scopeTriggerEnabled(false),
     m_scopeTriggerHasPrevious(false),
     m_scopeTriggerPreviousValue(0.0),
+    m_scopeTriggerSnapshotPending(false),
+    m_scopeTriggerPendingTimeSec(0.0),
     m_scopeTriggerSnapshotValid(false),
     m_faultAutoCaptureTriggerMask(0),
     m_faultAutoCaptureDisplayPoints(5000),
@@ -1838,6 +1841,12 @@ void MainWindow::on_sampleSlider_valueChanged(int value) {
 }
 
 void MainWindow::updateAllPlots() {
+    if (!m_plotPaused &&
+        m_scopeTriggerEnabled &&
+        m_scopeTriggerSnapshotPending) {
+        captureScopeTriggerSnapshot(m_scopeTriggerPendingTimeSec);
+    }
+
     const bool useTriggerSnapshot = !m_plotPaused &&
                                     m_scopeTriggerEnabled &&
                                     m_scopeTriggerSnapshotValid;
@@ -1948,6 +1957,8 @@ void MainWindow::ingestTelemetryPacket(const QHash<QString, double> &values)
         m_pausedWaveData.clear();
         m_scopeTriggerTimeStamps.clear();
         m_scopeTriggerWaveData.clear();
+        m_scopeTriggerSnapshotPending = false;
+        m_scopeTriggerPendingTimeSec = 0.0;
         m_scopeTriggerSnapshotValid = false;
         m_scopeTriggerHasPrevious = false;
         m_latestTelemetryValues.clear();
@@ -1999,9 +2010,13 @@ void MainWindow::ingestTelemetryPacket(const QHash<QString, double> &values)
         vec[targetSize - 1] = it.value();
     }
     if (m_scopeTriggerEnabled) {
-        evaluateScopeTrigger(values);
+        evaluateScopeTrigger(values, currentTime);
     }
-    m_plotDirty = true;
+    if (!m_scopeTriggerEnabled ||
+        !m_scopeTriggerSnapshotValid ||
+        m_scopeTriggerSnapshotPending) {
+        m_plotDirty = true;
+    }
     advanceFaultAutoCapture();
 }
 
@@ -2095,13 +2110,15 @@ void MainWindow::resetScopeTriggerRuntime()
 {
     m_scopeTriggerHasPrevious = false;
     m_scopeTriggerPreviousValue = 0.0;
+    m_scopeTriggerSnapshotPending = false;
+    m_scopeTriggerPendingTimeSec = 0.0;
     m_scopeTriggerSnapshotValid = false;
     m_scopeTriggerTimeStamps.clear();
     m_scopeTriggerWaveData.clear();
     m_plotDirty = true;
 }
 
-void MainWindow::evaluateScopeTrigger(const QHash<QString, double> &values)
+void MainWindow::evaluateScopeTrigger(const QHash<QString, double> &values, double sampleTimeSec)
 {
     if (!m_scopeTriggerEnabled || m_plotPaused || m_scopeTriggerSource.isEmpty()) {
         return;
@@ -2116,7 +2133,7 @@ void MainWindow::evaluateScopeTrigger(const QHash<QString, double> &values)
     if (scopeTriggerConditionMet(m_scopeTriggerPreviousValue,
                                  currentValue,
                                  m_scopeTriggerHasPrevious)) {
-        captureScopeTriggerSnapshot();
+        scheduleScopeTriggerSnapshot(sampleTimeSec);
     }
 
     m_scopeTriggerPreviousValue = currentValue;
@@ -2163,17 +2180,65 @@ bool MainWindow::scopeTriggerLogicHigh(ScopeTriggerType type,
     return false;
 }
 
-void MainWindow::captureScopeTriggerSnapshot()
+void MainWindow::scheduleScopeTriggerSnapshot(double triggerTimeSec)
 {
-    m_scopeTriggerTimeStamps = m_timeStamps;
+    // The UI can only display one capture per refresh. Keep the most recent
+    // trigger point and materialize it just before plotting to avoid copying
+    // buffers repeatedly during high-frequency trigger bursts.
+    m_scopeTriggerPendingTimeSec = triggerTimeSec;
+    m_scopeTriggerSnapshotPending = true;
+    m_plotDirty = true;
+}
+
+void MainWindow::captureScopeTriggerSnapshot(double triggerTimeSec)
+{
+    m_scopeTriggerSnapshotPending = false;
+    m_scopeTriggerTimeStamps.clear();
     m_scopeTriggerWaveData.clear();
 
+    const int captureCapacity = m_sampleSlider
+                                    ? qMax(m_currentMaxPoints, m_sampleSlider->maximum())
+                                    : m_currentMaxPoints;
+    const int maxCapturePoints = qMin(m_maxWavePoints, captureCapacity);
+    if (m_timeStamps.isEmpty() || maxCapturePoints <= 0) {
+        m_scopeTriggerSnapshotValid = false;
+        return;
+    }
+
+    const auto endIt = std::upper_bound(m_timeStamps.cbegin(),
+                                        m_timeStamps.cend(),
+                                        triggerTimeSec);
+    const int endIdx = endIt == m_timeStamps.cbegin()
+                           ? 0
+                           : static_cast<int>(std::distance(m_timeStamps.cbegin(), endIt)) - 1;
+    const int pointsToCapture = qMin(maxCapturePoints, endIdx + 1);
+    if (pointsToCapture <= 0) {
+        m_scopeTriggerSnapshotValid = false;
+        return;
+    }
+
+    const int startIdx = endIdx + 1 - pointsToCapture;
+    m_scopeTriggerTimeStamps = m_timeStamps.mid(startIdx, pointsToCapture);
+    const int totalPoints = m_timeStamps.size();
+
     for (auto it = m_waveData.cbegin(); it != m_waveData.cend(); ++it) {
-        m_scopeTriggerWaveData.insert(it.key(), it.value());
+        const QVector<double> &series = it.value();
+        if (series.isEmpty()) {
+            continue;
+        }
+
+        const int dataStartIdx = qMax(0, totalPoints - series.size());
+        const int visibleStartIdx = qMax(startIdx, dataStartIdx);
+        if (visibleStartIdx > endIdx) {
+            continue;
+        }
+
+        m_scopeTriggerWaveData.insert(it.key(),
+                                      series.mid(visibleStartIdx - dataStartIdx,
+                                                 endIdx - visibleStartIdx + 1));
     }
 
     m_scopeTriggerSnapshotValid = !m_scopeTriggerTimeStamps.isEmpty();
-    m_plotDirty = true;
 }
 
 void MainWindow::showScopeTriggerDialog()
@@ -3797,6 +3862,8 @@ void MainWindow::clearTelemetryDisplayBuffers()
     m_pausedWaveData.clear();
     m_scopeTriggerTimeStamps.clear();
     m_scopeTriggerWaveData.clear();
+    m_scopeTriggerSnapshotPending = false;
+    m_scopeTriggerPendingTimeSec = 0.0;
     m_scopeTriggerSnapshotValid = false;
     m_scopeTriggerHasPrevious = false;
     m_latestTelemetryValues.clear();
