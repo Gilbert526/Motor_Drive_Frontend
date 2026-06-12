@@ -473,4 +473,3 @@ CSV files are not created:
 - Stop an existing save mode before starting another conflicting capture.
 - For Quick Save, select `Telemetry`, `ADC`, or both and enter a positive
   duration.
-

@@ -12,7 +12,7 @@ playback between two frontend instances.
 ![Motor Drive Frontend demo](assets/images/demo.png)
 
 A quick start guide is provided below, for more detailed instruction on using the software
-as well as editing configuration file for customized display options, please refer to the 
+as well as editing configuration file for customized display options, please refer to the
 [User Manual](GUI_MANUAL.md).
 
 ## Features
@@ -173,4 +173,3 @@ out/build/release
 - When changing packet structure, update both `telemetry_fields` and `telemetry_structure`.
 - The app expects `telemetry_config.json` beside the executable at runtime; the CMake post-build step copies it automatically.
 - The GUI is currently organized around Qt Designer `.ui` files plus C++ widget/controller code.
-
